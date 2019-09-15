@@ -1,0 +1,41 @@
+namespace DejaQ;
+
+enum TopicType : byte { Timeline = 1, PriorityQueue, Cronjob}
+
+table ErrorDetails {
+    key:string;
+    value:string;
+}
+table Error {
+    code:ushort;
+    message:string;
+    details:[ErrorDetails];
+    throttledMS:ushort;
+}
+
+table TimelineCreateMessagePayload {
+    traceID:string;
+    timeoutMS:ulong;
+    id:[ubyte];
+    tsmsutc:ulong;
+    body:[ubyte];
+}
+
+table TimelinePushLeaseMessage {
+    messageID:[ubyte];
+    body:[ubyte];
+    producerGroupID:[byte];
+    version:ushort
+}
+
+table TimelinePushLeasePayload {
+    expirationTSMSUTC:ulong;
+    consumerID:[ubyte];
+    message:TimelinePushLeaseMessage;
+}
+
+table TimelineExtendLeasePayload {
+    traceID:string;
+    timeoutMS:ulong;
+    id:[ubyte];
+}
