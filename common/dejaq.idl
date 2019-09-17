@@ -24,6 +24,7 @@ table TimelineCreateMessagePayload {
 table TimelinePushLeaseMessage {
     messageID:[ubyte];
     body:[ubyte];
+    timestampMS:ulong;
     producerGroupID:[byte];
     version:ushort
 }
