@@ -11,6 +11,8 @@ table Error {
     message:string;
     details:[ErrorDetails];
     throttledMS:ushort;
+    shouldSync:bool;
+    shouldRetry:bool;
 }
 
 table TimelineCreateMessagePayload {
@@ -26,7 +28,7 @@ table TimelinePushLeaseMessage {
     body:[ubyte];
     timestampMS:ulong;
     producerGroupID:[byte];
-    version:ushort
+    version:ushort;
 }
 
 table TimelinePushLeasePayload {
@@ -39,4 +41,9 @@ table TimelineExtendLeasePayload {
     traceID:string;
     timeoutMS:ulong;
     id:[ubyte];
+}
+
+rpc_service Greeter {
+  TimelineCreateMessages(TimelineCreateMessagePayload):Error;
+  TimelinePushLeases(TimelinePushLeasePayload):Error (streaming: "server");
 }

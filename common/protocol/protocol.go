@@ -14,12 +14,3 @@ const (
 	TopicProvisioningStatus_Live = 2
 	TopicProvisioningStatus_Deleting= 3
 )
-
-type Error interface {
-	Error() string
-	String() string
-	Code() uint16
-	Message() string
-	Details() map[string]string
-	ThrottledMs() uint16
-}
