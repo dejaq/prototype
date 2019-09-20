@@ -7,7 +7,10 @@ table ErrorDetails {
     value:string;
 }
 table Error {
-    code:ushort;
+    severity:ushort;
+    module:ushort;
+    king:ulong;
+    op:string;
     message:string;
     details:[ErrorDetails];
     throttledMS:ushort;
@@ -43,7 +46,7 @@ table TimelineExtendLeasePayload {
     id:[ubyte];
 }
 
-rpc_service Greeter {
+rpc_service Broker {
   TimelineCreateMessages(TimelineCreateMessagePayload):Error;
   TimelinePushLeases(TimelinePushLeasePayload):Error (streaming: "server");
 }

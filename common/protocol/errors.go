@@ -35,14 +35,14 @@ package protocol
 //		Err_topic_doesnotexists: "The topic does not exists",
 //	}
 //)
-
-type Error interface {
-	Error() string
-	String() string
-	Code() uint16
-	Message() string
-	Details() map[string]string
-	ThrottledMs() uint16
-	ShouldRetry() bool
-	ShouldSync() bool
-}
+//
+//type Error interface {
+//	Error() string
+//	String() string
+//	Code() uint16
+//	Message() string
+//	Details() map[string]string
+//	ThrottledMs() uint16
+//	ShouldRetry() bool
+//	ShouldSync() bool
+//}

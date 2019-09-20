@@ -44,19 +44,21 @@ const (
 	KindNotFound = http.StatusNotFound
 )
 
-type DejaError struct {
+type Dejaror struct {
 	Severity Severity
 	Message  string
 	//The actor in which occurred
 	Module Module
 	//Operation, usually the function name in which occurred
-	Operation  Op
-	Kind       Kind
-	Details    map[string]string
-	WrappedErr error
+	Operation        Op
+	Kind             Kind
+	Details          map[string]string
+	WrappedErr       error
+	ShouldRetry      bool
+	ClientShouldSync bool
 }
 
-func (d DejaError) Error() string {
+func (d Dejaror) Error() string {
 	return d.Message
 }
 
@@ -69,11 +71,11 @@ func DeconstructStackTrace(err error) []string {
 		return nil
 	}
 	var result []string
-	for e, ok := err.(DejaError); ok; {
+	for e, ok := err.(Dejaror); ok; {
 		result = append(result, e.Module.String()+"."+e.Operation.String())
 
 		err = e.WrappedErr
-		e, ok = err.(DejaError)
+		e, ok = err.(Dejaror)
 	}
 
 	return result
