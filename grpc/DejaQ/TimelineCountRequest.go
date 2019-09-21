@@ -26,19 +26,15 @@ func (rcv *TimelineCountRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *TimelineCountRequest) Status() byte {
+func (rcv *TimelineCountRequest) TraceID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetByte(o + rcv._tab.Pos)
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
-	return 0
+	return nil
 }
 
-func (rcv *TimelineCountRequest) MutateStatus(n byte) bool {
-	return rcv._tab.MutateByteSlot(4, n)
-}
-
-func (rcv *TimelineCountRequest) TimeStart() uint64 {
+func (rcv *TimelineCountRequest) TimeoutMS() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
@@ -46,12 +42,36 @@ func (rcv *TimelineCountRequest) TimeStart() uint64 {
 	return 0
 }
 
-func (rcv *TimelineCountRequest) MutateTimeStart(n uint64) bool {
+func (rcv *TimelineCountRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineCountRequest) TimeEnd() uint64 {
+func (rcv *TimelineCountRequest) Status() byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelineCountRequest) MutateStatus(n byte) bool {
+	return rcv._tab.MutateByteSlot(8, n)
+}
+
+func (rcv *TimelineCountRequest) TimeStart() uint64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelineCountRequest) MutateTimeStart(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(10, n)
+}
+
+func (rcv *TimelineCountRequest) TimeEnd() uint64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
@@ -59,20 +79,26 @@ func (rcv *TimelineCountRequest) TimeEnd() uint64 {
 }
 
 func (rcv *TimelineCountRequest) MutateTimeEnd(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(8, n)
+	return rcv._tab.MutateUint64Slot(12, n)
 }
 
 func TimelineCountRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(5)
+}
+func TimelineCountRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
+}
+func TimelineCountRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
+	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
 func TimelineCountRequestAddStatus(builder *flatbuffers.Builder, status byte) {
-	builder.PrependByteSlot(0, status, 0)
+	builder.PrependByteSlot(2, status, 0)
 }
 func TimelineCountRequestAddTimeStart(builder *flatbuffers.Builder, timeStart uint64) {
-	builder.PrependUint64Slot(1, timeStart, 0)
+	builder.PrependUint64Slot(3, timeStart, 0)
 }
 func TimelineCountRequestAddTimeEnd(builder *flatbuffers.Builder, timeEnd uint64) {
-	builder.PrependUint64Slot(2, timeEnd, 0)
+	builder.PrependUint64Slot(4, timeEnd, 0)
 }
 func TimelineCountRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

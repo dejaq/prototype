@@ -26,7 +26,7 @@ func (rcv *TimelineReleaseRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *TimelineReleaseRequest) MessageID() []byte {
+func (rcv *TimelineReleaseRequest) TraceID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
@@ -34,7 +34,7 @@ func (rcv *TimelineReleaseRequest) MessageID() []byte {
 	return nil
 }
 
-func (rcv *TimelineReleaseRequest) TimestampMS() uint64 {
+func (rcv *TimelineReleaseRequest) TimeoutMS() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
@@ -42,12 +42,32 @@ func (rcv *TimelineReleaseRequest) TimestampMS() uint64 {
 	return 0
 }
 
-func (rcv *TimelineReleaseRequest) MutateTimestampMS(n uint64) bool {
+func (rcv *TimelineReleaseRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineReleaseRequest) Version() uint16 {
+func (rcv *TimelineReleaseRequest) MessageID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *TimelineReleaseRequest) TimestampMS() uint64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelineReleaseRequest) MutateTimestampMS(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(10, n)
+}
+
+func (rcv *TimelineReleaseRequest) Version() uint16 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
 		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
@@ -55,20 +75,26 @@ func (rcv *TimelineReleaseRequest) Version() uint16 {
 }
 
 func (rcv *TimelineReleaseRequest) MutateVersion(n uint16) bool {
-	return rcv._tab.MutateUint16Slot(8, n)
+	return rcv._tab.MutateUint16Slot(12, n)
 }
 
 func TimelineReleaseRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(5)
+}
+func TimelineReleaseRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
+}
+func TimelineReleaseRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
+	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
 func TimelineReleaseRequestAddMessageID(builder *flatbuffers.Builder, messageID flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(messageID), 0)
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(messageID), 0)
 }
 func TimelineReleaseRequestAddTimestampMS(builder *flatbuffers.Builder, timestampMS uint64) {
-	builder.PrependUint64Slot(1, timestampMS, 0)
+	builder.PrependUint64Slot(3, timestampMS, 0)
 }
 func TimelineReleaseRequestAddVersion(builder *flatbuffers.Builder, version uint16) {
-	builder.PrependUint16Slot(2, version, 0)
+	builder.PrependUint16Slot(4, version, 0)
 }
 func TimelineReleaseRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

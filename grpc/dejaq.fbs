@@ -18,6 +18,16 @@ table Error {
     shouldRetry:bool;
 }
 
+table TimelineMessageIDErrorTuple {
+    messgeID:[ubyte];
+    err:Error;
+}
+table TimelineResponse {
+    messagesErrors:[TimelineMessageIDErrorTuple];
+    err:Error;
+}
+
+
 table TimelineCreateMessageRequest {
     traceID:string;
     timeoutMS:ulong;
@@ -35,6 +45,8 @@ table TimelinePushLeaseMessage {
 }
 
 table TimelinePushLeaseRequest {
+    traceID:string;
+    timeoutMS:ulong;
     expirationTSMSUTC:ulong;
     consumerID:[ubyte];
     message:TimelinePushLeaseMessage;
@@ -47,27 +59,39 @@ table TimelineExtendLeaseRequest {
 }
 
 table TimelineReleaseRequest {
+    traceID:string;
+    timeoutMS:ulong;
     messageID:string;
     timestampMS:ulong;
     version:ushort;
 }
 
 table TimelineDeleteRequest {
+    traceID:string;
+    timeoutMS:ulong;
     messageID:string;
     version:ushort;
 }
 
 table TimelineCountRequest {
+    traceID:string;
+    timeoutMS:ulong;
     status:ubyte;
     timeStart:ulong;
     timeEnd:ulong;
 }
 
+// https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
-  TimelineCreateMessages(TimelineCreateMessageRequest):Error;
-    TimelinePushLeases(TimelinePushLeaseRequest):Error (streaming: "server");
-    TimelineExtendLease(TimelineExtendLeaseRequest):Error (streaming: "server");
-    TimelineRelease(TimelineReleaseRequest):Error (streaming: "server");
-    TimelineDelete(TimelineDeleteRequest):Error (streaming: "server");
+    //the broker will push messages
+    TimelinePushLeases(TimelinePushLeaseRequest):TimelineResponse (streaming: "server");
+
+    //client pushes data, expect one bulk response
+    TimelineCreateMessages(TimelineCreateMessageRequest):TimelineResponse (streaming: "client");
+    TimelineExtendLease(TimelineExtendLeaseRequest):TimelineResponse (streaming: "client");
+    TimelineRelease(TimelineReleaseRequest):TimelineResponse (streaming: "client");
+    TimelineDelete(TimelineDeleteRequest):TimelineResponse (streaming: "client");
+
+    //unary calls, clients wants to find out something specific
     TimelineCount(TimelineCountRequest):Error;
 }

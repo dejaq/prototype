@@ -26,7 +26,7 @@ func (rcv *TimelineDeleteRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *TimelineDeleteRequest) MessageID() []byte {
+func (rcv *TimelineDeleteRequest) TraceID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
@@ -34,8 +34,28 @@ func (rcv *TimelineDeleteRequest) MessageID() []byte {
 	return nil
 }
 
-func (rcv *TimelineDeleteRequest) Version() uint16 {
+func (rcv *TimelineDeleteRequest) TimeoutMS() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelineDeleteRequest) MutateTimeoutMS(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(6, n)
+}
+
+func (rcv *TimelineDeleteRequest) MessageID() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *TimelineDeleteRequest) Version() uint16 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
@@ -43,17 +63,23 @@ func (rcv *TimelineDeleteRequest) Version() uint16 {
 }
 
 func (rcv *TimelineDeleteRequest) MutateVersion(n uint16) bool {
-	return rcv._tab.MutateUint16Slot(6, n)
+	return rcv._tab.MutateUint16Slot(10, n)
 }
 
 func TimelineDeleteRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(4)
+}
+func TimelineDeleteRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
+}
+func TimelineDeleteRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
+	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
 func TimelineDeleteRequestAddMessageID(builder *flatbuffers.Builder, messageID flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(messageID), 0)
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(messageID), 0)
 }
 func TimelineDeleteRequestAddVersion(builder *flatbuffers.Builder, version uint16) {
-	builder.PrependUint16Slot(1, version, 0)
+	builder.PrependUint16Slot(3, version, 0)
 }
 func TimelineDeleteRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
