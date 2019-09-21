@@ -18,7 +18,7 @@ table Error {
     shouldRetry:bool;
 }
 
-table TimelineCreateMessagePayload {
+table TimelineCreateMessageRequest {
     traceID:string;
     timeoutMS:ulong;
     id:[ubyte];
@@ -34,19 +34,40 @@ table TimelinePushLeaseMessage {
     version:ushort;
 }
 
-table TimelinePushLeasePayload {
+table TimelinePushLeaseRequest {
     expirationTSMSUTC:ulong;
     consumerID:[ubyte];
     message:TimelinePushLeaseMessage;
 }
 
-table TimelineExtendLeasePayload {
+table TimelineExtendLeaseRequest {
     traceID:string;
     timeoutMS:ulong;
     id:[ubyte];
 }
 
+table TimelineReleaseRequest {
+    messageID:string;
+    timestampMS:ulong;
+    version:ushort;
+}
+
+table TimelineDeleteRequest {
+    messageID:string;
+    version:ushort;
+}
+
+table TimelineCountRequest {
+    status:ubyte;
+    timeStart:ulong;
+    timeEnd:ulong;
+}
+
 rpc_service Broker {
-  TimelineCreateMessages(TimelineCreateMessagePayload):Error;
-  TimelinePushLeases(TimelinePushLeasePayload):Error (streaming: "server");
+  TimelineCreateMessages(TimelineCreateMessageRequest):Error;
+    TimelinePushLeases(TimelinePushLeaseRequest):Error (streaming: "server");
+    TimelineExtendLease(TimelineExtendLeaseRequest):Error (streaming: "server");
+    TimelineRelease(TimelineReleaseRequest):Error (streaming: "server");
+    TimelineDelete(TimelineDeleteRequest):Error (streaming: "server");
+    TimelineCount(TimelineCountRequest):Error;
 }
