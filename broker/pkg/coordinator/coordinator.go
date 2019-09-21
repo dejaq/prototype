@@ -24,7 +24,7 @@ func NewCoordinator(ctx context.Context, timelineStorage storage.Repository, tic
 
 	go func() {
 		for range l.ticker.C {
-			available, _, _ := timelineStorage.Select(ctx, nil, 10, uint64(time.Now().UTC().Unix()))
+			available, _, _ := timelineStorage.Select(ctx, nil, nil, 10, uint64(time.Now().UTC().Unix()))
 			if len(available) == 0 {
 				continue
 			}
@@ -47,5 +47,5 @@ func NewCoordinator(ctx context.Context, timelineStorage storage.Repository, tic
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, msgs []timeline.Message) []storage.MsgErr {
-	return c.storage.Insert(ctx, msgs)
+	return c.storage.Insert(ctx, nil, msgs)
 }
