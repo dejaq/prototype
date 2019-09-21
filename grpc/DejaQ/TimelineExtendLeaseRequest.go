@@ -46,7 +46,7 @@ func (rcv *TimelineExtendLeaseRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineExtendLeaseRequest) Id(j int) byte {
+func (rcv *TimelineExtendLeaseRequest) MessageID(j int) byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
@@ -55,7 +55,7 @@ func (rcv *TimelineExtendLeaseRequest) Id(j int) byte {
 	return 0
 }
 
-func (rcv *TimelineExtendLeaseRequest) IdLength() int {
+func (rcv *TimelineExtendLeaseRequest) MessageIDLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
@@ -63,7 +63,7 @@ func (rcv *TimelineExtendLeaseRequest) IdLength() int {
 	return 0
 }
 
-func (rcv *TimelineExtendLeaseRequest) IdBytes() []byte {
+func (rcv *TimelineExtendLeaseRequest) MessageIDBytes() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
@@ -71,7 +71,7 @@ func (rcv *TimelineExtendLeaseRequest) IdBytes() []byte {
 	return nil
 }
 
-func (rcv *TimelineExtendLeaseRequest) MutateId(j int, n byte) bool {
+func (rcv *TimelineExtendLeaseRequest) MutateMessageID(j int, n byte) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
@@ -89,10 +89,10 @@ func TimelineExtendLeaseRequestAddTraceID(builder *flatbuffers.Builder, traceID 
 func TimelineExtendLeaseRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
 	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
-func TimelineExtendLeaseRequestAddId(builder *flatbuffers.Builder, id flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(id), 0)
+func TimelineExtendLeaseRequestAddMessageID(builder *flatbuffers.Builder, messageID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(messageID), 0)
 }
-func TimelineExtendLeaseRequestStartIdVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+func TimelineExtendLeaseRequestStartMessageIDVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
 }
 func TimelineExtendLeaseRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {

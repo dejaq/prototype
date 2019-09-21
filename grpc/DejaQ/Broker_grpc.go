@@ -46,7 +46,7 @@ func (c *brokerClient) TimelinePushLeases(ctx context.Context, in *flatbuffers.B
 }
 
 type Broker_TimelinePushLeasesClient interface {
-  Recv() (*TimelineResponse, error)
+  Recv() (*TimelinePushLeaseResponse, error)
   grpc.ClientStream
 }
 
@@ -54,8 +54,8 @@ type brokerTimelinePushLeasesClient struct{
   grpc.ClientStream
 }
 
-func (x *brokerTimelinePushLeasesClient) Recv() (*TimelineResponse, error) {
-  m := new(TimelineResponse)
+func (x *brokerTimelinePushLeasesClient) Recv() (*TimelinePushLeaseResponse, error) {
+  m := new(TimelinePushLeaseResponse)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
 }
@@ -186,7 +186,7 @@ func (c *brokerClient) TimelineCount(ctx context.Context, in *flatbuffers.Builde
 
 // Server API for Broker service
 type BrokerServer interface {
-  TimelinePushLeases(*TimelinePushLeaseRequest, Broker_TimelinePushLeasesServer) error  
+  TimelinePushLeases(*TimelinePushLeaseSubscribeRequest, Broker_TimelinePushLeasesServer) error  
   TimelineCreateMessages(Broker_TimelineCreateMessagesServer) error  
   TimelineExtendLease(Broker_TimelineExtendLeaseServer) error  
   TimelineRelease(Broker_TimelineReleaseServer) error  
@@ -199,7 +199,7 @@ func RegisterBrokerServer(s *grpc.Server, srv BrokerServer) {
 }
 
 func _Broker_TimelinePushLeases_Handler(srv interface{}, stream grpc.ServerStream) error {
-  m := new(TimelinePushLeaseRequest)
+  m := new(TimelinePushLeaseSubscribeRequest)
   if err := stream.RecvMsg(m); err != nil { return err }
   return srv.(BrokerServer).TimelinePushLeases(m, &brokerTimelinePushLeasesServer{stream})
 }
