@@ -13,8 +13,8 @@ import (
 
 // Client API for Broker service
 type BrokerClient interface{
-  TimelinePushLeases(ctx context.Context, in *flatbuffers.Builder, 
-  	opts... grpc.CallOption) (Broker_TimelinePushLeasesClient, error)  
+  TimelineSubscribe(ctx context.Context, in *flatbuffers.Builder, 
+  	opts... grpc.CallOption) (Broker_TimelineSubscribeClient, error)  
   TimelineCreateMessages(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_TimelineCreateMessagesClient, error)  
   TimelineExtendLease(ctx context.Context, 
@@ -35,26 +35,26 @@ func NewBrokerClient(cc *grpc.ClientConn) BrokerClient {
   return &brokerClient{cc}
 }
 
-func (c *brokerClient) TimelinePushLeases(ctx context.Context, in *flatbuffers.Builder, 
-	opts... grpc.CallOption) (Broker_TimelinePushLeasesClient, error) {
-  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[0], c.cc, "/DejaQ.Broker/TimelinePushLeases", opts...)
+func (c *brokerClient) TimelineSubscribe(ctx context.Context, in *flatbuffers.Builder, 
+	opts... grpc.CallOption) (Broker_TimelineSubscribeClient, error) {
+  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[0], c.cc, "/DejaQ.Broker/TimelineSubscribe", opts...)
   if err != nil { return nil, err }
-  x := &brokerTimelinePushLeasesClient{stream}
+  x := &brokerTimelineSubscribeClient{stream}
   if err := x.ClientStream.SendMsg(in); err != nil { return nil, err }
   if err := x.ClientStream.CloseSend(); err != nil { return nil, err }
   return x,nil
 }
 
-type Broker_TimelinePushLeasesClient interface {
+type Broker_TimelineSubscribeClient interface {
   Recv() (*TimelinePushLeaseResponse, error)
   grpc.ClientStream
 }
 
-type brokerTimelinePushLeasesClient struct{
+type brokerTimelineSubscribeClient struct{
   grpc.ClientStream
 }
 
-func (x *brokerTimelinePushLeasesClient) Recv() (*TimelinePushLeaseResponse, error) {
+func (x *brokerTimelineSubscribeClient) Recv() (*TimelinePushLeaseResponse, error) {
   m := new(TimelinePushLeaseResponse)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
@@ -186,7 +186,7 @@ func (c *brokerClient) TimelineCount(ctx context.Context, in *flatbuffers.Builde
 
 // Server API for Broker service
 type BrokerServer interface {
-  TimelinePushLeases(*TimelinePushLeaseSubscribeRequest, Broker_TimelinePushLeasesServer) error  
+  TimelineSubscribe(*TimelineSubscribeRequest, Broker_TimelineSubscribeServer) error  
   TimelineCreateMessages(Broker_TimelineCreateMessagesServer) error  
   TimelineExtendLease(Broker_TimelineExtendLeaseServer) error  
   TimelineRelease(Broker_TimelineReleaseServer) error  
@@ -198,22 +198,22 @@ func RegisterBrokerServer(s *grpc.Server, srv BrokerServer) {
   s.RegisterService(&_Broker_serviceDesc, srv)
 }
 
-func _Broker_TimelinePushLeases_Handler(srv interface{}, stream grpc.ServerStream) error {
-  m := new(TimelinePushLeaseSubscribeRequest)
+func _Broker_TimelineSubscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
+  m := new(TimelineSubscribeRequest)
   if err := stream.RecvMsg(m); err != nil { return err }
-  return srv.(BrokerServer).TimelinePushLeases(m, &brokerTimelinePushLeasesServer{stream})
+  return srv.(BrokerServer).TimelineSubscribe(m, &brokerTimelineSubscribeServer{stream})
 }
 
-type Broker_TimelinePushLeasesServer interface { 
+type Broker_TimelineSubscribeServer interface { 
   Send(* flatbuffers.Builder) error
   grpc.ServerStream
 }
 
-type brokerTimelinePushLeasesServer struct {
+type brokerTimelineSubscribeServer struct {
   grpc.ServerStream
 }
 
-func (x *brokerTimelinePushLeasesServer) Send(m *flatbuffers.Builder) error {
+func (x *brokerTimelineSubscribeServer) Send(m *flatbuffers.Builder) error {
   return x.ServerStream.SendMsg(m)
 }
 
@@ -346,8 +346,8 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
   },
   Streams: []grpc.StreamDesc{
     {
-      StreamName: "TimelinePushLeases",
-      Handler: _Broker_TimelinePushLeases_Handler, 
+      StreamName: "TimelineSubscribe",
+      Handler: _Broker_TimelineSubscribe_Handler, 
       ServerStreams: true,
     },
     {

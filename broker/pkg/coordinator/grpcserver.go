@@ -17,6 +17,8 @@ var _ = grpc.BrokerServer(&innerServer{})
 //GRPCListeners Coordinator can listen and react to these calls
 type GRPCListeners struct {
 	TimelineCreateMessagesListener func(context.Context, []timeline.Message) []derrors.MessageIDTuple
+	TimelineConsumerSubscribed     func(context.Context, Consumer)
+	TimelineConsumerUnSubscribed   func(context.Context, Consumer)
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -30,6 +32,7 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 		InnerServer: &innerServer{
 			builderPool: sync.Pool{},
 			listeners:   listeners,
+			consumers:   map[string]grpc.Broker_TimelineSubscribeServer{},
 		},
 	}
 	s.InnerServer.builderPool.New = func() interface{} {
@@ -39,7 +42,7 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 }
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
-func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeline.PushLeases) error {
+func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
 	s.InnerServer.buffer = leases
 	return nil
 }
@@ -48,9 +51,19 @@ type innerServer struct {
 	builderPool sync.Pool
 	listeners   *GRPCListeners
 	buffer      []timeline.PushLeases
+	consumers   map[string]grpc.Broker_TimelineSubscribeServer
 }
 
-func (s *innerServer) TimelinePushLeases(req *grpc.TimelinePushLeaseSubscribeRequest, stream grpc.Broker_TimelinePushLeasesServer) error {
+func (s *innerServer) TimelineSubscribe(req *grpc.TimelineSubscribeRequest, stream grpc.Broker_TimelineSubscribeServer) error {
+
+	s.consumers[string(req.ConsumerIDBytes())] = stream
+
+	var c Consumer
+	c.LeaseMs = req.LeaseTimeoutMS()
+	c.Topic = string(req.TopicID())
+	c.Cluster = string(req.Cluster())
+	c.ID = req.ConsumerIDBytes()
+	s.listeners.TimelineConsumerSubscribed(context.Background(), c)
 
 	var builder *flatbuffers.Builder
 	//TODO check with the flatb/grpc if is safe to reuse these with defer or we need to wait for an async operation ?!

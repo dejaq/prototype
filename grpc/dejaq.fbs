@@ -52,10 +52,13 @@ table TimelinePushLeaseResponse {
     message:TimelinePushLeaseMessage;
 }
 
-table TimelinePushLeaseSubscribeRequest {
+table TimelineSubscribeRequest {
     traceID:string;
     timeoutMS:ulong;
     consumerID:[ubyte];
+    topicID:string;
+    cluster:string;
+    leaseTimeoutMS:ulong;
 }
 
 table TimelineExtendLeaseRequest {
@@ -90,7 +93,7 @@ table TimelineCountRequest {
 // https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
     //the broker will push messages
-    TimelinePushLeases(TimelinePushLeaseSubscribeRequest):TimelinePushLeaseResponse (streaming: "server");
+    TimelineSubscribe(TimelineSubscribeRequest):TimelinePushLeaseResponse (streaming: "server");
 
     //client pushes data, expect one bulk response
     TimelineCreateMessages(TimelineCreateMessageRequest):TimelineResponse (streaming: "client");

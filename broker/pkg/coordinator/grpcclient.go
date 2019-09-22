@@ -17,11 +17,20 @@ import (
 type GRPCClient struct {
 	client                 dejaq.BrokerClient
 	ProcessMessageListener func([]timeline.Message)
+	config                 ClientConsumer
 }
 
-func NewGRPCClient(cc *grpc.ClientConn) *GRPCClient {
+type ClientConsumer struct {
+	ConsumerID []byte
+	Topic      string
+	Cluster    string
+	LeaseMs    uint64
+}
+
+func NewGRPCClient(cc *grpc.ClientConn, config ClientConsumer) *GRPCClient {
 	c := GRPCClient{
 		client: dejaq.NewBrokerClient(cc),
+		config: config,
 	}
 
 	go func() {
@@ -66,11 +75,19 @@ func (c *GRPCClient) InsertMessages(ctx context.Context, msgs []timeline.Message
 func (c *GRPCClient) subscribe(ctx context.Context) {
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
-	dejaq.TimelinePushLeaseSubscribeRequestStart(builder)
-	requestPosition := dejaq.TimelinePushLeaseSubscribeRequestEnd(builder)
+
+	consumerIDPosition := builder.CreateByteVector(c.config.ConsumerID)
+	clusterIDPosition := builder.CreateString(c.config.Cluster)
+	topicIDPosition := builder.CreateString(c.config.Topic)
+	dejaq.TimelineSubscribeRequestStart(builder)
+	dejaq.TimelineSubscribeRequestAddConsumerID(builder, consumerIDPosition)
+	dejaq.TimelineSubscribeRequestAddCluster(builder, clusterIDPosition)
+	dejaq.TimelineSubscribeRequestAddTopicID(builder, topicIDPosition)
+	dejaq.TimelineSubscribeRequestAddLeaseTimeoutMS(builder, c.config.LeaseMs)
+	requestPosition := dejaq.TimelineSubscribeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
-	stream, err := c.client.TimelinePushLeases(context.Background(), builder)
+	stream, err := c.client.TimelineSubscribe(context.Background(), builder)
 	if err != nil && err != io.EOF {
 		log.Fatalf("subscribe: %v", err)
 	}

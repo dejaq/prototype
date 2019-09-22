@@ -26,6 +26,9 @@ func GetDefaultTimelineID() []byte {
 type Consumer struct {
 	ID              []byte
 	AssignedBuckets []uint16
+	Topic           string
+	Cluster         string
+	LeaseMs         uint64
 }
 
 type Coordinator struct {
@@ -56,6 +59,12 @@ func NewCoordinator(ctx context.Context, config CoordinatorConfig, timelineStora
 
 	server.InnerServer.listeners = &GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
+		TimelineConsumerSubscribed: func(i context.Context, consumer Consumer) {
+			c.RegisterCustomer(consumer.ID)
+		},
+		TimelineConsumerUnSubscribed: func(i context.Context, consumer Consumer) {
+			//TODO make unsubscribe
+		},
 	}
 
 	go func() {
@@ -109,7 +118,7 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 			Message:               timeline.NewLeaseMessage(available[i]),
 		}
 	}
-	err := c.server.pushMessagesToConsumer(ctx, toSend)
+	err := c.server.pushMessagesToConsumer(ctx, consumer.ID, toSend)
 	if err != nil {
 		//cancel the leases!
 	}
@@ -125,7 +134,8 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 	}
 
 	for i := range c.buckets {
-		c.consumers[i/len(c.consumers)].AssignedBuckets = append(c.consumers[i/len(c.consumers)].AssignedBuckets, c.buckets[i])
+		consumerIndex := i/len(c.consumers) - 1
+		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, c.buckets[i])
 	}
 
 	c.lock.Unlock()

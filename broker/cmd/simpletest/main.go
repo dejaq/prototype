@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bgadrian/dejaq-broker/common"
 	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/bgadrian/dejaq-broker/common"
 
 	"github.com/sirupsen/logrus"
 
@@ -53,7 +54,12 @@ func main() {
 		defer conn.Close()
 		defer logger.Println("closing CLIENT goroutine")
 
-		grpcClient := coordinator.NewGRPCClient(conn)
+		grpcClient := coordinator.NewGRPCClient(conn, coordinator.ClientConsumer{
+			ConsumerID: nil,
+			Topic:      "default_timeline",
+			Cluster:    "",
+			LeaseMs:    30 * 1000,
+		})
 		grpcClient.ProcessMessageListener = func(msgs []timeline.Message) {
 			//Process the messages
 			logger.Println("received messages from server")
