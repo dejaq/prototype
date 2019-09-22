@@ -133,11 +133,14 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 		consumers.AssignedBuckets = []uint16{}
 	}
 
-	for i := range c.buckets {
-		consumerIndex := i/len(c.consumers) - 1
-		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, c.buckets[i])
+	var consumerIndex int
+	for bi := range c.buckets {
+		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, uint16(bi))
+		consumerIndex++
+		if consumerIndex >= len(c.consumers) {
+			consumerIndex = 0
+		}
 	}
-
 	c.lock.Unlock()
 }
 

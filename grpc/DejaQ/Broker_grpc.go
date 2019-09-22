@@ -13,8 +13,8 @@ import (
 
 // Client API for Broker service
 type BrokerClient interface{
-  TimelineSubscribe(ctx context.Context, in *flatbuffers.Builder, 
-  	opts... grpc.CallOption) (Broker_TimelineSubscribeClient, error)  
+  TimelineConsumerHandshake(ctx context.Context, in *flatbuffers.Builder, 
+  	opts... grpc.CallOption) (Broker_TimelineConsumerHandshakeClient, error)  
   TimelineCreateMessages(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_TimelineCreateMessagesClient, error)  
   TimelineExtendLease(ctx context.Context, 
@@ -35,26 +35,26 @@ func NewBrokerClient(cc *grpc.ClientConn) BrokerClient {
   return &brokerClient{cc}
 }
 
-func (c *brokerClient) TimelineSubscribe(ctx context.Context, in *flatbuffers.Builder, 
-	opts... grpc.CallOption) (Broker_TimelineSubscribeClient, error) {
-  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[0], c.cc, "/DejaQ.Broker/TimelineSubscribe", opts...)
+func (c *brokerClient) TimelineConsumerHandshake(ctx context.Context, in *flatbuffers.Builder, 
+	opts... grpc.CallOption) (Broker_TimelineConsumerHandshakeClient, error) {
+  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[0], c.cc, "/DejaQ.Broker/TimelineConsumerHandshake", opts...)
   if err != nil { return nil, err }
-  x := &brokerTimelineSubscribeClient{stream}
+  x := &brokerTimelineConsumerHandshakeClient{stream}
   if err := x.ClientStream.SendMsg(in); err != nil { return nil, err }
   if err := x.ClientStream.CloseSend(); err != nil { return nil, err }
   return x,nil
 }
 
-type Broker_TimelineSubscribeClient interface {
+type Broker_TimelineConsumerHandshakeClient interface {
   Recv() (*TimelinePushLeaseResponse, error)
   grpc.ClientStream
 }
 
-type brokerTimelineSubscribeClient struct{
+type brokerTimelineConsumerHandshakeClient struct{
   grpc.ClientStream
 }
 
-func (x *brokerTimelineSubscribeClient) Recv() (*TimelinePushLeaseResponse, error) {
+func (x *brokerTimelineConsumerHandshakeClient) Recv() (*TimelinePushLeaseResponse, error) {
   m := new(TimelinePushLeaseResponse)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
@@ -186,7 +186,7 @@ func (c *brokerClient) TimelineCount(ctx context.Context, in *flatbuffers.Builde
 
 // Server API for Broker service
 type BrokerServer interface {
-  TimelineSubscribe(*TimelineSubscribeRequest, Broker_TimelineSubscribeServer) error  
+  TimelineConsumerHandshake(*TimelineConsumerHandshakeRequest, Broker_TimelineConsumerHandshakeServer) error  
   TimelineCreateMessages(Broker_TimelineCreateMessagesServer) error  
   TimelineExtendLease(Broker_TimelineExtendLeaseServer) error  
   TimelineRelease(Broker_TimelineReleaseServer) error  
@@ -198,22 +198,22 @@ func RegisterBrokerServer(s *grpc.Server, srv BrokerServer) {
   s.RegisterService(&_Broker_serviceDesc, srv)
 }
 
-func _Broker_TimelineSubscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
-  m := new(TimelineSubscribeRequest)
+func _Broker_TimelineConsumerHandshake_Handler(srv interface{}, stream grpc.ServerStream) error {
+  m := new(TimelineConsumerHandshakeRequest)
   if err := stream.RecvMsg(m); err != nil { return err }
-  return srv.(BrokerServer).TimelineSubscribe(m, &brokerTimelineSubscribeServer{stream})
+  return srv.(BrokerServer).TimelineConsumerHandshake(m, &brokerTimelineConsumerHandshakeServer{stream})
 }
 
-type Broker_TimelineSubscribeServer interface { 
+type Broker_TimelineConsumerHandshakeServer interface { 
   Send(* flatbuffers.Builder) error
   grpc.ServerStream
 }
 
-type brokerTimelineSubscribeServer struct {
+type brokerTimelineConsumerHandshakeServer struct {
   grpc.ServerStream
 }
 
-func (x *brokerTimelineSubscribeServer) Send(m *flatbuffers.Builder) error {
+func (x *brokerTimelineConsumerHandshakeServer) Send(m *flatbuffers.Builder) error {
   return x.ServerStream.SendMsg(m)
 }
 
@@ -346,8 +346,8 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
   },
   Streams: []grpc.StreamDesc{
     {
-      StreamName: "TimelineSubscribe",
-      Handler: _Broker_TimelineSubscribe_Handler, 
+      StreamName: "TimelineConsumerHandshake",
+      Handler: _Broker_TimelineConsumerHandshake_Handler, 
       ServerStreams: true,
     },
     {

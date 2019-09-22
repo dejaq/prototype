@@ -79,15 +79,15 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 	consumerIDPosition := builder.CreateByteVector(c.config.ConsumerID)
 	clusterIDPosition := builder.CreateString(c.config.Cluster)
 	topicIDPosition := builder.CreateString(c.config.Topic)
-	dejaq.TimelineSubscribeRequestStart(builder)
-	dejaq.TimelineSubscribeRequestAddConsumerID(builder, consumerIDPosition)
-	dejaq.TimelineSubscribeRequestAddCluster(builder, clusterIDPosition)
-	dejaq.TimelineSubscribeRequestAddTopicID(builder, topicIDPosition)
-	dejaq.TimelineSubscribeRequestAddLeaseTimeoutMS(builder, c.config.LeaseMs)
-	requestPosition := dejaq.TimelineSubscribeRequestEnd(builder)
+	dejaq.TimelineConsumerHandshakeRequestStart(builder)
+	dejaq.TimelineConsumerHandshakeRequestAddConsumerID(builder, consumerIDPosition)
+	dejaq.TimelineConsumerHandshakeRequestAddCluster(builder, clusterIDPosition)
+	dejaq.TimelineConsumerHandshakeRequestAddTopicID(builder, topicIDPosition)
+	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, c.config.LeaseMs)
+	requestPosition := dejaq.TimelineConsumerHandshakeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
-	stream, err := c.client.TimelineSubscribe(context.Background(), builder)
+	stream, err := c.client.TimelineConsumerHandshake(context.Background(), builder)
 	if err != nil && err != io.EOF {
 		log.Fatalf("subscribe: %v", err)
 	}

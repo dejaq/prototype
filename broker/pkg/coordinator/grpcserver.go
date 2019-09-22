@@ -26,13 +26,18 @@ type GRPCServer struct {
 	InnerServer *innerServer
 }
 
+type consumerBuffer struct {
+	sync.Mutex
+	msgs []timeline.PushLeases
+}
+
 func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 	s := GRPCServer{
 
 		InnerServer: &innerServer{
 			builderPool: sync.Pool{},
 			listeners:   listeners,
-			consumers:   map[string]grpc.Broker_TimelineSubscribeServer{},
+			consumers:   sync.Map{},
 		},
 	}
 	s.InnerServer.builderPool.New = func() interface{} {
@@ -43,7 +48,14 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
-	s.InnerServer.buffer = leases
+	asInterface, _ := s.InnerServer.consumers.Load(string(consumerID))
+	buffer := asInterface.(*consumerBuffer)
+
+	buffer.Lock()
+	defer buffer.Unlock()
+
+	buffer.msgs = leases
+	s.InnerServer.consumers.Store(string(consumerID), buffer)
 	return nil
 }
 
@@ -51,12 +63,10 @@ type innerServer struct {
 	builderPool sync.Pool
 	listeners   *GRPCListeners
 	buffer      []timeline.PushLeases
-	consumers   map[string]grpc.Broker_TimelineSubscribeServer
+	consumers   sync.Map
 }
 
-func (s *innerServer) TimelineSubscribe(req *grpc.TimelineSubscribeRequest, stream grpc.Broker_TimelineSubscribeServer) error {
-
-	s.consumers[string(req.ConsumerIDBytes())] = stream
+func (s *innerServer) TimelineConsumerHandshake(req *grpc.TimelineConsumerHandshakeRequest, stream grpc.Broker_TimelineConsumerHandshakeServer) error {
 
 	var c Consumer
 	c.LeaseMs = req.LeaseTimeoutMS()
@@ -65,18 +75,37 @@ func (s *innerServer) TimelineSubscribe(req *grpc.TimelineSubscribeRequest, stre
 	c.ID = req.ConsumerIDBytes()
 	s.listeners.TimelineConsumerSubscribed(context.Background(), c)
 
+	var buffer *consumerBuffer
+	asInterface, ok := s.consumers.Load(string(c.ID))
+	if ok {
+		buffer = asInterface.(*consumerBuffer)
+	} else {
+		buffer = &consumerBuffer{
+			Mutex: sync.Mutex{},
+			msgs:  nil,
+		}
+	}
+	buffer.Lock()
+	defer buffer.Unlock()
+	defer s.consumers.Store(string(c.ID), buffer)
+
+	leases := buffer.msgs
+	if len(leases) == 0 {
+		return nil
+	}
+
 	var builder *flatbuffers.Builder
-	//TODO check with the flatb/grpc if is safe to reuse these with defer or we need to wait for an async operation ?!
+
 	//builder = s.builderPool.Get().(*flatbuffers.Builder)
 	//defer func() {
 	//	builder.Reset()
 	//	s.builderPool.Put(builder)
 	//}()
 	builder = flatbuffers.NewBuilder(128)
-	for i := range s.buffer {
+	for i := range leases {
 		builder.Reset()
 
-		lease := s.buffer[i]
+		lease := leases[i]
 		msgIDPosition := builder.CreateByteVector(lease.Message.ID)
 		bodyPosition := builder.CreateByteVector(lease.Message.Body)
 		producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
@@ -97,6 +126,7 @@ func (s *innerServer) TimelineSubscribe(req *grpc.TimelineSubscribeRequest, stre
 			return err
 		}
 	}
+	buffer.msgs = nil
 
 	return nil
 }
