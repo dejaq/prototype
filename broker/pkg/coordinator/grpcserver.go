@@ -2,7 +2,6 @@ package coordinator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -41,9 +40,18 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeline.PushLeases) error {
-	if s.InnerServer.streamToClient == nil {
-		return errors.New("client is not yet subscribed, call TimelinePushLeases")
-	}
+	s.InnerServer.buffer = leases
+	return nil
+}
+
+type innerServer struct {
+	builderPool sync.Pool
+	listeners   *GRPCListeners
+	buffer      []timeline.PushLeases
+}
+
+func (s *innerServer) TimelinePushLeases(req *grpc.TimelinePushLeaseSubscribeRequest, stream grpc.Broker_TimelinePushLeasesServer) error {
+
 	var builder *flatbuffers.Builder
 	//TODO check with the flatb/grpc if is safe to reuse these with defer or we need to wait for an async operation ?!
 	//builder = s.builderPool.Get().(*flatbuffers.Builder)
@@ -52,10 +60,10 @@ func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeli
 	//	s.builderPool.Put(builder)
 	//}()
 	builder = flatbuffers.NewBuilder(128)
-	for i := range leases {
+	for i := range s.buffer {
 		builder.Reset()
 
-		lease := leases[i]
+		lease := s.buffer[i]
 		msgIDPosition := builder.CreateByteVector(lease.Message.ID)
 		bodyPosition := builder.CreateByteVector(lease.Message.Body)
 		producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
@@ -72,24 +80,11 @@ func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeli
 		rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
 
 		builder.Finish(rootPosition)
-		err := s.InnerServer.streamToClient.Send(builder)
-		if err != nil {
-			fmt.Errorf("TimelineCreateMessagesPusher err=%s", err.Error())
+		if err := stream.Send(builder); err != nil {
+			return err
 		}
 	}
 
-	return nil
-}
-
-type innerServer struct {
-	streamToClient grpc.Broker_TimelinePushLeasesServer
-	builderPool    sync.Pool
-	listeners      *GRPCListeners
-}
-
-func (s *innerServer) TimelinePushLeases(req *grpc.TimelinePushLeaseSubscribeRequest, stream grpc.Broker_TimelinePushLeasesServer) error {
-	//TODO this is a temporary subscribe to the topic, we keep its stream here open
-	s.streamToClient = stream
 	return nil
 }
 func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {

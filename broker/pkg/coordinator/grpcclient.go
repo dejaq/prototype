@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 
@@ -23,8 +24,16 @@ func NewGRPCClient(cc *grpc.ClientConn) *GRPCClient {
 		client: dejaq.NewBrokerClient(cc),
 	}
 
-	//automatically subscribe to the topic for testing
-	go c.subscribe(context.Background())
+	go func() {
+		for {
+			select {
+			//automatically subscribe to the topic for testing
+			case <-time.After(time.Second):
+				c.subscribe(context.Background())
+			}
+		}
+	}()
+
 	return &c
 }
 
@@ -66,42 +75,44 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 		log.Fatalf("subscribe: %v", err)
 	}
 
-	for {
-		//time.Sleep(time.Second)
-		err = nil
-		var msgs []timeline.Message
-		var response *dejaq.TimelinePushLeaseResponse
+	err = nil
+	var msgs []timeline.Message
+	var response *dejaq.TimelinePushLeaseResponse
 
-		for err == nil {
-			//Recv is blocking
-			response, err = stream.Recv()
-			if response == nil { //empty msg ?!?!?! TODO log this as a warning
-				continue
-			}
-			if err == io.EOF { //it means the stream batch is over
-				break
-			}
-			if err != nil {
-				fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
-				//TODO resubscribe
-				break
-			}
-
-			//TODO pass an object from a pool, to reuse it
-			message := response.Message(nil)
-			msgs = append(msgs, timeline.Message{
-				ID:          message.MessageIDBytes(),
-				TimestampMS: message.TimestampMS(),
-				BodyID:      nil,
-				Body:        message.BodyBytes(),
-			})
+	for err == nil {
+		//Recv is blocking
+		response, err = stream.Recv()
+		if response == nil { //empty msg ?!?!?! TODO log this as a warning
+			continue
+		}
+		if err == io.EOF { //it means the stream batch is over
+			break
+		}
+		if err != nil {
+			fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
+			//TODO resubscribe
+			break
 		}
 
-		c.ProcessMessageListener(msgs)
-
-		//DELETE them
-		go c.Delete(msgs)
+		//TODO pass an object from a pool, to reuse it
+		message := response.Message(nil)
+		msgs = append(msgs, timeline.Message{
+			ID:          message.MessageIDBytes(),
+			TimestampMS: message.TimestampMS(),
+			BodyID:      nil,
+			Body:        message.BodyBytes(),
+		})
 	}
+
+	if len(msgs) == 0 {
+		log.Println("client did not receive any message, closing")
+		return
+	}
+
+	c.ProcessMessageListener(msgs)
+
+	//DELETE them
+	go c.Delete(msgs)
 }
 
 func (c *GRPCClient) Delete(msgs []timeline.Message) error {
@@ -114,9 +125,13 @@ func (c *GRPCClient) Delete(msgs []timeline.Message) error {
 	builder = flatbuffers.NewBuilder(128)
 
 	for i := range msgs {
+		builder.Reset()
+
+		messageIDPostition := builder.CreateByteVector(msgs[i].ID)
 		dejaq.TimelineDeleteRequestStart(builder)
-		dejaq.TimelineDeleteRequestAddMessageID(builder, builder.CreateByteVector(msgs[i].ID))
-		dejaq.TimelineDeleteRequestEnd(builder)
+		dejaq.TimelineDeleteRequestAddMessageID(builder, messageIDPostition)
+		rootPosition := dejaq.TimelineDeleteRequestEnd(builder)
+		builder.Finish(rootPosition)
 		err = stream.Send(builder)
 		if err != nil {
 			log.Fatalf("Delete2 err: %s", err.Error())
