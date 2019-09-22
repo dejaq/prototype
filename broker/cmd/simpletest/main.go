@@ -38,9 +38,9 @@ func main() {
 	mem := inmemory.NewInMemory()
 
 	coordinatorConfig := coordinator.CoordinatorConfig{
-		NoBuckets:    100,
+		NoBuckets:    5,
 		TopicType:    common.TopicType_Timeline,
-		TickInterval: time.Second,
+		TickInterval: time.Millisecond * 50,
 	}
 
 	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer)
@@ -60,29 +60,30 @@ func main() {
 			Cluster:    "",
 			LeaseMs:    30 * 1000,
 		})
-		grpcClient.ProcessMessageListener = func(msgs []timeline.Message) {
+		grpcClient.ProcessMessageListener = func(lease timeline.PushLeases) {
 			//Process the messages
-			logger.Println("received messages from server")
-			for i := range msgs {
-				logger.Printf("received message ID=%s body=%s", msgs[i].GetID(), string(msgs[i].Body))
-			}
+			logger.Printf("received message ID=%s body=%s\n", lease.Message.ID, string(lease.Message.Body))
 		}
 
 		count := 0
 		for {
 			select {
-			case <-time.After(time.Second):
-				count++
-				logger.Println("sending messages from client")
-				err := grpcClient.InsertMessages(ctx, []timeline.Message{
-					{
-						ID:   []byte(fmt.Sprintf("ID %d", count)),
-						Body: []byte(fmt.Sprintf("BODY %d", count)),
-					},
-				})
+			case <-time.After(time.Millisecond * 1000):
+				msgCountBatch := 3
+				logger.Printf("inserting %d messages\n", msgCountBatch)
+				var batch []timeline.Message
+				for i := 0; i < msgCountBatch; i++ {
+					batch = append(batch, timeline.Message{
+						ID:   []byte(fmt.Sprintf("ID %d", count+i)),
+						Body: []byte(fmt.Sprintf("BODY %d", count+i)),
+					})
+				}
+				err := grpcClient.InsertMessages(ctx, batch)
 				if err != nil {
 					logger.Printf("InsertMessages ERROR %s", err.Error())
 				}
+
+				count += msgCountBatch
 			case <-ctx.Done():
 				return
 			}

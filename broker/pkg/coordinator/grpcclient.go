@@ -2,7 +2,6 @@ package coordinator
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"time"
@@ -16,7 +15,7 @@ import (
 
 type GRPCClient struct {
 	client                 dejaq.BrokerClient
-	ProcessMessageListener func([]timeline.Message)
+	ProcessMessageListener func(timeline.PushLeases)
 	config                 ClientConsumer
 }
 
@@ -92,44 +91,49 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 		log.Fatalf("subscribe: %v", err)
 	}
 
-	err = nil
-	var msgs []timeline.Message
-	var response *dejaq.TimelinePushLeaseResponse
+	for {
+		err = nil
+		var response *dejaq.TimelinePushLeaseResponse
 
-	for err == nil {
-		//Recv is blocking
-		response, err = stream.Recv()
-		if response == nil { //empty msg ?!?!?! TODO log this as a warning
-			continue
+		for err == nil {
+			//time.Sleep(time.Millisecond * 200)
+			//Recv is blocking
+			response, err = stream.Recv()
+			if response == nil { //empty msg ?!?!?! TODO log this as a warning
+				continue
+			}
+			if err == io.EOF { //it means the stream batch is over
+				break
+			}
+			if err != nil {
+				log.Fatalf("TimelineCreateMessages client failed err=%s", err.Error())
+				//TODO resubscribe
+			}
+			//TODO pass an object from a pool, to reuse it
+			msg := response.Message(nil)
+			c.ProcessMessageListener(timeline.PushLeases{
+				ExpirationTimestampMS: response.ExpirationTSMSUTC(),
+				ConsumerID:            response.ConsumerIDBytes(),
+				Message: timeline.LeaseMessage{
+					ID:              msg.MessageIDBytes(),
+					TimestampMS:     msg.TimestampMS(),
+					ProducerGroupID: msg.ProducerGroupIDBytes(),
+					Version:         msg.Version(),
+					Body:            msg.BodyBytes(),
+				},
+			})
+			go c.Delete([]timeline.Message{{
+				ID:          msg.MessageIDBytes(),
+				TimestampMS: msg.TimestampMS(),
+				//BodyID:          nil,
+				//Body:            nil,
+				//ProducerGroupID: nil,
+				//LockConsumerID:  nil,
+				//BucketID:        0,
+				Version: msg.Version(),
+			}})
 		}
-		if err == io.EOF { //it means the stream batch is over
-			break
-		}
-		if err != nil {
-			fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
-			//TODO resubscribe
-			break
-		}
-
-		//TODO pass an object from a pool, to reuse it
-		message := response.Message(nil)
-		msgs = append(msgs, timeline.Message{
-			ID:          message.MessageIDBytes(),
-			TimestampMS: message.TimestampMS(),
-			BodyID:      nil,
-			Body:        message.BodyBytes(),
-		})
 	}
-
-	if len(msgs) == 0 {
-		log.Println("client did not receive any message, closing")
-		return
-	}
-
-	c.ProcessMessageListener(msgs)
-
-	//DELETE them
-	go c.Delete(msgs)
 }
 
 func (c *GRPCClient) Delete(msgs []timeline.Message) error {

@@ -40,7 +40,7 @@ table TimelinePushLeaseMessage {
     messageID:[ubyte];
     body:[ubyte];
     timestampMS:ulong;
-    producerGroupID:[byte];
+    producerGroupID:[ubyte];
     version:ushort;
 }
 

@@ -2,8 +2,10 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
@@ -26,18 +28,14 @@ type GRPCServer struct {
 	InnerServer *innerServer
 }
 
-type consumerBuffer struct {
-	sync.Mutex
-	msgs []timeline.PushLeases
-}
-
 func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 	s := GRPCServer{
 
 		InnerServer: &innerServer{
-			builderPool: sync.Pool{},
-			listeners:   listeners,
-			consumers:   sync.Map{},
+			builderPool:        sync.Pool{},
+			listeners:          listeners,
+			consumers:          sync.Map{},
+			consumerBufferSize: 50,
 		},
 	}
 	s.InnerServer.builderPool.New = func() interface{} {
@@ -49,21 +47,19 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
 	asInterface, _ := s.InnerServer.consumers.Load(string(consumerID))
-	buffer := asInterface.(*consumerBuffer)
+	buffer := asInterface.(chan timeline.PushLeases)
 
-	buffer.Lock()
-	defer buffer.Unlock()
-
-	buffer.msgs = leases
-	s.InnerServer.consumers.Store(string(consumerID), buffer)
+	for i := range leases {
+		buffer <- leases[i]
+	}
 	return nil
 }
 
 type innerServer struct {
-	builderPool sync.Pool
-	listeners   *GRPCListeners
-	buffer      []timeline.PushLeases
-	consumers   sync.Map
+	builderPool        sync.Pool
+	listeners          *GRPCListeners
+	consumers          sync.Map
+	consumerBufferSize int
 }
 
 func (s *innerServer) TimelineConsumerHandshake(req *grpc.TimelineConsumerHandshakeRequest, stream grpc.Broker_TimelineConsumerHandshakeServer) error {
@@ -75,37 +71,18 @@ func (s *innerServer) TimelineConsumerHandshake(req *grpc.TimelineConsumerHandsh
 	c.ID = req.ConsumerIDBytes()
 	s.listeners.TimelineConsumerSubscribed(context.Background(), c)
 
-	var buffer *consumerBuffer
-	asInterface, ok := s.consumers.Load(string(c.ID))
-	if ok {
-		buffer = asInterface.(*consumerBuffer)
-	} else {
-		buffer = &consumerBuffer{
-			Mutex: sync.Mutex{},
-			msgs:  nil,
-		}
-	}
-	buffer.Lock()
-	defer buffer.Unlock()
-	defer s.consumers.Store(string(c.ID), buffer)
-
-	leases := buffer.msgs
-	if len(leases) == 0 {
-		return nil
-	}
-
-	var builder *flatbuffers.Builder
+	leasesPipeline := make(chan timeline.PushLeases, s.consumerBufferSize)
+	s.consumers.Store(string(c.ID), leasesPipeline)
 
 	//builder = s.builderPool.Get().(*flatbuffers.Builder)
 	//defer func() {
 	//	builder.Reset()
 	//	s.builderPool.Put(builder)
-	//}()
+	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
-	for i := range leases {
+	for lease := range leasesPipeline {
 		builder.Reset()
 
-		lease := leases[i]
 		msgIDPosition := builder.CreateByteVector(lease.Message.ID)
 		bodyPosition := builder.CreateByteVector(lease.Message.Body)
 		producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
@@ -123,12 +100,12 @@ func (s *innerServer) TimelineConsumerHandshake(req *grpc.TimelineConsumerHandsh
 
 		builder.Finish(rootPosition)
 		if err := stream.Send(builder); err != nil {
+			log.Fatalf("loader failed: %s", err.Error())
 			return err
 		}
 	}
-	buffer.msgs = nil
 
-	return nil
+	return errors.New("coordinator closed this consumer")
 }
 func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
 	go func(stream grpc.Broker_TimelineCreateMessagesServer) {
