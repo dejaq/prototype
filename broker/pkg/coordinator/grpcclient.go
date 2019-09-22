@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 
@@ -15,7 +14,8 @@ import (
 )
 
 type GRPCClient struct {
-	client dejaq.BrokerClient
+	client                 dejaq.BrokerClient
+	ProcessMessageListener func([]timeline.Message)
 }
 
 func NewGRPCClient(cc *grpc.ClientConn) *GRPCClient {
@@ -62,15 +62,15 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 	builder.Finish(requestPosition)
 
 	stream, err := c.client.TimelinePushLeases(context.Background(), builder)
-	if err != nil {
-		log.Fatal(err)
+	if err != nil && err != io.EOF {
+		log.Fatalf("subscribe: %v", err)
 	}
 
 	for {
-		time.Sleep(time.Second)
+		//time.Sleep(time.Second)
 		err = nil
-		var response *dejaq.TimelinePushLeaseResponse
 		var msgs []timeline.Message
+		var response *dejaq.TimelinePushLeaseResponse
 
 		for err == nil {
 			//Recv is blocking
@@ -97,10 +97,7 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 			})
 		}
 
-		//Process the messages
-		for i := range msgs {
-			fmt.Printf("received message ID=%s body=%s", msgs[i].GetID(), string(msgs[i].Body))
-		}
+		c.ProcessMessageListener(msgs)
 
 		//DELETE them
 		go c.Delete(msgs)
@@ -110,7 +107,7 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 func (c *GRPCClient) Delete(msgs []timeline.Message) error {
 	stream, err := c.client.TimelineDelete(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Delete err: %s", err.Error())
 	}
 
 	var builder *flatbuffers.Builder
@@ -122,20 +119,22 @@ func (c *GRPCClient) Delete(msgs []timeline.Message) error {
 		dejaq.TimelineDeleteRequestEnd(builder)
 		err = stream.Send(builder)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Delete2 err: %s", err.Error())
 		}
 	}
 
 	response, err := stream.CloseAndRecv()
-	if err != nil {
-		log.Fatal(err)
+	if err != nil && err != io.EOF {
+		log.Fatalf("Delete3 err: %s", err.Error())
 	}
-	var errorTuple dejaq.TimelineMessageIDErrorTuple
-	var errorInErrorTuple dejaq.Error
-	for i := 0; i < response.MessagesErrorsLength(); i++ {
-		response.MessagesErrors(&errorTuple, i)
-		errorTuple.Err(&errorInErrorTuple)
-		log.Printf("Delete response error id:%s err:%s", string(errorTuple.MessgeIDBytes()), errorInErrorTuple.Message())
+	if response != nil && response.MessagesErrorsLength() > 0 {
+		var errorTuple dejaq.TimelineMessageIDErrorTuple
+		var errorInErrorTuple dejaq.Error
+		for i := 0; i < response.MessagesErrorsLength(); i++ {
+			response.MessagesErrors(&errorTuple, i)
+			errorTuple.Err(&errorInErrorTuple)
+			log.Printf("Delete response error id:%s err:%s", string(errorTuple.MessgeIDBytes()), errorInErrorTuple.Message())
+		}
 	}
 	return nil
 }

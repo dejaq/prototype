@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 
@@ -22,10 +23,11 @@ import (
 func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
+	logger := logrus.New()
 
 	lis, err := net.Listen("tcp", "0.0.0.0:9000")
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		logger.Fatalf("Failed to listen: %v", err)
 	}
 	ser := grpc.NewServer(grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}))
 
@@ -38,18 +40,26 @@ func main() {
 		//CLIENT
 		conn, err := grpc.Dial("0.0.0.0:9000", grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
 		if err != nil {
-			log.Fatalf("Failed to connect: %v", err)
+			logger.Fatalf("Failed to connect: %v", err)
 		}
 		defer conn.Close()
-		defer fmt.Println("closing CLIENT goroutine")
+		defer logger.Println("closing CLIENT goroutine")
 
 		grpcClient := coordinator.NewGRPCClient(conn)
+		grpcClient.ProcessMessageListener = func(msgs []timeline.Message) {
+			//Process the messages
+			logger.Println("received messages from server")
+			for i := range msgs {
+				logger.Printf("received message ID=%s body=%s", msgs[i].GetID(), string(msgs[i].Body))
+			}
+		}
 
 		count := 0
 		for {
 			select {
 			case <-time.After(time.Second):
 				count++
+				logger.Println("sending messages from client")
 				err := grpcClient.InsertMessages(ctx, []timeline.Message{
 					{
 						ID:   []byte(fmt.Sprintf("ID %d", count)),
@@ -57,7 +67,7 @@ func main() {
 					},
 				})
 				if err != nil {
-					log.Printf("InsertMessages ERROR %s", err.Error())
+					logger.Printf("InsertMessages ERROR %s", err.Error())
 				}
 			case <-ctx.Done():
 				return
@@ -66,17 +76,17 @@ func main() {
 	}()
 
 	go func() {
-		defer fmt.Println("closing SERVER goroutine")
+		defer logger.Println("closing SERVER goroutine")
 
 		DejaQ.RegisterBrokerServer(ser, grpServer.InnerServer)
 		if err := ser.Serve(lis); err != nil {
-			log.Printf("Failed to serve: %v", err)
+			logger.Printf("Failed to serve: %v", err)
 		}
 	}()
 	go func() {
 		for range ctx.Done() {
 		}
-		fmt.Println("sending server stop")
+		logger.Println("sending server stop")
 		ser.GracefulStop()
 	}()
 
@@ -85,7 +95,7 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	// Block until we receive our signal.
 	<-c
-	log.Println("shutting down signal received, waiting ...")
+	logger.Println("shutting down signal received, waiting ...")
 	cancel() //propagate trough the context
 	os.Exit(0)
 }

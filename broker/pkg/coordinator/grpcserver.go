@@ -41,7 +41,7 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeline.PushLeases) error {
-	if s.InnerServer == nil {
+	if s.InnerServer.streamToClient == nil {
 		return errors.New("client is not yet subscribed, call TimelinePushLeases")
 	}
 	var builder *flatbuffers.Builder
@@ -52,26 +52,32 @@ func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeli
 	//	s.builderPool.Put(builder)
 	//}()
 	builder = flatbuffers.NewBuilder(128)
-
 	for i := range leases {
+		builder.Reset()
+
 		lease := leases[i]
+		msgIDPosition := builder.CreateByteVector(lease.Message.ID)
+		bodyPosition := builder.CreateByteVector(lease.Message.Body)
+		producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
 		grpc.TimelinePushLeaseMessageStart(builder)
-		grpc.TimelinePushLeaseMessageAddMessageID(builder, builder.CreateByteVector(lease.Message.ID))
+		grpc.TimelinePushLeaseMessageAddMessageID(builder, msgIDPosition)
 		grpc.TimelinePushLeaseMessageAddTimestampMS(builder, lease.Message.TimestampMS)
-		grpc.TimelinePushLeaseMessageAddProducerGroupID(builder, builder.CreateByteVector(lease.Message.ProducerGroupID))
+		grpc.TimelinePushLeaseMessageAddProducerGroupID(builder, producerIDPosition)
 		grpc.TimelinePushLeaseMessageAddVersion(builder, lease.Message.Version)
-		grpc.TimelinePushLeaseMessageAddBody(builder, builder.CreateByteVector(lease.Message.Body))
+		grpc.TimelinePushLeaseMessageAddBody(builder, bodyPosition)
 		msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
 
 		grpc.TimelinePushLeaseResponseStart(builder)
 		grpc.TimelinePushLeaseResponseAddMessage(builder, msgOffset)
-		grpc.TimelinePushLeaseResponseEnd(builder)
+		rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
+
+		builder.Finish(rootPosition)
+		err := s.InnerServer.streamToClient.Send(builder)
+		if err != nil {
+			fmt.Errorf("TimelineCreateMessagesPusher err=%s", err.Error())
+		}
 	}
 
-	err := s.InnerServer.streamToClient.Send(builder)
-	if err != nil {
-		fmt.Errorf("TimelineCreateMessagesPusher err=%s", err.Error())
-	}
 	return nil
 }
 
