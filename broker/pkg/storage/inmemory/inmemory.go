@@ -73,6 +73,13 @@ func (m *InMemory) Update(ctx context.Context, timelineID []byte, messageTimesta
 	return nil
 }
 
+func (m *InMemory) UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
+	for _, msg := range msgs {
+		m.tmp[msg.BucketID][msg.GetID()] = msg
+	}
+	return nil
+}
+
 //LOOKUP message by messageID (owner control, lease operations)
 func (m *InMemory) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil
