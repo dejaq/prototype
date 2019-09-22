@@ -17,7 +17,7 @@ type Repository interface {
 	// INSERT messages (timelineID, []messages) map[msgID]error
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
-	Select(ctx context.Context, timelineID []byte, buckets []int, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
+	Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
 	// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
 	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []errors.MessageIDTuple
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)

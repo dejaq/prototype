@@ -26,7 +26,7 @@ func (m *InMemory) Insert(ctx context.Context, timelineID []byte, msgs []timelin
 	return nil
 }
 
-func (m *InMemory) Select(ctx context.Context, timelineID []byte, buckets []int, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
+func (m *InMemory) Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
 	var result []timeline.Message
 
 	for _, msg := range m.tmp {
