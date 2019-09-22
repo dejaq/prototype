@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/common"
 	"net"
 	"os"
 	"os/signal"
@@ -34,7 +35,14 @@ func main() {
 	grpServer := coordinator.NewGRPCServer(nil)
 
 	mem := inmemory.NewInMemory()
-	coordinator.NewCoordinator(ctx, mem, time.Second, grpServer)
+
+	coordinatorConfig := coordinator.CoordinatorConfig{
+		NoBuckets:    100,
+		TopicType:    common.TopicType_Timeline,
+		TickInterval: time.Second,
+	}
+
+	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer)
 
 	go func() {
 		//CLIENT
