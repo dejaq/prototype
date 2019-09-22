@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"unsafe"
 
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
@@ -12,24 +13,43 @@ import (
 var _ = storage.Repository(&InMemory{})
 
 type InMemory struct {
-	tmp map[string]timeline.Message
+	tmp map[uint16]map[string]timeline.Message
 }
 
 func NewInMemory() *InMemory {
-	return &InMemory{tmp: make(map[string]timeline.Message)}
+	return &InMemory{tmp: make(map[uint16]map[string]timeline.Message)}
 }
 
 func (m *InMemory) Insert(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
 	for _, msg := range msgs {
-		m.tmp[msg.GetID()] = msg
+		if _, ok := m.tmp[msg.BucketID]; !ok {
+			m.tmp[msg.BucketID] = make(map[string]timeline.Message)
+		}
+		m.tmp[msg.BucketID][msg.GetID()] = msg
 	}
 	return nil
 }
 
 func (m *InMemory) Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
 	var result []timeline.Message
+	for _, bucket := range buckets {
+		tmpResult, hasMore, err := m.selectFromBucket(ctx, bucket, limit)
+		if err != nil {
+			return result, hasMore, err
+		}
+		result = append(result, tmpResult...)
+		if !hasMore {
+			return result, hasMore, err
+		}
+	}
 
-	for _, msg := range m.tmp {
+	return result, false, nil
+}
+
+func (m *InMemory) selectFromBucket(ctx context.Context, bucket uint16, limit int) ([]timeline.Message, bool, error) {
+	var result []timeline.Message
+
+	for _, msg := range m.tmp[bucket] {
 		if limit <= 0 {
 			break
 		}
@@ -37,12 +57,14 @@ func (m *InMemory) Select(ctx context.Context, timelineID []byte, buckets []uint
 		result = append(result, msg)
 	}
 
-	return result, len(result) < len(m.tmp), nil
+	return result, len(result) < len(m.tmp[bucket]), nil
 }
 
 func (m *InMemory) Delete(ctx context.Context, timelineID []byte, ids [][]byte) {
-	for _, idAsByte := range ids {
-		delete(m.tmp, string(idAsByte))
+	for _, bucket := range m.tmp {
+		for _, idAsByte := range ids {
+			delete(bucket, *(*string)(unsafe.Pointer(&idAsByte)))
+		}
 	}
 }
 
