@@ -2,12 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"github.com/bgadrian/dejaq-broker/common"
-	"github.com/bgadrian/dejaq-broker/common/errors"
 	"log"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/bgadrian/dejaq-broker/common"
+	"github.com/bgadrian/dejaq-broker/common/errors"
 
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 
@@ -33,7 +34,7 @@ type Coordinator struct {
 	buckets   []uint16
 	consumers []*Consumer
 	server    *GRPCServer
-	*sync.RWMutex
+	lock      *sync.RWMutex
 }
 
 type CoordinatorConfig struct {
@@ -48,6 +49,7 @@ func NewCoordinator(ctx context.Context, config CoordinatorConfig, timelineStora
 		ticker:    time.NewTicker(config.TickInterval),
 		server:    server,
 		consumers: []*Consumer{},
+		lock:      &sync.RWMutex{},
 	}
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
@@ -85,13 +87,13 @@ func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noB
 }
 
 func (c *Coordinator) loadMessages(ctx context.Context) {
-	c.Lock()
+	c.lock.RLock()
 
 	for _, consumer := range c.consumers {
 		c.loadCustomerMessages(ctx, consumer)
 	}
 
-	c.Unlock()
+	c.lock.RUnlock()
 }
 
 func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
@@ -114,7 +116,7 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 }
 
 func (c *Coordinator) RegisterCustomer(consumerID []byte) {
-	c.Lock()
+	c.lock.Lock()
 
 	c.consumers = append(c.consumers, &Consumer{ID: consumerID})
 
@@ -126,7 +128,7 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 		c.consumers[i/len(c.consumers)].AssignedBuckets = append(c.consumers[i/len(c.consumers)].AssignedBuckets, c.buckets[i])
 	}
 
-	c.Unlock()
+	c.lock.Unlock()
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
