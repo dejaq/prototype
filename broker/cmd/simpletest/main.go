@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization/etcd"
+	"go.etcd.io/etcd/clientv3"
 	"net"
 	"os"
 	"os/signal"
@@ -37,13 +39,23 @@ func main() {
 
 	mem := inmemory.NewInMemory()
 
-	coordinatorConfig := coordinator.CoordinatorConfig{
+	etcdCLI, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{"localhost:2379", "localhost:22379", "localhost:32379"},
+		DialTimeout: 5 * time.Second,
+	})
+	if err == nil {
+		defer etcdCLI.Close()
+	}
+
+	synchronization := etcd.NewEtcd(etcdCLI)
+
+	coordinatorConfig := coordinator.Config{
 		NoBuckets:    100,
 		TopicType:    common.TopicType_Timeline,
 		TickInterval: time.Second,
 	}
 
-	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer)
+	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer, synchronization)
 
 	go func() {
 		//CLIENT

@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 	"log"
 	"math"
 	"math/rand"
@@ -33,27 +34,29 @@ type Consumer struct {
 }
 
 type Coordinator struct {
-	storage   storage.Repository
-	ticker    *time.Ticker
-	buckets   []uint16
-	consumers []*Consumer
-	server    *GRPCServer
-	lock      *sync.RWMutex
+	storage         storage.Repository
+	synchronization synchronization.Repository
+	ticker          *time.Ticker
+	buckets         []uint16
+	consumers       []*Consumer
+	server          *GRPCServer
+	lock            *sync.RWMutex
 }
 
-type CoordinatorConfig struct {
+type Config struct {
 	TopicType    common.TopicType
 	NoBuckets    int
 	TickInterval time.Duration
 }
 
-func NewCoordinator(ctx context.Context, config CoordinatorConfig, timelineStorage storage.Repository, server *GRPCServer) *Coordinator {
+func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.Repository, server *GRPCServer, synchronization synchronization.Repository) *Coordinator {
 	c := Coordinator{
-		storage:   timelineStorage,
-		ticker:    time.NewTicker(config.TickInterval),
-		server:    server,
-		consumers: []*Consumer{},
-		lock:      &sync.RWMutex{},
+		storage:         timelineStorage,
+		synchronization: synchronization,
+		ticker:          time.NewTicker(config.TickInterval),
+		server:          server,
+		consumers:       []*Consumer{},
+		lock:            &sync.RWMutex{},
 	}
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)

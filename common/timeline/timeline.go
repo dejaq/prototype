@@ -37,7 +37,7 @@ func (m Message) GetLockConsumerID() string {
 }
 
 type Topic struct {
-	ID              string
+	ID                string
 	CreationTimestamp uint64
 
 	//The state of a topic
