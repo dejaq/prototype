@@ -58,14 +58,31 @@ type Dejaror struct {
 	ClientShouldSync bool
 }
 
+// NewDejaror constructor for a simple error
+func NewDejaror(message, operation string) Dejaror {
+	return Dejaror{
+		Message:   message,
+		Operation: Op(operation),
+		Severity:  DefaultSeverity,
+		Module:    DefaultModule,
+	}
+}
+
+// Error implements the Error interface
 func (d Dejaror) Error() string {
 	return d.Message
+}
+
+// Unwrap implements the Unwrap interface
+func (d Dejaror) Unwrap() error {
+	return d.WrappedErr
 }
 
 func (o Op) String() string {
 	return string(o)
 }
 
+// DeconstructStackTrace takes advantage of wrapping error feature combined with modules and operations can create a human friendly stack trace
 func DeconstructStackTrace(err error) []string {
 	if err == nil {
 		return nil
