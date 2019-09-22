@@ -80,3 +80,9 @@ func DeconstructStackTrace(err error) []string {
 
 	return result
 }
+
+// MessageIDTuple a pair of MessageID and an error
+type MessageIDTuple struct {
+	MessageID []byte
+	Error     Dejaror
+}

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"unsafe"
+
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
+	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	"github.com/gocql/gocql"
-	"unsafe"
 )
 
 const (
@@ -78,7 +80,7 @@ func (w *Cassandra) Init() error {
 }
 
 // INSERT messages (timelineID, []messages) map[msgID]error
-func (w *Cassandra) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []storage.MsgErr {
+func (w *Cassandra) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	batch := w.session.NewBatch(gocql.LoggedBatch)
 	batch.WithContext(ctx)
 	for _, msg := range messages {
@@ -100,12 +102,12 @@ func (w *Cassandra) Select(ctx context.Context, timelineID []byte, buckets []int
 }
 
 // UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
-func (w *Cassandra) Update(ctx context.Context, timelineID []byte, messageTimestamps []storage.MsgTime) []storage.MsgErr {
+func (w *Cassandra) Update(ctx context.Context, timelineID []byte, messageTimestamps []storage.MsgTime) []derrors.MessageIDTuple {
 	return nil
 }
 
 // LOOKUP message by TimelineID, MessageID (owner control, lease operations)
-func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []storage.MsgErr) {
+func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil
 }
 

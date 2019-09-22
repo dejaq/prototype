@@ -38,19 +38,19 @@ func (rcv *Error) MutateSeverity(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(4, n)
 }
 
-func (rcv *Error) Module() uint16 {
+func (rcv *Error) Module() byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetUint16(o + rcv._tab.Pos)
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Error) MutateModule(n uint16) bool {
-	return rcv._tab.MutateUint16Slot(6, n)
+func (rcv *Error) MutateModule(n byte) bool {
+	return rcv._tab.MutateByteSlot(6, n)
 }
 
-func (rcv *Error) King() uint64 {
+func (rcv *Error) Kind() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
@@ -58,7 +58,7 @@ func (rcv *Error) King() uint64 {
 	return 0
 }
 
-func (rcv *Error) MutateKing(n uint64) bool {
+func (rcv *Error) MutateKind(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(8, n)
 }
 
@@ -140,11 +140,11 @@ func ErrorStart(builder *flatbuffers.Builder) {
 func ErrorAddSeverity(builder *flatbuffers.Builder, severity uint16) {
 	builder.PrependUint16Slot(0, severity, 0)
 }
-func ErrorAddModule(builder *flatbuffers.Builder, module uint16) {
-	builder.PrependUint16Slot(1, module, 0)
+func ErrorAddModule(builder *flatbuffers.Builder, module byte) {
+	builder.PrependByteSlot(1, module, 0)
 }
-func ErrorAddKing(builder *flatbuffers.Builder, king uint64) {
-	builder.PrependUint64Slot(2, king, 0)
+func ErrorAddKind(builder *flatbuffers.Builder, kind uint64) {
+	builder.PrependUint64Slot(2, kind, 0)
 }
 func ErrorAddOp(builder *flatbuffers.Builder, op flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(op), 0)

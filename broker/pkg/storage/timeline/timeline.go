@@ -4,13 +4,9 @@ import (
 	"context"
 
 	"github.com/bgadrian/dejaq-broker/common/errors"
+
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 )
-
-type MsgErr struct {
-	MessageID []byte
-	Error     errors.Dejaror
-}
 
 type MsgTime struct {
 	MessageID    []byte
@@ -19,13 +15,13 @@ type MsgTime struct {
 
 type Repository interface {
 	// INSERT messages (timelineID, []messages) map[msgID]error
-	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []MsgErr
+	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
 	Select(ctx context.Context, timelineID []byte, buckets []int, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
 	// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
-	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []MsgErr
+	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []errors.MessageIDTuple
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
-	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []MsgErr)
+	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
 	Delete(ctx context.Context, timelineID []byte, messageIDs [][]byte)
 	// COUNT messages BY TimelineID, RANGE (spike detection/consumer scaling and metrics)

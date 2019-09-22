@@ -36,16 +36,20 @@ func (c *GRPCClient) InsertMessages(ctx context.Context, msgs []timeline.Message
 	var builder *flatbuffers.Builder
 
 	builder = flatbuffers.NewBuilder(128)
+	var root flatbuffers.UOffsetT
 
 	for i := range msgs {
 		msg := msgs[i]
+		idPosition := builder.CreateByteVector(msg.ID)
+		bodyPosition := builder.CreateByteVector(msg.Body)
 		dejaq.TimelineCreateMessageRequestStart(builder)
-		dejaq.TimelineCreateMessageRequestAddId(builder, builder.CreateByteVector(msg.ID))
+		dejaq.TimelineCreateMessageRequestAddId(builder, idPosition)
 		dejaq.TimelineCreateMessageRequestAddTimeoutMS(builder, msg.TimestampMS)
-		dejaq.TimelineCreateMessageRequestAddBody(builder, builder.CreateByteVector(msg.Body))
-		dejaq.TimelineCreateMessageRequestEnd(builder)
+		dejaq.TimelineCreateMessageRequestAddBody(builder, bodyPosition)
+		root = dejaq.TimelineCreateMessageRequestEnd(builder)
 	}
 
+	builder.Finish(root)
 	err = stream.Send(builder)
 	return err
 }
@@ -54,7 +58,8 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
 	dejaq.TimelinePushLeaseSubscribeRequestStart(builder)
-	dejaq.TimelinePushLeaseSubscribeRequestEnd(builder)
+	requestPosition := dejaq.TimelinePushLeaseSubscribeRequestEnd(builder)
+	builder.Finish(requestPosition)
 
 	stream, err := c.client.TimelinePushLeases(context.Background(), builder)
 	if err != nil {

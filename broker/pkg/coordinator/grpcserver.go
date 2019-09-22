@@ -7,7 +7,7 @@ import (
 	"io"
 	"sync"
 
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
+	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	grpc "github.com/bgadrian/dejaq-broker/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -17,23 +17,23 @@ var _ = grpc.BrokerServer(&innerServer{})
 
 //GRPCListeners Coordinator can listen and react to these calls
 type GRPCListeners struct {
-	TimelineCreateMessagesListener func(context.Context, []timeline.Message) []storage.MsgErr
+	TimelineCreateMessagesListener func(context.Context, []timeline.Message) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
 type GRPCServer struct {
-	innerServer *innerServer
+	InnerServer *innerServer
 }
 
 func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 	s := GRPCServer{
 
-		innerServer: &innerServer{
+		InnerServer: &innerServer{
 			builderPool: sync.Pool{},
 			listeners:   listeners,
 		},
 	}
-	s.innerServer.builderPool.New = func() interface{} {
+	s.InnerServer.builderPool.New = func() interface{} {
 		return flatbuffers.NewBuilder(128)
 	}
 	return &s
@@ -41,7 +41,7 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeline.PushLeases) error {
-	if s.innerServer == nil {
+	if s.InnerServer == nil {
 		return errors.New("client is not yet subscribed, call TimelinePushLeases")
 	}
 	var builder *flatbuffers.Builder
@@ -63,12 +63,12 @@ func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, leases []timeli
 		grpc.TimelinePushLeaseMessageAddBody(builder, builder.CreateByteVector(lease.Message.Body))
 		msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
 
-		grpc.TimelinePushLeaseRequestStart(builder)
-		grpc.TimelinePushLeaseRequestAddMessage(builder, msgOffset)
-		grpc.TimelinePushLeaseRequestEnd(builder)
+		grpc.TimelinePushLeaseResponseStart(builder)
+		grpc.TimelinePushLeaseResponseAddMessage(builder, msgOffset)
+		grpc.TimelinePushLeaseResponseEnd(builder)
 	}
 
-	err := s.innerServer.streamToClient.Send(builder)
+	err := s.InnerServer.streamToClient.Send(builder)
 	if err != nil {
 		fmt.Errorf("TimelineCreateMessagesPusher err=%s", err.Error())
 	}
@@ -81,7 +81,7 @@ type innerServer struct {
 	listeners      *GRPCListeners
 }
 
-func (s *innerServer) TimelinePushLeases(req *grpc.TimelinePushLeaseRequest, stream grpc.Broker_TimelinePushLeasesServer) error {
+func (s *innerServer) TimelinePushLeases(req *grpc.TimelinePushLeaseSubscribeRequest, stream grpc.Broker_TimelinePushLeasesServer) error {
 	//TODO this is a temporary subscribe to the topic, we keep its stream here open
 	s.streamToClient = stream
 	return nil
@@ -118,10 +118,16 @@ func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMe
 			})
 		}
 
-		errors := s.listeners.TimelineCreateMessagesListener(context.Background(), msgs)
+		msgErrors := s.listeners.TimelineCreateMessagesListener(context.Background(), msgs)
 
 		//returns the response to the client
-		err = stream.SendMsg(errors)
+		var builder *flatbuffers.Builder
+		builder = flatbuffers.NewBuilder(128)
+
+		root := writeTimelineResponse(msgErrors, builder)
+		builder.Finish(root)
+
+		err = stream.SendMsg(builder)
 		if err != nil {
 			fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
 		}
@@ -140,4 +146,41 @@ func (s *innerServer) TimelineDelete(grpc.Broker_TimelineDeleteServer) error {
 }
 func (s *innerServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) (*flatbuffers.Builder, error) {
 	return nil, nil
+}
+
+func writeTimelineResponse(errors []derrors.MessageIDTuple, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	var rootListErrors flatbuffers.UOffsetT
+	if len(errors) == 0 {
+		return rootListErrors
+	}
+	for i := range errors {
+		messageIDRoot := builder.CreateByteVector(errors[i].MessageID)
+		errorRoot := writeError(errors[i].Error, builder)
+		grpc.TimelineMessageIDErrorTupleStart(builder)
+		grpc.TimelineMessageIDErrorTupleAddMessgeID(builder, messageIDRoot)
+		grpc.TimelineMessageIDErrorTupleAddErr(builder, errorRoot)
+		rootListErrors = grpc.TimelineMessageIDErrorTupleEnd(builder)
+	}
+
+	grpc.TimelineResponseStart(builder)
+	grpc.TimelineResponseAddMessagesErrors(builder, rootListErrors)
+	grpc.TimelineResponseEnd(builder)
+
+	return grpc.ErrorEnd(builder)
+}
+
+func writeError(err derrors.Dejaror, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	//TODO first add the details tuples (map to tuples)
+
+	messageRoot := builder.CreateString(err.Message)
+	opRoot := builder.CreateString(err.Operation.String())
+	grpc.ErrorStart(builder)
+	grpc.ErrorAddMessage(builder, messageRoot)
+	grpc.ErrorAddOp(builder, opRoot)
+	grpc.ErrorAddKind(builder, uint64(err.Kind))
+	grpc.ErrorAddSeverity(builder, uint16(err.Severity))
+	grpc.ErrorAddShouldRetry(builder, err.ShouldRetry)
+	grpc.ErrorAddShouldSync(builder, err.ClientShouldSync)
+	grpc.ErrorAddModule(builder, uint8(err.Module))
+	return grpc.ErrorEnd(builder)
 }

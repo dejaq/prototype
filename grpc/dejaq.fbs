@@ -8,8 +8,8 @@ table ErrorDetails {
 }
 table Error {
     severity:ushort;
-    module:ushort;
-    king:ulong;
+    module:ubyte;
+    kind:ulong;
     op:string;
     message:string;
     details:[ErrorDetails];
