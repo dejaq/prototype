@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"log"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noB
 	case common.TopicType_Timeline:
 		c.buckets = make([]uint16, noBuckets)
 		for i := range c.buckets {
-			c.buckets[i] = uint16(rand.Intn(len(c.buckets)))
+			c.buckets[i] = uint16(rand.Intn(math.MaxUint16))
 		}
 	default:
 		log.Fatal("not implemented")
@@ -133,17 +134,18 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 		consumers.AssignedBuckets = []uint16{}
 	}
 
-	for i := range c.buckets {
-		consumerIndex := i/len(c.consumers) - 1
-		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, c.buckets[i])
+	maxBuckets := len(c.buckets)/len(c.consumers) + 1
+	for i, b := range c.buckets {
+		consumerIndex := i/maxBuckets
+		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, b)
 	}
 
 	c.lock.Unlock()
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
-	for _, msg := range msgs {
-		msg.BucketID = c.buckets[rand.Intn(len(c.buckets))]
+	for i := range msgs {
+		msgs[i].BucketID = c.buckets[rand.Intn(len(c.buckets))]
 	}
 	return c.storage.Insert(ctx, GetDefaultTimelineID(), msgs)
 }
