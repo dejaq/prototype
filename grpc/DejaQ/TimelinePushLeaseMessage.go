@@ -152,8 +152,20 @@ func (rcv *TimelinePushLeaseMessage) MutateVersion(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(12, n)
 }
 
+func (rcv *TimelinePushLeaseMessage) BucketID() uint16 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
+	if o != 0 {
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelinePushLeaseMessage) MutateBucketID(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(14, n)
+}
+
 func TimelinePushLeaseMessageStart(builder *flatbuffers.Builder) {
-	builder.StartObject(5)
+	builder.StartObject(6)
 }
 func TimelinePushLeaseMessageAddMessageID(builder *flatbuffers.Builder, messageID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(messageID), 0)
@@ -178,6 +190,9 @@ func TimelinePushLeaseMessageStartProducerGroupIDVector(builder *flatbuffers.Bui
 }
 func TimelinePushLeaseMessageAddVersion(builder *flatbuffers.Builder, version uint16) {
 	builder.PrependUint16Slot(4, version, 0)
+}
+func TimelinePushLeaseMessageAddBucketID(builder *flatbuffers.Builder, bucketID uint16) {
+	builder.PrependUint16Slot(5, bucketID, 0)
 }
 func TimelinePushLeaseMessageEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

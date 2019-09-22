@@ -129,8 +129,8 @@ func (c *GRPCClient) subscribe(ctx context.Context) {
 				//Body:            nil,
 				//ProducerGroupID: nil,
 				//LockConsumerID:  nil,
-				//BucketID:        0,
-				Version: msg.Version(),
+				BucketID: msg.BucketID(),
+				Version:  msg.Version(),
 			}})
 		}
 	}
@@ -148,9 +148,11 @@ func (c *GRPCClient) Delete(msgs []timeline.Message) error {
 	for i := range msgs {
 		builder.Reset()
 
-		messageIDPostition := builder.CreateByteVector(msgs[i].ID)
+		msgIDPosition := builder.CreateByteVector(msgs[i].ID)
 		dejaq.TimelineDeleteRequestStart(builder)
-		dejaq.TimelineDeleteRequestAddMessageID(builder, messageIDPostition)
+		dejaq.TimelineDeleteRequestAddMessageID(builder, msgIDPosition)
+		dejaq.TimelineDeleteRequestAddBucketID(builder, msgs[i].BucketID)
+		dejaq.TimelineDeleteRequestAddVersion(builder, msgs[i].Version)
 		rootPosition := dejaq.TimelineDeleteRequestEnd(builder)
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
@@ -159,18 +161,18 @@ func (c *GRPCClient) Delete(msgs []timeline.Message) error {
 		}
 	}
 
-	response, err := stream.CloseAndRecv()
+	_, err = stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
 		log.Fatalf("Delete3 err: %s", err.Error())
 	}
-	if response != nil && response.MessagesErrorsLength() > 0 {
-		var errorTuple dejaq.TimelineMessageIDErrorTuple
-		var errorInErrorTuple dejaq.Error
-		for i := 0; i < response.MessagesErrorsLength(); i++ {
-			response.MessagesErrors(&errorTuple, i)
-			errorTuple.Err(&errorInErrorTuple)
-			log.Printf("Delete response error id:%s err:%s", string(errorTuple.MessgeIDBytes()), errorInErrorTuple.Message())
-		}
-	}
+	//if response != nil && response.MessagesErrorsLength() > 0 {
+	//	var errorTuple dejaq.TimelineMessageIDErrorTuple
+	//	var errorInErrorTuple dejaq.Error
+	//	for i := 0; i < response.MessagesErrorsLength(); i++ {
+	//		response.MessagesErrors(&errorTuple, i)
+	//		errorTuple.Err(&errorInErrorTuple)
+	//		log.Printf("Delete response error id:%s err:%s", string(errorTuple.MessgeIDBytes()), errorInErrorTuple.Message())
+	//	}
+	//}
 	return nil
 }

@@ -42,6 +42,7 @@ table TimelinePushLeaseMessage {
     timestampMS:ulong;
     producerGroupID:[ubyte];
     version:ushort;
+    bucketID:ushort;
 }
 
 table TimelinePushLeaseResponse {
@@ -80,6 +81,7 @@ table TimelineDeleteRequest {
     timeoutMS:ulong;
     messageID:[ubyte];
     version:ushort;
+    bucketID:ushort;
 }
 
 table TimelineCountRequest {

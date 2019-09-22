@@ -92,8 +92,20 @@ func (rcv *TimelineDeleteRequest) MutateVersion(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(10, n)
 }
 
+func (rcv *TimelineDeleteRequest) BucketID() uint16 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	if o != 0 {
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *TimelineDeleteRequest) MutateBucketID(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(12, n)
+}
+
 func TimelineDeleteRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(5)
 }
 func TimelineDeleteRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
@@ -109,6 +121,9 @@ func TimelineDeleteRequestStartMessageIDVector(builder *flatbuffers.Builder, num
 }
 func TimelineDeleteRequestAddVersion(builder *flatbuffers.Builder, version uint16) {
 	builder.PrependUint16Slot(3, version, 0)
+}
+func TimelineDeleteRequestAddBucketID(builder *flatbuffers.Builder, bucketID uint16) {
+	builder.PrependUint16Slot(4, bucketID, 0)
 }
 func TimelineDeleteRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

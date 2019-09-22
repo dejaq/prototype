@@ -21,6 +21,7 @@ type GRPCListeners struct {
 	TimelineCreateMessagesListener func(context.Context, []timeline.Message) []derrors.MessageIDTuple
 	TimelineConsumerSubscribed     func(context.Context, Consumer)
 	TimelineConsumerUnSubscribed   func(context.Context, Consumer)
+	TimelineDeleteMessagesListener func(ctx context.Context, msgs []timeline.Message) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -45,8 +46,11 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 }
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
-func (s *GRPCServer) pushMessagesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
-	asInterface, _ := s.InnerServer.consumers.Load(string(consumerID))
+func (s *GRPCServer) PushLeasesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
+	asInterface, isSubscribed := s.InnerServer.consumers.Load(string(consumerID))
+	if !isSubscribed {
+		return errors.New("cannot find the subscription")
+	}
 	buffer := asInterface.(chan timeline.PushLeases)
 
 	for i := range leases {
@@ -162,8 +166,36 @@ func (s *innerServer) TimelineExtendLease(grpc.Broker_TimelineExtendLeaseServer)
 func (s *innerServer) TimelineRelease(grpc.Broker_TimelineReleaseServer) error {
 	return nil
 }
-func (s *innerServer) TimelineDelete(grpc.Broker_TimelineDeleteServer) error {
-	return nil
+func (s *innerServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) error {
+	var err error
+	var req *grpc.TimelineDeleteRequest
+
+	var batch []timeline.Message
+	for err == nil {
+		req, err = stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		batch = append(batch, timeline.Message{
+			ID:              req.MessageIDBytes(),
+			TimestampMS:     0,
+			BodyID:          nil,
+			Body:            nil,
+			ProducerGroupID: nil,
+			LockConsumerID:  nil,
+			BucketID:        req.BucketID(),
+			Version:         req.Version(),
+		})
+	}
+	responseErrors := s.listeners.TimelineDeleteMessagesListener(context.Background(), batch)
+	builder := flatbuffers.NewBuilder(128)
+	rootPosition := writeTimelineResponse(responseErrors, builder)
+	builder.Finish(rootPosition)
+	return stream.SendAndClose(builder)
 }
 func (s *innerServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) (*flatbuffers.Builder, error) {
 	return nil, nil

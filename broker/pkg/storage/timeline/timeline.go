@@ -25,7 +25,7 @@ type Repository interface {
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
-	Delete(ctx context.Context, timelineID []byte, messageIDs [][]byte)
+	Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []errors.MessageIDTuple
 	// COUNT messages BY TimelineID, RANGE (spike detection/consumer scaling and metrics)
 	CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64
 	// COUNT messages BY TimelineID, RANGE and LockConsumerID is empty (count processing status)

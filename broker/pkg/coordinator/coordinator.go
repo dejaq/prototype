@@ -2,12 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 	"log"
 	"math"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 
 	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
@@ -69,6 +70,11 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 		TimelineConsumerUnSubscribed: func(i context.Context, consumer Consumer) {
 			//TODO make unsubscribe
 		},
+		TimelineDeleteMessagesListener: func(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
+			//TODO add here a way to identify the consumer or producer
+			//only specific clients can delete specific messages
+			return c.storage.Delete(ctx, GetDefaultTimelineID(), msgs)
+		},
 	}
 
 	go func() {
@@ -126,7 +132,7 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	}
 
 	c.storage.UpdateLeases(ctx, []byte(consumer.Topic), available)
-	err := c.server.pushMessagesToConsumer(ctx, consumer.ID, toSend)
+	err := c.server.PushLeasesToConsumer(ctx, consumer.ID, toSend)
 	if err != nil {
 		//cancel the leases!
 	}

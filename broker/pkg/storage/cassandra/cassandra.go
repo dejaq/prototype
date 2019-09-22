@@ -116,8 +116,8 @@ func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs []
 }
 
 // DELETE messages by TimelineID, MessageID map[msgID]error
-func (w *Cassandra) Delete(ctx context.Context, timelineID []byte, messageIDs [][]byte) {
-	return
+func (w *Cassandra) Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []derrors.MessageIDTuple {
+	return nil
 }
 
 // COUNT messages BY TimelineID, RANGE (spike detection/consumer scaling and metrics)

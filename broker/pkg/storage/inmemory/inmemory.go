@@ -2,7 +2,6 @@ package inmemory
 
 import (
 	"context"
-	"unsafe"
 
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
@@ -60,12 +59,13 @@ func (m *InMemory) selectFromBucket(ctx context.Context, bucket uint16, limit in
 	return result, len(result) < len(m.tmp[bucket]), nil
 }
 
-func (m *InMemory) Delete(ctx context.Context, timelineID []byte, ids [][]byte) {
+func (m *InMemory) Delete(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
 	for _, bucket := range m.tmp {
-		for _, idAsByte := range ids {
-			delete(bucket, *(*string)(unsafe.Pointer(&idAsByte)))
+		for _, msg := range msgs {
+			delete(bucket, msg.GetID())
 		}
 	}
+	return nil
 }
 
 //------------------------------- We do not need these for now

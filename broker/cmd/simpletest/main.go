@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization/etcd"
-	"go.etcd.io/etcd/clientv3"
 	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization/etcd"
+	"go.etcd.io/etcd/clientv3"
 
 	"github.com/bgadrian/dejaq-broker/common"
 
@@ -49,18 +50,8 @@ func main() {
 
 	synchronization := etcd.NewEtcd(etcdCLI)
 
-	etcdCLI, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{"localhost:2379", "localhost:22379", "localhost:32379"},
-		DialTimeout: 5 * time.Second,
-	})
-	if err == nil {
-		defer etcdCLI.Close()
-	}
-
-	synchronization := etcd.NewEtcd(etcdCLI)
-
 	coordinatorConfig := coordinator.Config{
-		NoBuckets:    100,
+		NoBuckets:    1,
 		TopicType:    common.TopicType_Timeline,
 		TickInterval: time.Millisecond * 50,
 	}
@@ -77,7 +68,7 @@ func main() {
 		defer logger.Println("closing CLIENT goroutine")
 
 		grpcClient := coordinator.NewGRPCClient(conn, coordinator.ClientConsumer{
-			ConsumerID: nil,
+			ConsumerID: []byte("alfa"),
 			Topic:      "default_timeline",
 			Cluster:    "",
 			LeaseMs:    30 * 1000,
