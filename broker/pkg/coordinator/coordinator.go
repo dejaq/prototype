@@ -107,7 +107,7 @@ func (c *Coordinator) loadMessages(ctx context.Context) {
 }
 
 func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
-	available, _, _ := c.storage.Select(ctx, GetDefaultTimelineID(), consumer.AssignedBuckets, 10, uint64(time.Now().UTC().Unix()))
+	available, _, _ := c.storage.Select(ctx, []byte(consumer.Topic), consumer.AssignedBuckets, 10, uint64(time.Now().UTC().Unix()))
 	if len(available) == 0 {
 		return
 	}
@@ -118,7 +118,11 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 			ConsumerID:            consumer.ID,
 			Message:               timeline.NewLeaseMessage(available[i]),
 		}
+		available[i].LockConsumerID = consumer.ID
+		available[i].TimestampMS += consumer.LeaseMs
 	}
+
+	c.storage.UpdateLeases(ctx, []byte(consumer.Topic), available)
 	err := c.server.pushMessagesToConsumer(ctx, consumer.ID, toSend)
 	if err != nil {
 		//cancel the leases!
@@ -136,7 +140,7 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 
 	maxBuckets := len(c.buckets)/len(c.consumers) + 1
 	for i, b := range c.buckets {
-		consumerIndex := i/maxBuckets
+		consumerIndex := i / maxBuckets
 		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, b)
 	}
 

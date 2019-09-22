@@ -106,6 +106,10 @@ func (w *Cassandra) Update(ctx context.Context, timelineID []byte, messageTimest
 	return nil
 }
 
+func (w *Cassandra) UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
+	return nil
+}
+
 // LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil

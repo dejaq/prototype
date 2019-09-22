@@ -20,6 +20,8 @@ type Repository interface {
 	Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
 	// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
 	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []errors.MessageIDTuple
+	// UPDATE lease BY TimelineID, MessageIDs (map[msgID]newLease])  map[msgID]error (for extend lease)
+	UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []errors.MessageIDTuple
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
