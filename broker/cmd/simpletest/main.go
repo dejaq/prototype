@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/common/metrics/exporter"
 	"net"
 	"os"
 	"os/signal"
@@ -25,7 +26,12 @@ import (
 	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/inmemory"
 )
 
+const (
+	subsystem = "broker"
+)
+
 func main() {
+	go exporter.SetupStandardMetricsExporter(subsystem)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	logger := logrus.New()

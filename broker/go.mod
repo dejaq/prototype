@@ -10,6 +10,7 @@ require (
 	github.com/gogo/protobuf v1.3.0 // indirect
 	github.com/google/flatbuffers v1.11.0
 	github.com/google/uuid v1.1.1 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20190826022208-cac0b30c2563
 	github.com/sirupsen/logrus v1.4.2
 	go.etcd.io/etcd v3.3.15+incompatible
 	go.uber.org/atomic v1.4.0 // indirect
