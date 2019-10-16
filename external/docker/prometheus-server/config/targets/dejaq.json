@@ -1,0 +1,8 @@
+[
+  {
+    "targets": [ "dejaq:2112" ],
+    "labels": {
+      "job": "dejaq"
+    }
+  }
+]

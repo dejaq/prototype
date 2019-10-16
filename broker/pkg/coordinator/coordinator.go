@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"github.com/rcrowley/go-metrics"
 	"log"
 	"math"
 	"math/rand"
@@ -18,8 +19,17 @@ import (
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 )
 
+const (
+	numberOfTopics    = "topics"
+	numberOfTimelines = "timelines"
+	numberOfMessages  = "messages"
+)
+
 var (
-	defaultTimelineID = "default_timeline"
+	defaultTimelineID      = "default_timeline"
+	metricTopicsCounter    = metrics.NewRegisteredCounter(numberOfTopics, nil)
+	metricTimelinesCounter = metrics.NewRegisteredCounter(numberOfTimelines, nil)
+	metricMessagesCounter  = metrics.NewRegisteredCounter(numberOfMessages, nil)
 )
 
 func GetDefaultTimelineID() []byte {
@@ -94,8 +104,10 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 }
 
 func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noBuckets int) {
+	metricTopicsCounter.Inc(1)
 	switch topicType {
 	case common.TopicType_Timeline:
+		metricTimelinesCounter.Inc(1)
 		c.buckets = make([]uint16, noBuckets)
 		for i := range c.buckets {
 			c.buckets[i] = uint16(rand.Intn(math.MaxUint16))
@@ -157,6 +169,7 @@ func (c *Coordinator) RegisterCustomer(consumerID []byte) {
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
+	metricMessagesCounter.Inc(int64(len(msgs)))
 	for i := range msgs {
 		msgs[i].BucketID = c.buckets[rand.Intn(len(c.buckets))]
 	}
