@@ -45,6 +45,7 @@ type Consumer struct {
 }
 
 type Coordinator struct {
+	dealer          Dealer
 	storage         storage.Repository
 	synchronization synchronization.Repository
 	ticker          *time.Ticker
@@ -72,13 +73,15 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
 
+	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID:c.buckets})
+
 	server.InnerServer.listeners = &GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
-		TimelineConsumerSubscribed: func(i context.Context, consumer Consumer) {
-			c.RegisterCustomer(consumer.ID)
+		TimelineConsumerSubscribed: func(ctx context.Context, consumer Consumer) {
+			c.RegisterCustomer(consumer)
 		},
-		TimelineConsumerUnSubscribed: func(i context.Context, consumer Consumer) {
-			//TODO make unsubscribe
+		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer Consumer) {
+			c.DeRegisterCustomer(consumer)
 		},
 		TimelineDeleteMessagesListener: func(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
@@ -150,20 +153,28 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	}
 }
 
-func (c *Coordinator) RegisterCustomer(consumerID []byte) {
+func (c *Coordinator) RegisterCustomer(consumer Consumer) {
 	c.lock.Lock()
 
-	c.consumers = append(c.consumers, &Consumer{ID: consumerID})
+	// TODO validate it didn't used another registered consumer's id
+	c.consumers = append(c.consumers, &consumer)
 
-	for _, consumers := range c.consumers {
-		consumers.AssignedBuckets = []uint16{}
+	c.dealer.Shuffle(consumer.Topic, c.consumers)
+
+	c.lock.Unlock()
+}
+
+func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
+	c.lock.Lock()
+
+	for i, cons := range c.consumers {
+		if string(cons.ID) == string(consumer.ID) {
+			c.consumers = append(c.consumers[:i], c.consumers[i+1:]...)
+			break
+		}
 	}
 
-	maxBuckets := len(c.buckets)/len(c.consumers) + 1
-	for i, b := range c.buckets {
-		consumerIndex := i / maxBuckets
-		c.consumers[consumerIndex].AssignedBuckets = append(c.consumers[consumerIndex].AssignedBuckets, b)
-	}
+	c.dealer.Shuffle(consumer.Topic, c.consumers)
 
 	c.lock.Unlock()
 }
