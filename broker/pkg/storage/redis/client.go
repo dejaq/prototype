@@ -3,6 +3,7 @@ package redis
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 
 	"github.com/go-redis/redis"
 
@@ -63,8 +64,6 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, msgs []timeline.
 			fmt.Println(err)
 		}
 
-		fmt.Printf("insert timelineKey: %s", timelineKey)
-
 		// TODO improve here, find a better solution to translate a type into map
 		messageKey := c.createMessageKey("cluster_name:", string(timelineID), string(msg.BucketID), string(msg.ID))
 		data := make(map[string]interface{})
@@ -74,8 +73,8 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, msgs []timeline.
 		data["Body"] = string(msg.Body)
 		data["ProducerGroupID"] = string(msg.ProducerGroupID)
 		data["LockConsumerID"] = string(msg.LockConsumerID)
-		data["BucketID"] = string(msg.BucketID)
-		data["Version"] = string(msg.Version)
+		data["BucketID"] = []byte(strconv.Itoa(int(msg.BucketID)))
+		data["Version"] = []byte(strconv.Itoa(int(msg.Version)))
 
 		err = c.client.HMSet(messageKey, data).Err()
 		// TODO return derrors here
@@ -122,20 +121,21 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []uint16
 				fmt.Println(err)
 			}
 
-			_ = rawMessage
-
+			// TODO better conversion with unsafe
 			var message timeline.Message
-			// TODO convert data here
-			message.ID = []byte("have to convert messageId")
-			//message.BodyID = rawMessage[1].([]byte)
-			//message.Body = rawMessage[2].([]byte)
-			//message.ProducerGroupID = rawMessage[3].([]byte)
-			//message.LockConsumerID = rawMessage[4].([]byte)
-			//message.BucketID = rawMessage[5].(uint16)
-			//message.Version = rawMessage[6].(uint16)
+			message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
+			message.BodyID = []byte(fmt.Sprintf("%v", rawMessage[1]))
+			message.Body = []byte(fmt.Sprintf("%v", rawMessage[2]))
+			message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[3]))
+			message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[4]))
+
+			// format bucketID and version
+			bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
+			message.BucketID = uint16(bucketIdUint16)
+			version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
+			message.Version = uint16(version)
 
 			results = append(results, message)
-			limit--
 		}
 	}
 
