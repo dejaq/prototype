@@ -2,12 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"github.com/rcrowley/go-metrics"
 	"log"
 	"math"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/rcrowley/go-metrics"
 
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 
@@ -73,7 +74,7 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
 
-	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID:c.buckets})
+	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID: c.buckets})
 
 	server.InnerServer.listeners = &GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
