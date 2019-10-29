@@ -36,12 +36,14 @@ func NewClient(host string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) createTimelineKey(clusterName string, timelineId string, bucketId string) string {
-	return clusterName + ":" + timelineId + ":" + bucketId + ":timeline"
+func (c *Client) createTimelineKey(clusterName string, timelineId []byte, bucketId uint16) string {
+	idBucket := strconv.Itoa(int(bucketId))
+	return clusterName + "::" + string(timelineId) + "::" + idBucket + "::timeline"
 }
 
-func (c *Client) createMessageKey(clusterName string, timelineId string, bucketId string, messageId string) string {
-	return clusterName + ":" + timelineId + ":" + bucketId + ":" + messageId
+func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketId uint16, messageId []byte) string {
+	idBucket := strconv.Itoa(int(bucketId))
+	return clusterName + "::" + string(timelineId) + "::" + idBucket + "::" + string(messageId)
 }
 
 func (c *Client) Insert(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
@@ -53,9 +55,9 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, msgs []timeline.
 		msg.TimestampMS = uint64(rand.Intn(1000))
 
 		// sorted set could keep 4 billions of records
-		timelineKey := c.createTimelineKey("cluster_name", string(timelineID), string(msg.BucketID))
+		timelineKey := c.createTimelineKey("cluster_name", timelineID, msg.BucketID)
 		err := c.client.ZAdd(timelineKey, &redis.Z{
-			Member: string(msg.ID),
+			Member: msg.ID,
 			Score:  float64(msg.TimestampMS),
 		}).Err()
 
@@ -65,7 +67,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, msgs []timeline.
 		}
 
 		// TODO improve here, find a better solution to translate a type into map
-		messageKey := c.createMessageKey("cluster_name:", string(timelineID), string(msg.BucketID), string(msg.ID))
+		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
 		data := make(map[string]interface{})
 		data["ID"] = string(msg.ID)
 		data["TimestampMS"] = string(msg.TimestampMS)
@@ -96,7 +98,7 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []uint16
 	timelineID = []byte("default_timeline")
 
 	for _, bucketId := range buckets {
-		timelineKey := c.createTimelineKey("cluster_name", string(timelineID), string(bucketId))
+		timelineKey := c.createTimelineKey("cluster_name", timelineID, bucketId)
 
 		msgIds, err := c.client.ZRangeByScore(timelineKey, &redis.ZRangeBy{
 			Min:    "-inf",
@@ -111,7 +113,7 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []uint16
 		}
 
 		for _, msgId := range msgIds {
-			messageKey := c.createMessageKey("cluster_name:", string(timelineID), string(bucketId), string(msgId))
+			messageKey := c.createMessageKey("cluster_name:", timelineID, bucketId, []byte(msgId))
 			rawMessage, err := c.client.HMGet(
 				messageKey,
 				"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
@@ -142,13 +144,40 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []uint16
 	return results, false, nil
 }
 
-func (c *Client) selectFromBucket(ctx context.Context, bucket uint16, limit int) ([]timeline.Message, bool, error) {
-	var result []timeline.Message
-
-	return result, false, nil
-}
-
 func (c *Client) Delete(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
+	// TODO use transaction here MULTI and EXEC
+
+	for _, msg := range msgs {
+		// TODO messageId always is 0
+		msg.BucketID = 53126
+
+		// deleted from sorted set
+		timelineKey := c.createTimelineKey("cluster_name", timelineID, msg.BucketID)
+		ok, err := c.client.ZRem(timelineKey, msg.ID).Result()
+
+		// TODO return derrors here
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		// TODO check if ok is 1
+		_ := ok
+
+		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
+		fmt.Println(messageKey)
+		ok, err = c.client.HDel(
+			messageKey,
+			"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version",
+		).Result()
+
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		// TODO check if ok is equal with number of fields that have to be deleted
+		_ := ok
+	}
+
 	return nil
 }
 
