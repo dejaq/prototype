@@ -3,11 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bgadrian/dejaq-broker/common/metrics/exporter"
 	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/prometheus/common/log"
+
+	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
+
+	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
+	"github.com/bgadrian/dejaq-broker/common/metrics/exporter"
 
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization/etcd"
 	"go.etcd.io/etcd/clientv3"
@@ -65,24 +71,38 @@ func main() {
 	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer, synchronization)
 
 	go func() {
+		//wait for the server to be up
+		time.Sleep(time.Second)
+
 		//CLIENT
-		conn, err := grpc.Dial("0.0.0.0:9000", grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
+		conn, err := grpc.Dial("127.0.0.1:9000", grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
 		if err != nil {
 			logger.Fatalf("Failed to connect: %v", err)
 		}
 		defer conn.Close()
 		defer logger.Println("closing CLIENT goroutine")
 
-		grpcClient := coordinator.NewGRPCClient(conn, coordinator.ClientConsumer{
-			ConsumerID: []byte("alfa"),
+		consumer.NewConsumer(ctx, conn, conn, &consumer.Config{
+			ConsumerID: "alfa",
 			Topic:      "default_timeline",
 			Cluster:    "",
 			LeaseMs:    30 * 1000,
+			ProcessMessageListener: func(lease timeline.PushLeases) {
+				//Process the messages
+				logger.Printf("received message ID=%s body=%s\n", lease.Message.ID, string(lease.Message.Body))
+			},
 		})
-		grpcClient.ProcessMessageListener = func(lease timeline.PushLeases) {
-			//Process the messages
-			logger.Printf("received message ID=%s body=%s\n", lease.Message.ID, string(lease.Message.Body))
+		log.Info("consumer handshake success")
+
+		creator := producer.NewProducer(conn, conn, &producer.Config{
+			Cluster:         "",
+			Topic:           "default_timeline",
+			ProducerGroupID: "ProducerMega",
+		})
+		if err := creator.Handshake(ctx); err != nil {
+			log.Fatal("producer handshake failed", err)
 		}
+		log.Info("producer handshake success")
 
 		count := 0
 		for {
@@ -97,7 +117,7 @@ func main() {
 						Body: []byte(fmt.Sprintf("BODY %d", count+i)),
 					})
 				}
-				err := grpcClient.InsertMessages(ctx, batch)
+				err := creator.InsertMessages(ctx, batch)
 				if err != nil {
 					logger.Printf("InsertMessages ERROR %s", err.Error())
 				}
@@ -113,6 +133,7 @@ func main() {
 		defer logger.Println("closing SERVER goroutine")
 
 		DejaQ.RegisterBrokerServer(ser, grpServer.InnerServer)
+		log.Info("start server")
 		if err := ser.Serve(lis); err != nil {
 			logger.Printf("Failed to serve: %v", err)
 		}

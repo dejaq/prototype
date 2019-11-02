@@ -18,7 +18,8 @@ var _ = grpc.BrokerServer(&innerServer{})
 
 //GRPCListeners Coordinator can listen and react to these calls
 type GRPCListeners struct {
-	TimelineCreateMessagesListener func(context.Context, []timeline.Message) []derrors.MessageIDTuple
+	TimelineCreateMessagesListener func(context.Context, []byte, []timeline.Message) []derrors.MessageIDTuple
+	TimelineProducerSubscribed     func(context.Context, Producer)
 	TimelineConsumerSubscribed     func(context.Context, Consumer)
 	TimelineConsumerUnSubscribed   func(context.Context, Consumer)
 	TimelineDeleteMessagesListener func(ctx context.Context, msgs []timeline.Message) []derrors.MessageIDTuple
@@ -33,26 +34,43 @@ func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
 	s := GRPCServer{
 
 		InnerServer: &innerServer{
-			builderPool:        sync.Pool{},
-			listeners:          listeners,
-			consumers:          sync.Map{},
-			consumerBufferSize: 50,
+			listeners: listeners,
+			greeter: &Greeter{
+				RWMutex:                       sync.RWMutex{},
+				consumerIDsAndSessionIDs:      make(map[string]string, 128),
+				consumerSessionIDAndID:        make(map[string]string, 128),
+				consumerIDsAndPipelines:       make(map[string]chan timeline.PushLeases), //not buffered!!!
+				producerSessionIDs:            make(map[string]*grpc.TimelineProducerHandshakeRequest),
+				producerGroupIDsAndSessionIDs: make(map[string]string),
+			},
 		},
-	}
-	s.InnerServer.builderPool.New = func() interface{} {
-		return flatbuffers.NewBuilder(128)
 	}
 	return &s
 }
 
 // TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
 func (s *GRPCServer) PushLeasesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
-	asInterface, isSubscribed := s.InnerServer.consumers.Load(string(consumerID))
-	if !isSubscribed {
-		return errors.New("cannot find the subscription")
-	}
-	buffer := asInterface.(chan timeline.PushLeases)
+	s.InnerServer.greeter.RWMutex.RLock()
+	defer s.InnerServer.greeter.RWMutex.RUnlock()
 
+	if _, hasSession := s.InnerServer.greeter.consumerIDsAndSessionIDs[string(consumerID)]; !hasSession {
+		return errors.New("consumer is not subscribed")
+	}
+
+	buffer, isConnectedNow := s.InnerServer.greeter.consumerIDsAndPipelines[string(consumerID)]
+	if !isConnectedNow {
+		s.InnerServer.listeners.TimelineConsumerUnSubscribed(ctx, Consumer{
+			ID: consumerID,
+		})
+		return errors.New("cannot find the channel connection")
+	}
+
+	//TODO add timeout here, as each message reaches to client and can take a while
+	//select{
+	//case time.After(3 * time.Second):
+	//	return errors.New("pushing messages timeout")
+	//
+	//}
 	for i := range leases {
 		buffer <- leases[i]
 	}
@@ -60,103 +78,163 @@ func (s *GRPCServer) PushLeasesToConsumer(ctx context.Context, consumerID []byte
 }
 
 type innerServer struct {
-	builderPool        sync.Pool
-	listeners          *GRPCListeners
-	consumers          sync.Map
-	consumerBufferSize int
+	listeners *GRPCListeners
+	greeter   *Greeter
 }
 
-func (s *innerServer) TimelineConsumerHandshake(req *grpc.TimelineConsumerHandshakeRequest, stream grpc.Broker_TimelineConsumerHandshakeServer) error {
+func (s *innerServer) TimelineProducerHandshake(ctx context.Context, req *grpc.TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error) {
+	sessionID, err := s.greeter.AddProducer(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var p Producer
+	p.Topic = string(req.TopicID())
+	p.Cluster = string(req.Cluster())
+	p.GroupID = req.ProducerGroupID()
+	s.listeners.TimelineProducerSubscribed(ctx, p)
+
+	builder := flatbuffers.NewBuilder(128)
+	sessionIDPos := builder.CreateString(sessionID)
+	grpc.TimelineProducerHandshakeResponseStart(builder)
+	//TODO transform err to gRPC error
+	grpc.TimelineProducerHandshakeResponseAddSessionID(builder, sessionIDPos)
+	root := grpc.TimelineProducerHandshakeResponseEnd(builder)
+	builder.Finish(root)
+
+	return builder, err
+}
+
+func (s *innerServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error) {
+	sessionID, err := s.greeter.AddConsumer(req)
+	if err != nil {
+		return nil, err
+	}
 
 	var c Consumer
 	c.LeaseMs = req.LeaseTimeoutMS()
 	c.Topic = string(req.TopicID())
 	c.Cluster = string(req.Cluster())
-	c.ID = req.ConsumerIDBytes()
-	s.listeners.TimelineConsumerSubscribed(context.Background(), c)
+	c.ID = req.ConsumerID()
+	s.listeners.TimelineConsumerSubscribed(ctx, c)
 
-	leasesPipeline := make(chan timeline.PushLeases, s.consumerBufferSize)
-	s.consumers.Store(string(c.ID), leasesPipeline)
+	builder := flatbuffers.NewBuilder(128)
+	sessionIDPos := builder.CreateString(sessionID)
+	grpc.TimelineConsumerHandshakeResponseStart(builder)
+	//TODO transform err to gRPC error
+	grpc.TimelineConsumerHandshakeResponseAddSessionID(builder, sessionIDPos)
+	root := grpc.TimelineConsumerHandshakeResponseEnd(builder)
+	builder.Finish(root)
 
-	//builder = s.builderPool.Get().(*flatbuffers.Builder)
-	//defer func() {
-	//	builder.Reset()
-	//	s.builderPool.Put(builder)
-	var builder *flatbuffers.Builder
-	builder = flatbuffers.NewBuilder(128)
-	for lease := range leasesPipeline {
-		builder.Reset()
+	return builder, err
+}
 
-		msgIDPosition := builder.CreateByteVector(lease.Message.ID)
-		bodyPosition := builder.CreateByteVector(lease.Message.Body)
-		producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
-		grpc.TimelinePushLeaseMessageStart(builder)
-		grpc.TimelinePushLeaseMessageAddMessageID(builder, msgIDPosition)
-		grpc.TimelinePushLeaseMessageAddTimestampMS(builder, lease.Message.TimestampMS)
-		grpc.TimelinePushLeaseMessageAddProducerGroupID(builder, producerIDPosition)
-		grpc.TimelinePushLeaseMessageAddVersion(builder, lease.Message.Version)
-		grpc.TimelinePushLeaseMessageAddBody(builder, bodyPosition)
-		msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
-
-		grpc.TimelinePushLeaseResponseStart(builder)
-		grpc.TimelinePushLeaseResponseAddMessage(builder, msgOffset)
-		rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
-
-		builder.Finish(rootPosition)
-		if err := stream.Send(builder); err != nil {
-			log.Fatalf("loader failed: %s", err.Error())
-			return err
-		}
+func (s *innerServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream grpc.Broker_TimelineConsumeServer) error {
+	buffer, err := s.greeter.consumerStarted(string(req.SessionID()))
+	if err != nil {
+		return err
 	}
 
-	return errors.New("coordinator closed this consumer")
+	defer func() {
+		s.greeter.consumerStopped(string(req.SessionID()))
+	}()
+
+	var builder *flatbuffers.Builder
+	builder = flatbuffers.NewBuilder(128)
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case lease, ok := <-buffer:
+			if !ok {
+				return nil //channel closed
+			}
+			builder.Reset()
+
+			msgIDPosition := builder.CreateByteVector(lease.Message.ID)
+			bodyPosition := builder.CreateByteVector(lease.Message.Body)
+			producerIDPosition := builder.CreateByteVector(lease.Message.ProducerGroupID)
+			grpc.TimelinePushLeaseMessageStart(builder)
+			grpc.TimelinePushLeaseMessageAddMessageID(builder, msgIDPosition)
+			grpc.TimelinePushLeaseMessageAddTimestampMS(builder, lease.Message.TimestampMS)
+			grpc.TimelinePushLeaseMessageAddProducerGroupID(builder, producerIDPosition)
+			grpc.TimelinePushLeaseMessageAddVersion(builder, lease.Message.Version)
+			grpc.TimelinePushLeaseMessageAddBody(builder, bodyPosition)
+			msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
+
+			grpc.TimelinePushLeaseResponseStart(builder)
+			grpc.TimelinePushLeaseResponseAddMessage(builder, msgOffset)
+			rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
+
+			builder.Finish(rootPosition)
+			if err := stream.Send(builder); err != nil {
+				log.Fatalf("loader failed: %s", err.Error())
+				return err
+			}
+		}
+	}
+	return nil
 }
+
 func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
-	go func(stream grpc.Broker_TimelineCreateMessagesServer) {
-		var msgs []timeline.Message
-		var request *grpc.TimelineCreateMessageRequest
-		var err error
+	var msgs []timeline.Message
+	var request *grpc.TimelineCreateMessageRequest
+	var err error
+	var sessionID string
+	var sessionData *grpc.TimelineProducerHandshakeRequest
 
-		//gather all the messages from the client
-		for err == nil {
-			request, err = stream.Recv()
-			if request == nil { //empty msg ?!?!?! TODO log this as a warning
-				continue
-			}
-			if err == io.EOF { //it means the stream batch is over
-				break
-			}
-			if err != nil {
-				fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
-				break
-			}
-
-			msgs = append(msgs, timeline.Message{
-				ID:              request.IdBytes(),
-				TimestampMS:     request.TimeoutMS(),
-				BodyID:          nil,
-				Body:            request.BodyBytes(),
-				ProducerGroupID: nil, //TODO populate with the data from handshake
-				LockConsumerID:  nil,
-				BucketID:        0,
-				Version:         1,
-			})
+	//gather all the messages from the client
+	for err == nil {
+		request, err = stream.Recv()
+		if request == nil { //empty msg ?!?!?! TODO log this as a warning
+			continue
 		}
-
-		msgErrors := s.listeners.TimelineCreateMessagesListener(context.Background(), msgs)
-
-		//returns the response to the client
-		var builder *flatbuffers.Builder
-		builder = flatbuffers.NewBuilder(128)
-
-		root := writeTimelineResponse(msgErrors, builder)
-		builder.Finish(root)
-
-		err = stream.SendMsg(builder)
+		if err == io.EOF { //it means the stream batch is over
+			break
+		}
 		if err != nil {
-			fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
+			fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
+			break
 		}
-	}(stream)
+
+		if sessionData == nil {
+			sessionID = string(request.SessionID())
+			s.greeter.RLock()
+			var hadHandshake bool
+			sessionData, hadHandshake = s.greeter.producerSessionIDs[sessionID]
+			s.greeter.RUnlock()
+
+			if !hadHandshake {
+				return errors.New("producer missing session")
+			}
+		}
+
+		msgs = append(msgs, timeline.Message{
+			ID:              request.IdBytes(),
+			TimestampMS:     request.TimeoutMS(),
+			Body:            request.BodyBytes(),
+			ProducerGroupID: sessionData.ProducerGroupID(),
+			Version:         1,
+		})
+	}
+
+	if sessionData == nil {
+		return errors.New("no message with sessionID")
+	}
+
+	msgErrors := s.listeners.TimelineCreateMessagesListener(stream.Context(), sessionData.TopicID(), msgs)
+
+	//returns the response to the client
+	var builder *flatbuffers.Builder
+	builder = flatbuffers.NewBuilder(128)
+
+	root := writeTimelineResponse(msgErrors, builder)
+	builder.Finish(root)
+
+	err = stream.SendMsg(builder)
+	if err != nil {
+		fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
+	}
 
 	return nil
 }
@@ -167,6 +245,7 @@ func (s *innerServer) TimelineRelease(grpc.Broker_TimelineReleaseServer) error {
 	return nil
 }
 func (s *innerServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) error {
+	//TODO check the sessionID
 	var err error
 	var req *grpc.TimelineDeleteRequest
 

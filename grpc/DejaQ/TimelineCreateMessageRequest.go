@@ -46,8 +46,16 @@ func (rcv *TimelineCreateMessageRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineCreateMessageRequest) Id(j int) byte {
+func (rcv *TimelineCreateMessageRequest) SessionID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *TimelineCreateMessageRequest) Id(j int) byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
@@ -56,7 +64,7 @@ func (rcv *TimelineCreateMessageRequest) Id(j int) byte {
 }
 
 func (rcv *TimelineCreateMessageRequest) IdLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
@@ -64,7 +72,7 @@ func (rcv *TimelineCreateMessageRequest) IdLength() int {
 }
 
 func (rcv *TimelineCreateMessageRequest) IdBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
@@ -72,7 +80,7 @@ func (rcv *TimelineCreateMessageRequest) IdBytes() []byte {
 }
 
 func (rcv *TimelineCreateMessageRequest) MutateId(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
@@ -81,7 +89,7 @@ func (rcv *TimelineCreateMessageRequest) MutateId(j int, n byte) bool {
 }
 
 func (rcv *TimelineCreateMessageRequest) Tsmsutc() uint64 {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
@@ -89,11 +97,11 @@ func (rcv *TimelineCreateMessageRequest) Tsmsutc() uint64 {
 }
 
 func (rcv *TimelineCreateMessageRequest) MutateTsmsutc(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(10, n)
+	return rcv._tab.MutateUint64Slot(12, n)
 }
 
 func (rcv *TimelineCreateMessageRequest) Body(j int) byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
@@ -102,7 +110,7 @@ func (rcv *TimelineCreateMessageRequest) Body(j int) byte {
 }
 
 func (rcv *TimelineCreateMessageRequest) BodyLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
@@ -110,7 +118,7 @@ func (rcv *TimelineCreateMessageRequest) BodyLength() int {
 }
 
 func (rcv *TimelineCreateMessageRequest) BodyBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
@@ -118,7 +126,7 @@ func (rcv *TimelineCreateMessageRequest) BodyBytes() []byte {
 }
 
 func (rcv *TimelineCreateMessageRequest) MutateBody(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
@@ -127,7 +135,7 @@ func (rcv *TimelineCreateMessageRequest) MutateBody(j int, n byte) bool {
 }
 
 func TimelineCreateMessageRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(5)
+	builder.StartObject(6)
 }
 func TimelineCreateMessageRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
@@ -135,17 +143,20 @@ func TimelineCreateMessageRequestAddTraceID(builder *flatbuffers.Builder, traceI
 func TimelineCreateMessageRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
 	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
+func TimelineCreateMessageRequestAddSessionID(builder *flatbuffers.Builder, sessionID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(sessionID), 0)
+}
 func TimelineCreateMessageRequestAddId(builder *flatbuffers.Builder, id flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(id), 0)
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(id), 0)
 }
 func TimelineCreateMessageRequestStartIdVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
 }
 func TimelineCreateMessageRequestAddTsmsutc(builder *flatbuffers.Builder, tsmsutc uint64) {
-	builder.PrependUint64Slot(3, tsmsutc, 0)
+	builder.PrependUint64Slot(4, tsmsutc, 0)
 }
 func TimelineCreateMessageRequestAddBody(builder *flatbuffers.Builder, body flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(4, flatbuffers.UOffsetT(body), 0)
+	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(body), 0)
 }
 func TimelineCreateMessageRequestStartBodyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
