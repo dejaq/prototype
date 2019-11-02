@@ -3,6 +3,8 @@ package inmemory
 import (
 	"context"
 
+	"github.com/bgadrian/dejaq-broker/broker/domain"
+
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -29,16 +31,18 @@ func (m *InMemory) Insert(ctx context.Context, timelineID []byte, msgs []timelin
 	return nil
 }
 
-func (m *InMemory) Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
+func (m *InMemory) Select(ctx context.Context, timelineID []byte, ranges []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
 	var result []timeline.Message
-	for _, bucket := range buckets {
-		tmpResult, hasMore, err := m.selectFromBucket(ctx, bucket, limit)
-		if err != nil {
-			return result, hasMore, err
-		}
-		result = append(result, tmpResult...)
-		if !hasMore {
-			return result, hasMore, err
+	for bri := range ranges {
+		for bIndex := ranges[bri].MinInclusive; bIndex < ranges[bri].MaxExclusive; bIndex++ {
+			tmpResult, hasMore, err := m.selectFromBucket(ctx, bIndex, limit)
+			if err != nil {
+				return result, hasMore, err
+			}
+			result = append(result, tmpResult...)
+			if !hasMore {
+				return result, hasMore, err
+			}
 		}
 	}
 

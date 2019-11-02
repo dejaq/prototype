@@ -3,11 +3,11 @@ package coordinator
 import (
 	"context"
 	"log"
-	"math"
 	"math/rand"
 	"sync"
 	"time"
 
+	"github.com/bgadrian/dejaq-broker/broker/domain"
 	"github.com/rcrowley/go-metrics"
 
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
@@ -39,7 +39,7 @@ func GetDefaultTimelineID() []byte {
 
 type Consumer struct {
 	ID              []byte
-	AssignedBuckets []uint16
+	AssignedBuckets []domain.BucketRange
 	Topic           string
 	Cluster         string
 	LeaseMs         uint64
@@ -56,7 +56,7 @@ type Coordinator struct {
 	storage         storage.Repository
 	synchronization synchronization.Repository
 	ticker          *time.Ticker
-	buckets         []uint16
+	bucketCount     uint16
 	consumers       []*Consumer
 	server          *GRPCServer
 	lock            *sync.RWMutex
@@ -64,7 +64,7 @@ type Coordinator struct {
 
 type Config struct {
 	TopicType    common.TopicType
-	NoBuckets    int
+	NoBuckets    uint16
 	TickInterval time.Duration
 }
 
@@ -80,7 +80,7 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
 
-	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID: c.buckets})
+	c.dealer = NewExclusiveDealer()
 
 	server.InnerServer.listeners = &GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
@@ -116,15 +116,12 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 	return &c
 }
 
-func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noBuckets int) {
+func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noBuckets uint16) {
 	metricTopicsCounter.Inc(1)
 	switch topicType {
 	case common.TopicType_Timeline:
 		metricTimelinesCounter.Inc(1)
-		c.buckets = make([]uint16, noBuckets)
-		for i := range c.buckets {
-			c.buckets[i] = uint16(rand.Intn(math.MaxUint16))
-		}
+		c.bucketCount = noBuckets
 	default:
 		log.Fatal("not implemented")
 	}
@@ -169,7 +166,7 @@ func (c *Coordinator) RegisterCustomer(consumer Consumer) {
 	// TODO validate it didn't used another registered consumer's id
 	c.consumers = append(c.consumers, &consumer)
 
-	c.dealer.Shuffle(consumer.Topic, c.consumers)
+	c.dealer.Shuffle(c.consumers, c.bucketCount)
 
 	c.lock.Unlock()
 }
@@ -184,7 +181,7 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 		}
 	}
 
-	c.dealer.Shuffle(consumer.Topic, c.consumers)
+	c.dealer.Shuffle(c.consumers, c.bucketCount)
 
 	c.lock.Unlock()
 }
@@ -192,7 +189,7 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic []byte, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
 	for i := range msgs {
-		msgs[i].BucketID = c.buckets[rand.Intn(len(c.buckets))]
+		msgs[i].BucketID = uint16(rand.Intn(int(c.bucketCount)))
 	}
 	return c.storage.Insert(ctx, topic, msgs)
 }
