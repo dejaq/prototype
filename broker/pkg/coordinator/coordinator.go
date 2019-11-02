@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 	"github.com/rcrowley/go-metrics"
@@ -27,15 +28,10 @@ const (
 )
 
 var (
-	defaultTimelineID      = "default_timeline"
 	metricTopicsCounter    = metrics.NewRegisteredCounter(numberOfTopics, nil)
 	metricTimelinesCounter = metrics.NewRegisteredCounter(numberOfTimelines, nil)
 	metricMessagesCounter  = metrics.NewRegisteredCounter(numberOfMessages, nil)
 )
-
-func GetDefaultTimelineID() []byte {
-	return []byte(defaultTimelineID)
-}
 
 type Consumer struct {
 	ID              []byte
@@ -45,6 +41,10 @@ type Consumer struct {
 	LeaseMs         uint64
 }
 
+func (c Consumer) GetID() string {
+	return *(*string)(unsafe.Pointer(&c.ID))
+}
+
 type Producer struct {
 	GroupID []byte
 	Topic   string
@@ -52,14 +52,14 @@ type Producer struct {
 }
 
 type Coordinator struct {
+	conf            *Config
 	dealer          Dealer
 	storage         storage.Repository
 	synchronization synchronization.Repository
 	ticker          *time.Ticker
-	bucketCount     uint16
 	consumers       []*Consumer
-	server          *GRPCServer
 	lock            *sync.RWMutex
+	greeter         *Greeter
 }
 
 type Config struct {
@@ -68,37 +68,18 @@ type Config struct {
 	TickInterval time.Duration
 }
 
-func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.Repository, server *GRPCServer, synchronization synchronization.Repository) *Coordinator {
+func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, synchronization synchronization.Repository, greeter *Greeter) *Coordinator {
 	c := Coordinator{
+		conf:            config,
 		storage:         timelineStorage,
 		synchronization: synchronization,
 		ticker:          time.NewTicker(config.TickInterval),
-		server:          server,
 		consumers:       []*Consumer{},
 		lock:            &sync.RWMutex{},
+		greeter:         greeter,
 	}
-
-	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
 
 	c.dealer = NewExclusiveDealer()
-
-	server.InnerServer.listeners = &GRPCListeners{
-		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
-		TimelineConsumerSubscribed: func(ctx context.Context, consumer Consumer) {
-			c.RegisterCustomer(consumer)
-		},
-		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer Consumer) {
-			c.DeRegisterCustomer(consumer)
-		},
-		TimelineDeleteMessagesListener: func(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
-			//TODO add here a way to identify the consumer or producer
-			//only specific clients can delete specific messages
-			return c.storage.Delete(ctx, GetDefaultTimelineID(), msgs)
-		},
-		TimelineProducerSubscribed: func(i context.Context, producer Producer) {
-
-		},
-	}
 
 	go func() {
 		for {
@@ -116,15 +97,24 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 	return &c
 }
 
-func (c *Coordinator) setupTopic(topicType common.TopicType, topicID string, noBuckets uint16) {
-	metricTopicsCounter.Inc(1)
-	switch topicType {
-	case common.TopicType_Timeline:
-		metricTimelinesCounter.Inc(1)
-		c.bucketCount = noBuckets
-	default:
-		log.Fatal("not implemented")
-	}
+func (c *Coordinator) AttachToServer(server *GRPCServer) {
+	server.SetListeners(&GRPCListeners{
+		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
+		TimelineConsumerSubscribed: func(ctx context.Context, consumer Consumer) {
+			c.RegisterCustomer(consumer)
+		},
+		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer Consumer) {
+			c.DeRegisterCustomer(consumer)
+		},
+		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID []byte, msgs []timeline.Message) []errors.MessageIDTuple {
+			//TODO add here a way to identify the consumer or producer
+			//only specific clients can delete specific messages
+			return c.storage.Delete(ctx, timelineID, msgs)
+		},
+		TimelineProducerSubscribed: func(i context.Context, producer Producer) {
+
+		},
+	})
 }
 
 func (c *Coordinator) loadMessages(ctx context.Context) {
@@ -154,9 +144,22 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	}
 
 	c.storage.UpdateLeases(ctx, []byte(consumer.Topic), available)
-	err := c.server.PushLeasesToConsumer(ctx, consumer.ID, toSend)
+
+	consumerPipeline, err := c.greeter.GetPipelineFor(consumer.GetID())
 	if err != nil {
-		//cancel the leases!
+		//TODO put a timeout and unsubscribe it?
+		//TODO cancel the leases
+		log.Println("loadCustomerMessages failed", err)
+		return
+	}
+	//TODO add timeout here, as each message reaches to client and can take a while
+	//select{
+	//case time.After(3 * time.Second):
+	//	return errors.New("pushing messages timeout")
+	//
+	//}
+	for i := range toSend {
+		consumerPipeline <- toSend[i]
 	}
 }
 
@@ -166,7 +169,7 @@ func (c *Coordinator) RegisterCustomer(consumer Consumer) {
 	// TODO validate it didn't used another registered consumer's id
 	c.consumers = append(c.consumers, &consumer)
 
-	c.dealer.Shuffle(c.consumers, c.bucketCount)
+	c.dealer.Shuffle(c.consumers, c.conf.NoBuckets)
 
 	c.lock.Unlock()
 }
@@ -181,7 +184,7 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 		}
 	}
 
-	c.dealer.Shuffle(c.consumers, c.bucketCount)
+	c.dealer.Shuffle(c.consumers, c.conf.NoBuckets)
 
 	c.lock.Unlock()
 }
@@ -189,7 +192,7 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic []byte, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
 	for i := range msgs {
-		msgs[i].BucketID = uint16(rand.Intn(int(c.bucketCount)))
+		msgs[i].BucketID = uint16(rand.Intn(int(c.conf.NoBuckets)))
 	}
 	return c.storage.Insert(ctx, topic, msgs)
 }

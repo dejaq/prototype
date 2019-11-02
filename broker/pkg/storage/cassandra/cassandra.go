@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/bgadrian/dejaq-broker/broker/domain"
+
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -97,7 +99,7 @@ func (w *Cassandra) Insert(ctx context.Context, timelineID []byte, messages []ti
 }
 
 // SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
-func (w *Cassandra) Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
+func (w *Cassandra) Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
 	return nil, false, nil
 }
 

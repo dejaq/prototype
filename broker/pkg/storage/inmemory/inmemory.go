@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"sync"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 
@@ -14,7 +15,8 @@ import (
 var _ = storage.Repository(&InMemory{})
 
 type InMemory struct {
-	tmp map[uint16]map[string]timeline.Message
+	tmp   map[uint16]map[string]timeline.Message
+	mutex sync.RWMutex
 }
 
 func NewInMemory() *InMemory {
@@ -22,6 +24,10 @@ func NewInMemory() *InMemory {
 }
 
 func (m *InMemory) Insert(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	//log.Println("insert messages into timeline", string(timelineID))
 	for _, msg := range msgs {
 		if _, ok := m.tmp[msg.BucketID]; !ok {
 			m.tmp[msg.BucketID] = make(map[string]timeline.Message)
@@ -32,6 +38,7 @@ func (m *InMemory) Insert(ctx context.Context, timelineID []byte, msgs []timelin
 }
 
 func (m *InMemory) Select(ctx context.Context, timelineID []byte, ranges []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
+	//log.Println("select messages from timeline", string(timelineID))
 	var result []timeline.Message
 	for bri := range ranges {
 		for bIndex := ranges[bri].MinInclusive; bIndex < ranges[bri].MaxExclusive; bIndex++ {
@@ -40,8 +47,8 @@ func (m *InMemory) Select(ctx context.Context, timelineID []byte, ranges []domai
 				return result, hasMore, err
 			}
 			result = append(result, tmpResult...)
-			if !hasMore {
-				return result, hasMore, err
+			if len(result) >= limit {
+				return result, true, nil
 			}
 		}
 	}
@@ -50,8 +57,10 @@ func (m *InMemory) Select(ctx context.Context, timelineID []byte, ranges []domai
 }
 
 func (m *InMemory) selectFromBucket(ctx context.Context, bucket uint16, limit int) ([]timeline.Message, bool, error) {
-	var result []timeline.Message
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
 
+	var result []timeline.Message
 	for _, msg := range m.tmp[bucket] {
 		if limit <= 0 {
 			break
@@ -64,10 +73,11 @@ func (m *InMemory) selectFromBucket(ctx context.Context, bucket uint16, limit in
 }
 
 func (m *InMemory) Delete(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
-	for _, bucket := range m.tmp {
-		for _, msg := range msgs {
-			delete(bucket, msg.GetID())
-		}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	//log.Println("delete messages from timeline", string(timelineID))
+	for mi := range msgs {
+		delete(m.tmp[msgs[mi].BucketID], msgs[mi].GetID())
 	}
 	return nil
 }
@@ -78,6 +88,9 @@ func (m *InMemory) Update(ctx context.Context, timelineID []byte, messageTimesta
 }
 
 func (m *InMemory) UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
 	for _, msg := range msgs {
 		m.tmp[msg.BucketID][msg.GetID()] = msg
 	}

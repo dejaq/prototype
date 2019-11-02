@@ -92,7 +92,8 @@ type LeaseMessage struct {
 	// Updated at each mutation, used to detect mutation contention
 	Version uint16
 	// the payload
-	Body []byte
+	Body     []byte
+	BucketID uint16
 }
 
 func NewLeaseMessage(msg Message) LeaseMessage {
