@@ -46,38 +46,12 @@ func (rcv *TimelineConsumerHandshakeRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineConsumerHandshakeRequest) ConsumerID(j int) byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
-	}
-	return 0
-}
-
-func (rcv *TimelineConsumerHandshakeRequest) ConsumerIDLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.VectorLen(o)
-	}
-	return 0
-}
-
-func (rcv *TimelineConsumerHandshakeRequest) ConsumerIDBytes() []byte {
+func (rcv *TimelineConsumerHandshakeRequest) ConsumerID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
 	return nil
-}
-
-func (rcv *TimelineConsumerHandshakeRequest) MutateConsumerID(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		a := rcv._tab.Vector(o)
-		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
-	}
-	return false
 }
 
 func (rcv *TimelineConsumerHandshakeRequest) TopicID() []byte {
@@ -119,9 +93,6 @@ func TimelineConsumerHandshakeRequestAddTimeoutMS(builder *flatbuffers.Builder, 
 }
 func TimelineConsumerHandshakeRequestAddConsumerID(builder *flatbuffers.Builder, consumerID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(consumerID), 0)
-}
-func TimelineConsumerHandshakeRequestStartConsumerIDVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
-	return builder.StartVector(1, numElems, 1)
 }
 func TimelineConsumerHandshakeRequestAddTopicID(builder *flatbuffers.Builder, topicID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(topicID), 0)

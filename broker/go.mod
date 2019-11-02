@@ -1,6 +1,7 @@
 module github.com/bgadrian/dejaq-broker/broker
 
 require (
+	github.com/bgadrian/dejaq-broker/client v0.0.0-00010101000000-000000000000
 	github.com/bgadrian/dejaq-broker/common v0.0.0
 	github.com/bgadrian/dejaq-broker/grpc v0.0.0
 	github.com/coreos/bbolt v1.3.3 // indirect
@@ -29,12 +30,14 @@ require (
 	go.etcd.io/bbolt v1.3.3 // indirect
 	go.etcd.io/etcd v3.3.15+incompatible
 	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0 // indirect
-	google.golang.org/grpc v1.23.1
+	google.golang.org/grpc v1.24.0
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
 replace github.com/bgadrian/dejaq-broker/common => ../common/
 
 replace github.com/bgadrian/dejaq-broker/grpc => ../grpc/
+
+replace github.com/bgadrian/dejaq-broker/client => ../client/
 
 go 1.13

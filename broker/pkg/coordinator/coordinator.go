@@ -2,12 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"github.com/rcrowley/go-metrics"
 	"log"
 	"math"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/rcrowley/go-metrics"
 
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 
@@ -44,6 +45,12 @@ type Consumer struct {
 	LeaseMs         uint64
 }
 
+type Producer struct {
+	GroupID []byte
+	Topic   string
+	Cluster string
+}
+
 type Coordinator struct {
 	dealer          Dealer
 	storage         storage.Repository
@@ -73,7 +80,7 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 
 	c.setupTopic(config.TopicType, defaultTimelineID, config.NoBuckets)
 
-	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID:c.buckets})
+	c.dealer = NewBasicDealer(map[string][]uint16{defaultTimelineID: c.buckets})
 
 	server.InnerServer.listeners = &GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
@@ -87,6 +94,9 @@ func NewCoordinator(ctx context.Context, config Config, timelineStorage storage.
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, GetDefaultTimelineID(), msgs)
+		},
+		TimelineProducerSubscribed: func(i context.Context, producer Producer) {
+
 		},
 	}
 
@@ -179,10 +189,10 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 	c.lock.Unlock()
 }
 
-func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, msgs []timeline.Message) []errors.MessageIDTuple {
+func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic []byte, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
 	for i := range msgs {
 		msgs[i].BucketID = c.buckets[rand.Intn(len(c.buckets))]
 	}
-	return c.storage.Insert(ctx, GetDefaultTimelineID(), msgs)
+	return c.storage.Insert(ctx, topic, msgs)
 }
