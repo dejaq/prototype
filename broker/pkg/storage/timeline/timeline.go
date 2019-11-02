@@ -3,6 +3,8 @@ package timeline
 import (
 	"context"
 
+	"github.com/bgadrian/dejaq-broker/broker/domain"
+
 	"github.com/bgadrian/dejaq-broker/common/errors"
 
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -17,7 +19,7 @@ type Repository interface {
 	// INSERT messages (timelineID, []messages) map[msgID]error
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
-	Select(ctx context.Context, timelineID []byte, buckets []uint16, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
+	Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
 	// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
 	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []errors.MessageIDTuple
 	// UPDATE lease BY TimelineID, MessageIDs (map[msgID]newLease])  map[msgID]error (for extend lease)
