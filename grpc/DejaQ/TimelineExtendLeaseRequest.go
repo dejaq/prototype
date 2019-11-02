@@ -46,8 +46,16 @@ func (rcv *TimelineExtendLeaseRequest) MutateTimeoutMS(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *TimelineExtendLeaseRequest) MessageID(j int) byte {
+func (rcv *TimelineExtendLeaseRequest) SessionID() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *TimelineExtendLeaseRequest) MessageID(j int) byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
@@ -56,7 +64,7 @@ func (rcv *TimelineExtendLeaseRequest) MessageID(j int) byte {
 }
 
 func (rcv *TimelineExtendLeaseRequest) MessageIDLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
@@ -64,7 +72,7 @@ func (rcv *TimelineExtendLeaseRequest) MessageIDLength() int {
 }
 
 func (rcv *TimelineExtendLeaseRequest) MessageIDBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
@@ -72,7 +80,7 @@ func (rcv *TimelineExtendLeaseRequest) MessageIDBytes() []byte {
 }
 
 func (rcv *TimelineExtendLeaseRequest) MutateMessageID(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
@@ -81,7 +89,7 @@ func (rcv *TimelineExtendLeaseRequest) MutateMessageID(j int, n byte) bool {
 }
 
 func TimelineExtendLeaseRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(4)
 }
 func TimelineExtendLeaseRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
@@ -89,8 +97,11 @@ func TimelineExtendLeaseRequestAddTraceID(builder *flatbuffers.Builder, traceID 
 func TimelineExtendLeaseRequestAddTimeoutMS(builder *flatbuffers.Builder, timeoutMS uint64) {
 	builder.PrependUint64Slot(1, timeoutMS, 0)
 }
+func TimelineExtendLeaseRequestAddSessionID(builder *flatbuffers.Builder, sessionID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(sessionID), 0)
+}
 func TimelineExtendLeaseRequestAddMessageID(builder *flatbuffers.Builder, messageID flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(messageID), 0)
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(messageID), 0)
 }
 func TimelineExtendLeaseRequestStartMessageIDVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)

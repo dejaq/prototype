@@ -31,6 +31,7 @@ table TimelineResponse {
 table TimelineCreateMessageRequest {
     traceID:string;
     timeoutMS:ulong;
+    sessionID:string;
     id:[ubyte];
     tsmsutc:ulong;
     body:[ubyte];
@@ -53,24 +54,51 @@ table TimelinePushLeaseResponse {
     message:TimelinePushLeaseMessage;
 }
 
+table TimelineProducerHandshakeRequest {
+    traceID:string;
+    timeoutMS:ulong;
+    producerGroupID:string;
+    topicID:string;
+    cluster:string;
+}
+
+table TimelineProducerHandshakeResponse {
+    sessionID:string;
+    err:Error;
+}
+
 table TimelineConsumerHandshakeRequest {
     traceID:string;
     timeoutMS:ulong;
-    consumerID:[ubyte];
+    consumerID:string;
     topicID:string;
     cluster:string;
     leaseTimeoutMS:ulong;
 }
 
+table TimelineConsumerHandshakeResponse {
+    sessionID:string;
+    err:Error;
+}
+
+
+table TimelineConsumeRequest {
+    traceID:string;
+    timeoutMS:ulong;
+    sessionID:string;
+}
+
 table TimelineExtendLeaseRequest {
     traceID:string;
     timeoutMS:ulong;
+    sessionID:string;
     messageID:[ubyte];
 }
 
 table TimelineReleaseRequest {
     traceID:string;
     timeoutMS:ulong;
+    sessionID:string;
     messageID:[ubyte];
     timestampMS:ulong;
     version:ushort;
@@ -79,6 +107,7 @@ table TimelineReleaseRequest {
 table TimelineDeleteRequest {
     traceID:string;
     timeoutMS:ulong;
+    sessionID:string;
     messageID:[ubyte];
     version:ushort;
     bucketID:ushort;
@@ -92,10 +121,23 @@ table TimelineCountRequest {
     timeEnd:ulong;
 }
 
+table TimelineCountResponse {
+    result:ulong;
+    err:Error;
+}
+
 // https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
+    //overseeer
+    TimelineProducerHandshake(TimelineProducerHandshakeRequest):TimelineProducerHandshakeResponse;
+    TimelineConsumerHandshake(TimelineConsumerHandshakeRequest):TimelineConsumerHandshakeResponse;
+    TimelineCount(TimelineCountRequest):TimelineCountResponse;
+
+
+    //carrier
+
     //the broker will push messages
-    TimelineConsumerHandshake(TimelineConsumerHandshakeRequest):TimelinePushLeaseResponse (streaming: "server");
+    TimelineConsume(TimelineConsumeRequest):TimelinePushLeaseResponse (streaming: "server");
 
     //client pushes data, expect one bulk response
     TimelineCreateMessages(TimelineCreateMessageRequest):TimelineResponse (streaming: "client");
@@ -103,6 +145,4 @@ rpc_service Broker {
     TimelineRelease(TimelineReleaseRequest):TimelineResponse (streaming: "client");
     TimelineDelete(TimelineDeleteRequest):TimelineResponse (streaming: "client");
 
-    //unary calls, clients wants to find out something specific
-    TimelineCount(TimelineCountRequest):Error;
 }
