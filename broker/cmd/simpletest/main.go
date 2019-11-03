@@ -88,7 +88,7 @@ func main() {
 			ConsumerID: "alfa",
 			Topic:      "topicOne",
 			Cluster:    "",
-			LeaseMs:    30 * 1000,
+			LeaseMs:    time.Second,
 			ProcessMessageListener: func(lease timeline.PushLeases) {
 				//Process the messages
 				logger.Printf("received message ID=%s body=%s\n", lease.Message.ID, string(lease.Message.Body))

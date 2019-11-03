@@ -9,16 +9,13 @@ import (
 	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
-	"github.com/rcrowley/go-metrics"
-
+	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
-
 	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
-
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
-
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
+	"github.com/rcrowley/go-metrics"
 )
 
 const (
@@ -135,12 +132,12 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	toSend := make([]timeline.PushLeases, len(available))
 	for i := range available {
 		toSend[i] = timeline.PushLeases{
-			ExpirationTimestampMS: uint64(time.Now().UTC().Unix()) + 120,
+			ExpirationTimestampMS: uint64(dtime.TimeToMS(time.Now().UTC())) + consumer.LeaseMs,
 			ConsumerID:            consumer.ID,
 			Message:               timeline.NewLeaseMessage(available[i]),
 		}
 		available[i].LockConsumerID = consumer.ID
-		available[i].TimestampMS += consumer.LeaseMs
+		available[i].TimestampMS = toSend[i].ExpirationTimestampMS
 	}
 
 	c.storage.UpdateLeases(ctx, []byte(consumer.Topic), available)
@@ -158,9 +155,11 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	//	return errors.New("pushing messages timeout")
 	//
 	//}
+
 	for i := range toSend {
 		consumerPipeline <- toSend[i]
 	}
+
 }
 
 func (c *Coordinator) RegisterCustomer(consumer Consumer) {
