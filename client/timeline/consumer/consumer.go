@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	dejaq "github.com/bgadrian/dejaq-broker/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -17,7 +18,7 @@ type Config struct {
 	ConsumerID             string
 	Topic                  string
 	Cluster                string
-	LeaseMs                uint64
+	LeaseMs                time.Duration
 	ProcessMessageListener func(timeline.PushLeases)
 }
 
@@ -71,7 +72,7 @@ func (c *Consumer) Handshake(ctx context.Context) error {
 	dejaq.TimelineConsumerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineConsumerHandshakeRequestAddConsumerID(builder, consumerIDPos)
 	dejaq.TimelineConsumerHandshakeRequestAddTopicID(builder, topicIDPos)
-	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, c.conf.LeaseMs)
+	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseMs))
 	root := dejaq.TimelineConsumerHandshakeRequestEnd(builder)
 	builder.Finish(root)
 
@@ -96,7 +97,7 @@ func (c *Consumer) preload(ctx context.Context) {
 	requestPosition := dejaq.TimelineConsumeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
-	toDelete := make([]timeline.Message, 128)
+	toDelete := make([]timeline.Message, 0, 128)
 	stream, err := c.carrier.TimelineConsume(ctx, builder)
 	if err != nil {
 		log.Fatalf("subscribe: %v", err)

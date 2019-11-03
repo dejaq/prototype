@@ -36,6 +36,10 @@ func (m Message) GetLockConsumerID() string {
 	return *(*string)(unsafe.Pointer(&m.LockConsumerID))
 }
 
+func (m Message) String() string {
+	return "{Message [ID:" + m.GetID() + "]"
+}
+
 type Topic struct {
 	ID                string
 	CreationTimestamp uint64
@@ -94,6 +98,17 @@ type LeaseMessage struct {
 	// the payload
 	Body     []byte
 	BucketID uint16
+}
+
+func (m LeaseMessage) GetID() string {
+	return *(*string)(unsafe.Pointer(&m.ID))
+}
+func (m LeaseMessage) GetProducerGroupID() string {
+	return *(*string)(unsafe.Pointer(&m.ProducerGroupID))
+}
+
+func (m LeaseMessage) String() string {
+	return "{Message [ID:" + m.GetID() + "]"
 }
 
 func NewLeaseMessage(msg Message) LeaseMessage {
