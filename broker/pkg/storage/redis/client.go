@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -176,25 +175,20 @@ func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, er
 	var message timeline.Message
 	message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
 
-				timestamp, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[1]), 10, 64)
-				message.TimestampMS = uint64(timestamp)
+	timestamp, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[1]), 10, 64)
+	message.TimestampMS = uint64(timestamp)
 
-				message.BodyID = []byte(fmt.Sprintf("%v", rawMessage[2]))
-				message.Body = []byte(fmt.Sprintf("%v", rawMessage[3]))
-				message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
-				message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
+	message.BodyID = []byte(fmt.Sprintf("%v", rawMessage[2]))
+	message.Body = []byte(fmt.Sprintf("%v", rawMessage[3]))
+	message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
+	message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
 
-				bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
-				message.BucketID = uint16(bucketIdUint16)
-				version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
-				message.Version = uint16(version)
+	bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
+	message.BucketID = uint16(bucketIdUint16)
+	version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
+	message.Version = uint16(version)
 
-				results = append(results, message)
-			}
-		}
-	}
-
-	return results, false, processingError
+	return message, nil
 }
 
 // Update - not used at this time
