@@ -3,11 +3,12 @@ package inmemory
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
-
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 )
 
@@ -60,13 +61,17 @@ func (m *InMemory) selectFromBucket(ctx context.Context, bucket uint16, limit in
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
+	nowMS := dtime.TimeToMS(time.Now().UTC())
 	var result []timeline.Message
-	for _, msg := range m.tmp[bucket] {
+	for i := range m.tmp[bucket] {
+		if m.tmp[bucket][i].TimestampMS > nowMS {
+			continue
+		}
 		if limit <= 0 {
 			break
 		}
 		limit--
-		result = append(result, msg)
+		result = append(result, m.tmp[bucket][i])
 	}
 
 	return result, len(result) < len(m.tmp[bucket]), nil

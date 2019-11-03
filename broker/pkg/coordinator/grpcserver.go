@@ -141,7 +141,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var msgs []timeline.Message
 	var request *grpc.TimelineCreateMessageRequest
 	var err error
-	var sessionID string
+	var errGet error
 	var sessionData *grpc.TimelineProducerHandshakeRequest
 
 	//gather all the messages from the client
@@ -154,19 +154,14 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 			break
 		}
 		if err != nil {
-			fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
+			_ = fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
 			break
 		}
 
 		if sessionData == nil {
-			sessionID = string(request.SessionID())
-			s.greeter.RLock()
-			var hadHandshake bool
-			sessionData, hadHandshake = s.greeter.producerSessionIDs[sessionID]
-			s.greeter.RUnlock()
-
-			if !hadHandshake {
-				return errors.New("producer missing session")
+			sessionData, errGet = s.greeter.GetProducerSessionData(request.SessionID())
+			if errGet != nil {
+				return err
 			}
 		}
 
@@ -194,7 +189,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 
 	err = stream.SendMsg(builder)
 	if err != nil {
-		fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
+		_ = fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
 	}
 
 	return nil
@@ -215,7 +210,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var req *grpc.TimelineDeleteRequest
 
 	var batch []timeline.Message
-	for err == nil {
+	for {
 		req, err = stream.Recv()
 		if err != nil {
 			if err == io.EOF {

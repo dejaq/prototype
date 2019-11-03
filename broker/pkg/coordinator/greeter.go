@@ -131,3 +131,14 @@ func (s *Greeter) GetTopicFor(sessionID []byte) ([]byte, error) {
 
 	return nil, ErrNotFound
 }
+
+func (s *Greeter) GetProducerSessionData(sessionID []byte) (*grpc.TimelineProducerHandshakeRequest, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	sessionData, hadHandshake := s.producerSessionIDs[string(sessionID)]
+	if hadHandshake {
+		return sessionData, nil
+	}
+	return nil, ErrNotFound
+}
