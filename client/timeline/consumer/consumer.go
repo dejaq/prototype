@@ -146,6 +146,8 @@ func (c *Consumer) preload(ctx context.Context) {
 				err := c.Delete(ctx, toDelete)
 				if err != nil {
 					log.Println("delete failed", err)
+				} else {
+					toDelete = toDelete[:0]
 				}
 			}
 		}
@@ -154,6 +156,8 @@ func (c *Consumer) preload(ctx context.Context) {
 			err := c.Delete(ctx, toDelete)
 			if err != nil {
 				log.Println("delete failed", err)
+			} else {
+				toDelete = toDelete[:0]
 			}
 		}
 	}
