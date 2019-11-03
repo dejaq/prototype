@@ -37,12 +37,12 @@ func NewClient(host string) (*Client, error) {
 }
 
 func (c *Client) createTimelineKey(clusterName string, timelineId []byte, bucketId uint16) string {
-	idBucket := strconv.Itoa(int(bucketId))
+	idBucket := fmt.Sprintf("%v", bucketId)
 	return "dejaq::" + clusterName + "::" + string(timelineId) + "::timeline::" + idBucket
 }
 
 func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketId uint16, messageId []byte) string {
-	idBucket := strconv.Itoa(int(bucketId))
+	idBucket := fmt.Sprintf("%v", bucketId)
 	return "dejaq::" + clusterName + "::" + string(timelineId) + "::" + idBucket + "::" + string(messageId)
 }
 
@@ -74,14 +74,14 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		// TODO improve here, find a better solution to translate a type into map
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
 		data := make(map[string]interface{})
-		data["ID"] = string(msg.ID)
+		data["ID"] = msg.GetID()
 		data["TimestampMS"] = string(msg.TimestampMS)
 		data["BodyID"] = string(msg.BodyID)
 		data["Body"] = string(msg.Body)
-		data["ProducerGroupID"] = string(msg.ProducerGroupID)
-		data["LockConsumerID"] = string(msg.LockConsumerID)
-		data["BucketID"] = strconv.Itoa(int(msg.BucketID))
-		data["Version"] = strconv.Itoa(int(msg.Version))
+		data["ProducerGroupID"] = msg.GetProducerGroupID()
+		data["LockConsumerID"] = msg.GetLockConsumerID()
+		data["BucketID"] = fmt.Sprintf("%v", msg.BucketID)
+		data["Version"] = fmt.Sprintf("%v", msg.Version)
 
 		isOk, err := c.client.HMSet(messageKey, data).Result()
 
@@ -138,28 +138,39 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 					continue
 				}
 
-				var message timeline.Message
-				message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
+				timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
+				if err != nil {
+					processingError = err
+					continue
+				}
 
-				timestamp, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[1]), 10, 64)
-				message.TimestampMS = uint64(timestamp)
-
-				message.BodyID = []byte(fmt.Sprintf("%v", rawMessage[2]))
-				message.Body = []byte(fmt.Sprintf("%v", rawMessage[3]))
-				message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
-				message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
-
-				bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
-				message.BucketID = uint16(bucketIdUint16)
-				version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
-				message.Version = uint16(version)
-
-				results = append(results, message)
+				results = append(results, timelineMessage)
 			}
 		}
 	}
 
 	return results, false, processingError
+}
+
+func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
+	// TODO implement errors on strconv
+	var message timeline.Message
+	message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
+
+	timestamp, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[1]), 10, 64)
+	message.TimestampMS = uint64(timestamp)
+
+	message.BodyID = []byte(fmt.Sprintf("%v", rawMessage[2]))
+	message.Body = []byte(fmt.Sprintf("%v", rawMessage[3]))
+	message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
+	message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
+
+	bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
+	message.BucketID = uint16(bucketIdUint16)
+	version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
+	message.Version = uint16(version)
+
+	return message, nil
 }
 
 // Update - not used at this time
