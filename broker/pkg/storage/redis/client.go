@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -44,6 +45,10 @@ func (c *Client) createTimelineKey(clusterName string, timelineId []byte, bucket
 func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketId uint16, messageId []byte) string {
 	idBucket := fmt.Sprintf("%v", bucketId)
 	return "dejaq::" + clusterName + "::" + string(timelineId) + "::" + idBucket + "::" + string(messageId)
+}
+
+func (c *Client) createLeaseKey(clusterName string, timelineId []byte) string {
+	return "dejaq::" + clusterName + "::leased" + string(timelineId) + "::"
 }
 
 // Insert ...
@@ -106,6 +111,7 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 	// TODO implement limit
 	// TODO use maxTimestamp
 	// TODO use unsafe for a better conversion
+	// TODO use transaction select, get message, lease
 
 	var results []timeline.Message
 	var processingError error
@@ -128,6 +134,19 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 			}
 
 			for _, msgId := range messagesIds {
+				leasedKey := c.createLeaseKey("cluster_name", timelineID)
+
+				// continue if message is already leased
+				isMember, err := c.client.SIsMember(leasedKey, msgId).Result()
+				if err != nil {
+					processingError = err
+					continue
+				}
+
+				if isMember {
+					continue
+				}
+
 				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
 				rawMessage, err := c.client.HMGet(
 					messageKey,
@@ -141,6 +160,18 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 				timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
 				if err != nil {
 					processingError = err
+					continue
+				}
+
+				// add lease to message
+				ok, err := c.client.SAdd(leasedKey, msgId).Result()
+				if err != nil {
+					processingError = err
+					continue
+				}
+
+				if ok != 1 {
+					processingError = errors.New("could not set lease on message")
 					continue
 				}
 
