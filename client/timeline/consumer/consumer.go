@@ -96,6 +96,7 @@ func (c *Consumer) preload(ctx context.Context) {
 	requestPosition := dejaq.TimelineConsumeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
+	toDelete := make([]timeline.Message, 128)
 	stream, err := c.carrier.TimelineConsume(ctx, builder)
 	if err != nil {
 		log.Fatalf("subscribe: %v", err)
@@ -131,23 +132,29 @@ func (c *Consumer) preload(ctx context.Context) {
 					ProducerGroupID: msg.ProducerGroupIDBytes(),
 					Version:         msg.Version(),
 					Body:            msg.BodyBytes(),
+					BucketID:        msg.BucketID(),
 				},
 			})
-			go func() {
-				err := c.Delete(ctx, []timeline.Message{{
-					ID:          msg.MessageIDBytes(),
-					TimestampMS: msg.TimestampMS(),
-					//BodyID:          nil,
-					//Body:            nil,
-					//ProducerGroupID: nil,
-					//LockConsumerID:  nil,
-					BucketID: msg.BucketID(),
-					Version:  msg.Version(),
-				}})
+			toDelete = append(toDelete, timeline.Message{
+				ID:          msg.MessageIDBytes(),
+				TimestampMS: msg.TimestampMS(),
+				BucketID:    msg.BucketID(),
+				Version:     msg.Version(),
+			})
+
+			if len(toDelete) > 3 {
+				err := c.Delete(ctx, toDelete)
 				if err != nil {
 					log.Println("delete failed", err)
 				}
-			}()
+			}
+		}
+
+		if len(toDelete) > 0 {
+			err := c.Delete(ctx, toDelete)
+			if err != nil {
+				log.Println("delete failed", err)
+			}
 		}
 	}
 }

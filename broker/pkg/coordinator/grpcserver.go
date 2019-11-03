@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"sync"
 
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -14,7 +13,7 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
-var _ = grpc.BrokerServer(&innerServer{})
+var _ = grpc.BrokerServer(&GRPCServer{})
 
 //GRPCListeners Coordinator can listen and react to these calls
 type GRPCListeners struct {
@@ -22,68 +21,29 @@ type GRPCListeners struct {
 	TimelineProducerSubscribed     func(context.Context, Producer)
 	TimelineConsumerSubscribed     func(context.Context, Consumer)
 	TimelineConsumerUnSubscribed   func(context.Context, Consumer)
-	TimelineDeleteMessagesListener func(ctx context.Context, msgs []timeline.Message) []derrors.MessageIDTuple
+	TimelineDeleteMessagesListener func(context.Context, []byte, []timeline.Message) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
 type GRPCServer struct {
-	InnerServer *innerServer
-}
-
-func NewGRPCServer(listeners *GRPCListeners) *GRPCServer {
-	s := GRPCServer{
-
-		InnerServer: &innerServer{
-			listeners: listeners,
-			greeter: &Greeter{
-				RWMutex:                       sync.RWMutex{},
-				consumerIDsAndSessionIDs:      make(map[string]string, 128),
-				consumerSessionIDAndID:        make(map[string]string, 128),
-				consumerIDsAndPipelines:       make(map[string]chan timeline.PushLeases), //not buffered!!!
-				producerSessionIDs:            make(map[string]*grpc.TimelineProducerHandshakeRequest),
-				producerGroupIDsAndSessionIDs: make(map[string]string),
-			},
-		},
-	}
-	return &s
-}
-
-// TimelineCreateMessagesPusher is used by the coordinator to push msgs when needed
-func (s *GRPCServer) PushLeasesToConsumer(ctx context.Context, consumerID []byte, leases []timeline.PushLeases) error {
-	s.InnerServer.greeter.RWMutex.RLock()
-	defer s.InnerServer.greeter.RWMutex.RUnlock()
-
-	if _, hasSession := s.InnerServer.greeter.consumerIDsAndSessionIDs[string(consumerID)]; !hasSession {
-		return errors.New("consumer is not subscribed")
-	}
-
-	buffer, isConnectedNow := s.InnerServer.greeter.consumerIDsAndPipelines[string(consumerID)]
-	if !isConnectedNow {
-		s.InnerServer.listeners.TimelineConsumerUnSubscribed(ctx, Consumer{
-			ID: consumerID,
-		})
-		return errors.New("cannot find the channel connection")
-	}
-
-	//TODO add timeout here, as each message reaches to client and can take a while
-	//select{
-	//case time.After(3 * time.Second):
-	//	return errors.New("pushing messages timeout")
-	//
-	//}
-	for i := range leases {
-		buffer <- leases[i]
-	}
-	return nil
-}
-
-type innerServer struct {
 	listeners *GRPCListeners
 	greeter   *Greeter
 }
 
-func (s *innerServer) TimelineProducerHandshake(ctx context.Context, req *grpc.TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error) {
-	sessionID, err := s.greeter.AddProducer(req)
+func NewGRPCServer(listeners *GRPCListeners, greeter *Greeter) *GRPCServer {
+	s := GRPCServer{
+		listeners: listeners,
+		greeter:   greeter,
+	}
+	return &s
+}
+
+func (s *GRPCServer) SetListeners(listeners *GRPCListeners) {
+	s.listeners = listeners
+}
+
+func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error) {
+	sessionID, err := s.greeter.ProducerHandshake(req)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +65,8 @@ func (s *innerServer) TimelineProducerHandshake(ctx context.Context, req *grpc.T
 	return builder, err
 }
 
-func (s *innerServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error) {
-	sessionID, err := s.greeter.AddConsumer(req)
+func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error) {
+	sessionID, err := s.greeter.ConsumerHandshake(req)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +89,14 @@ func (s *innerServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.T
 	return builder, err
 }
 
-func (s *innerServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream grpc.Broker_TimelineConsumeServer) error {
-	buffer, err := s.greeter.consumerStarted(string(req.SessionID()))
+func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream grpc.Broker_TimelineConsumeServer) error {
+	buffer, err := s.greeter.ConsumerConnected(string(req.SessionID()))
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		s.greeter.consumerStopped(string(req.SessionID()))
+		s.greeter.ConsumerDisconnected(string(req.SessionID()))
 	}()
 
 	var builder *flatbuffers.Builder
@@ -159,6 +119,7 @@ func (s *innerServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream g
 			grpc.TimelinePushLeaseMessageAddTimestampMS(builder, lease.Message.TimestampMS)
 			grpc.TimelinePushLeaseMessageAddProducerGroupID(builder, producerIDPosition)
 			grpc.TimelinePushLeaseMessageAddVersion(builder, lease.Message.Version)
+			grpc.TimelinePushLeaseMessageAddBucketID(builder, lease.Message.BucketID)
 			grpc.TimelinePushLeaseMessageAddBody(builder, bodyPosition)
 			msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
 
@@ -176,7 +137,7 @@ func (s *innerServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream g
 	return nil
 }
 
-func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
+func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
 	var msgs []timeline.Message
 	var request *grpc.TimelineCreateMessageRequest
 	var err error
@@ -238,15 +199,19 @@ func (s *innerServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMe
 
 	return nil
 }
-func (s *innerServer) TimelineExtendLease(grpc.Broker_TimelineExtendLeaseServer) error {
+func (s *GRPCServer) TimelineExtendLease(grpc.Broker_TimelineExtendLeaseServer) error {
 	return nil
 }
-func (s *innerServer) TimelineRelease(grpc.Broker_TimelineReleaseServer) error {
+func (s *GRPCServer) TimelineRelease(grpc.Broker_TimelineReleaseServer) error {
 	return nil
 }
-func (s *innerServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) error {
+func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) error {
 	//TODO check the sessionID
+
 	var err error
+	var topicErr error
+	var timelineID []byte
+
 	var req *grpc.TimelineDeleteRequest
 
 	var batch []timeline.Message
@@ -261,22 +226,33 @@ func (s *innerServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) er
 
 		batch = append(batch, timeline.Message{
 			ID:              req.MessageIDBytes(),
-			TimestampMS:     0,
-			BodyID:          nil,
-			Body:            nil,
 			ProducerGroupID: nil,
 			LockConsumerID:  nil,
 			BucketID:        req.BucketID(),
 			Version:         req.Version(),
 		})
+
+		if timelineID == nil {
+			timelineID, topicErr = s.greeter.GetTopicFor(req.SessionID())
+
+			if topicErr != nil {
+				return errors.New("producer missing session")
+			}
+		}
 	}
-	responseErrors := s.listeners.TimelineDeleteMessagesListener(context.Background(), batch)
+
 	builder := flatbuffers.NewBuilder(128)
+	var responseErrors []derrors.MessageIDTuple
+
+	//timelineID can be nil when no messages arrived
+	if timelineID != nil {
+		responseErrors = s.listeners.TimelineDeleteMessagesListener(stream.Context(), timelineID, batch)
+	}
 	rootPosition := writeTimelineResponse(responseErrors, builder)
 	builder.Finish(rootPosition)
 	return stream.SendAndClose(builder)
 }
-func (s *innerServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) (*flatbuffers.Builder, error) {
+func (s *GRPCServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) (*flatbuffers.Builder, error) {
 	return nil, nil
 }
 

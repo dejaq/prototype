@@ -41,6 +41,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	logger := logrus.New()
+	greeter := coordinator.NewGreeter()
 
 	lis, err := net.Listen("tcp", "0.0.0.0:9000")
 	if err != nil {
@@ -48,7 +49,7 @@ func main() {
 	}
 	ser := grpc.NewServer(grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}))
 
-	grpServer := coordinator.NewGRPCServer(nil)
+	grpServer := coordinator.NewGRPCServer(nil, greeter)
 
 	mem := inmemory.NewInMemory()
 
@@ -68,7 +69,8 @@ func main() {
 		TickInterval: time.Millisecond * 50,
 	}
 
-	coordinator.NewCoordinator(ctx, coordinatorConfig, mem, grpServer, synchronization)
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, mem, synchronization, greeter)
+	supervisor.AttachToServer(grpServer)
 
 	go func() {
 		//wait for the server to be up
@@ -84,7 +86,7 @@ func main() {
 
 		consumer.NewConsumer(ctx, conn, conn, &consumer.Config{
 			ConsumerID: "alfa",
-			Topic:      "default_timeline",
+			Topic:      "topicOne",
 			Cluster:    "",
 			LeaseMs:    30 * 1000,
 			ProcessMessageListener: func(lease timeline.PushLeases) {
@@ -96,7 +98,7 @@ func main() {
 
 		creator := producer.NewProducer(conn, conn, &producer.Config{
 			Cluster:         "",
-			Topic:           "default_timeline",
+			Topic:           "topicOne",
 			ProducerGroupID: "ProducerMega",
 		})
 		if err := creator.Handshake(ctx); err != nil {
@@ -132,7 +134,7 @@ func main() {
 	go func() {
 		defer logger.Println("closing SERVER goroutine")
 
-		DejaQ.RegisterBrokerServer(ser, grpServer.InnerServer)
+		DejaQ.RegisterBrokerServer(ser, grpServer)
 		log.Info("start server")
 		if err := ser.Serve(lis); err != nil {
 			logger.Printf("Failed to serve: %v", err)
