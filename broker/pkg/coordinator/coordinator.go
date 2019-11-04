@@ -107,10 +107,10 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer Consumer) {
 			c.DeRegisterCustomer(consumer)
 		},
-		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID []byte, msgs []timeline.Message) []errors.MessageIDTuple {
+		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
-			return c.storage.Delete(ctx, timelineID, msgs)
+			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
 		TimelineProducerSubscribed: func(i context.Context, producer Producer) {
 
@@ -180,10 +180,10 @@ func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
 	c.lock.Unlock()
 }
 
-func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic []byte, msgs []timeline.Message) []errors.MessageIDTuple {
+func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic string, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
 	for i := range msgs {
 		msgs[i].BucketID = uint16(rand.Intn(int(c.conf.NoBuckets)))
 	}
-	return c.storage.Insert(ctx, topic, msgs)
+	return c.storage.Insert(ctx, []byte(topic), msgs)
 }

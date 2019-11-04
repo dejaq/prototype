@@ -17,11 +17,11 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 
 //GRPCListeners Coordinator can listen and react to these calls
 type GRPCListeners struct {
-	TimelineCreateMessagesListener func(context.Context, []byte, []timeline.Message) []derrors.MessageIDTuple
+	TimelineCreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 	TimelineProducerSubscribed     func(context.Context, Producer)
 	TimelineConsumerSubscribed     func(context.Context, Consumer)
 	TimelineConsumerUnSubscribed   func(context.Context, Consumer)
-	TimelineDeleteMessagesListener func(context.Context, []byte, []timeline.Message) []derrors.MessageIDTuple
+	TimelineDeleteMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -43,15 +43,16 @@ func (s *GRPCServer) SetListeners(listeners *GRPCListeners) {
 }
 
 func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error) {
-	sessionID, err := s.greeter.ProducerHandshake(req)
-	if err != nil {
-		return nil, err
-	}
-
 	var p Producer
 	p.Topic = string(req.TopicID())
 	p.Cluster = string(req.Cluster())
 	p.GroupID = req.ProducerGroupID()
+
+	sessionID, err := s.greeter.ProducerHandshake(p)
+	if err != nil {
+		return nil, err
+	}
+
 	s.listeners.TimelineProducerSubscribed(ctx, p)
 
 	builder := flatbuffers.NewBuilder(128)
@@ -66,16 +67,16 @@ func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.Ti
 }
 
 func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error) {
-	sessionID, err := s.greeter.ConsumerHandshake(req)
-	if err != nil {
-		return nil, err
-	}
-
 	var c Consumer
 	c.LeaseMs = req.LeaseTimeoutMS()
 	c.Topic = string(req.TopicID())
 	c.Cluster = string(req.Cluster())
 	c.ID = req.ConsumerID()
+
+	sessionID, err := s.greeter.ConsumerHandshake(c)
+	if err != nil {
+		return nil, err
+	}
 	s.listeners.TimelineConsumerSubscribed(ctx, c)
 
 	builder := flatbuffers.NewBuilder(128)
@@ -142,7 +143,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var request *grpc.TimelineCreateMessageRequest
 	var err error
 	var errGet error
-	var sessionData *grpc.TimelineProducerHandshakeRequest
+	var producer Producer
 
 	//gather all the messages from the client
 	for err == nil {
@@ -158,8 +159,8 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 			break
 		}
 
-		if sessionData == nil {
-			sessionData, errGet = s.greeter.GetProducerSessionData(request.SessionID())
+		if len(producer.GroupID) == 0 {
+			producer, errGet = s.greeter.GetProducerSessionData(request.SessionID())
 			if errGet != nil {
 				return err
 			}
@@ -169,16 +170,16 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 			ID:              request.IdBytes(),
 			TimestampMS:     request.TimeoutMS(),
 			Body:            request.BodyBytes(),
-			ProducerGroupID: sessionData.ProducerGroupID(),
+			ProducerGroupID: producer.GroupID,
 			Version:         1,
 		})
 	}
 
-	if sessionData == nil {
+	if len(producer.GroupID) == 0 {
 		return errors.New("no message with sessionID")
 	}
 
-	msgErrors := s.listeners.TimelineCreateMessagesListener(stream.Context(), sessionData.TopicID(), msgs)
+	msgErrors := s.listeners.TimelineCreateMessagesListener(stream.Context(), producer.Topic, msgs)
 
 	//returns the response to the client
 	var builder *flatbuffers.Builder
@@ -205,7 +206,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 
 	var err error
 	var topicErr error
-	var timelineID []byte
+	var timelineID string
 
 	var req *grpc.TimelineDeleteRequest
 
@@ -227,7 +228,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			Version:         req.Version(),
 		})
 
-		if timelineID == nil {
+		if timelineID == "" {
 			timelineID, topicErr = s.greeter.GetTopicFor(req.SessionID())
 
 			if topicErr != nil {
@@ -240,7 +241,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var responseErrors []derrors.MessageIDTuple
 
 	//timelineID can be nil when no messages arrived
-	if timelineID != nil {
+	if timelineID != "" {
 		responseErrors = s.listeners.TimelineDeleteMessagesListener(stream.Context(), timelineID, batch)
 	}
 	rootPosition := writeTimelineResponse(responseErrors, builder)
