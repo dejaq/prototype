@@ -19,11 +19,7 @@ type Repository interface {
 	// INSERT messages (timelineID, []messages) map[msgID]error
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
-	Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error)
-	// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
-	Update(ctx context.Context, timelineID []byte, messageTimestamps []MsgTime) []errors.MessageIDTuple
-	// UPDATE lease BY TimelineID, MessageIDs (map[msgID]newLease])  map[msgID]error (for extend lease)
-	UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []errors.MessageIDTuple
+	Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error)
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
