@@ -12,8 +12,8 @@ type Dealer interface {
 }
 
 // generateRangesFor generates a list of ranges covering all buckets, to be evenly split
-//to a number of consumers. Returns nil for 0 consumers
-//for 3 consumers and 10 buckets will do: [0,3),[3,6),[7,10)
+// to a number of consumers. Returns nil for 0 consumers
+// for 3 consumers and 10 buckets will do: [0,3),[3,6),[7,10)
 func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.BucketRange {
 	result := make([]domain.BucketRange, 0, consumersCount)
 
@@ -24,20 +24,20 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 	//1 consumer 1 range
 	if consumersCount == 1 || noOfBuckets == 1 {
 		result = append(result, domain.BucketRange{
-			MinInclusive: 0,
-			MaxExclusive: noOfBuckets,
+			Start: 0,
+			End: noOfBuckets - 1,
 		})
 		return result
 	}
 	var i uint16
 
 	if consumersCount >= noOfBuckets {
-		//1 consumer 1 bucket OR
+		// 1 consumer 1 bucket OR
 		// more consumers than buckets, some of them will have no buckets!
 		for ; i < consumersCount; i++ {
 			result = append(result, domain.BucketRange{
-				MinInclusive: i,
-				MaxExclusive: i + 1,
+				Start: i,
+				End: i,
 			})
 		}
 		return result
@@ -49,13 +49,13 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 
 	for ; i < consumersCount; i++ {
 		r := domain.BucketRange{
-			MinInclusive: i * avgCountPerConsumer,
+			Start: i * avgCountPerConsumer,
 		}
 		if latestI == i {
 			//this covers the case when consumers=3 buckets=11 and last range should be [7,11)
-			r.MaxExclusive = noOfBuckets
+			r.End = noOfBuckets
 		} else {
-			r.MaxExclusive = r.MinInclusive + avgCountPerConsumer
+			r.End = r.Start + avgCountPerConsumer - 1
 		}
 		result = append(result, r)
 	}
@@ -64,7 +64,7 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 }
 
 // ExclusiveDealer splits each range to each consumer having no overlap.
-//Meaning ech consumer will have exclusivity on its assigned ranges (no collisions, no fallback)
+// Meaning ech consumer will have exclusivity on its assigned ranges (no collisions, no fallback)
 type ExclusiveDealer struct {
 }
 
@@ -80,7 +80,7 @@ func (d ExclusiveDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 		if i < len(allRanges) {
 			consumers[i].AssignedBuckets = []domain.BucketRange{allRanges[i]}
 		} else {
-			//if it does not have a range, just reset it
+			// if it does not have a range, just reset it
 			consumers[i].AssignedBuckets = nil
 		}
 	}
@@ -94,19 +94,24 @@ func NewGladiatorDealer() Dealer {
 }
 
 func (d GladiatorDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
-	//maxBuckets := len(d.buckets)/len(consumers) + 1
+	noOfConsumers := uint16(len(consumers))
+	allRanges := generateRangesFor(noOfConsumers, noOfBuckets)
 
-	//// assign dedicated bucketCount in ascending order
-	//for i, b := range d.buckets[topicID] {
-	//	consumerIndex := i / maxBuckets
-	//	// assign dedicated bucketCount in ascending order
-	//	consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, b)
-	//}
-	//for i, _ := range d.buckets[topicID] {
-	//	consumerIndex := i / maxBuckets
-	//	// assign shared bucketCount in descending order to reduce collision probability and help slower consumers
-	//	consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, reverse(d.buckets[topicID][i+1:i+maxBuckets])...)
-	//}
+	noOfRanges := uint16(len(allRanges))
+	// assign ranges to customers in ascending order
+	for i := range consumers {
+		if i < len(allRanges) {
+			consumers[i].AssignedBuckets = []domain.BucketRange{allRanges[i]}
+		} else {
+			// if it does not have a range, just reset it
+			consumers[i].AssignedBuckets = nil
+		}
+	}
+
+	for i := 0; i < int(noOfConsumers) * int(noOfRanges-1); i++ {
+		consumerIndex := (i + int(noOfRanges))%int(noOfConsumers)
+		consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
+	}
 }
 
 func reverse(s []uint16) []uint16 {

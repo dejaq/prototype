@@ -13,6 +13,7 @@ import (
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	"github.com/rcrowley/go-metrics"
 )
@@ -129,7 +130,7 @@ func (c *Coordinator) loadMessages(ctx context.Context) {
 }
 
 func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
-	pushLeaseMessages, _, _ := c.storage.Select(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, uint64(time.Now().UTC().Unix()))
+	pushLeaseMessages, _, _ := c.storage.Select(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, dtime.TimeToMS(time.Now()))
 	if len(pushLeaseMessages) == 0 {
 		return
 	}
