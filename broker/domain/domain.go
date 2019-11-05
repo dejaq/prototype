@@ -11,6 +11,34 @@ type Client struct {
 // BucketRange represents a range of buckets, calculated by dealer
 //and used by Storage.
 type BucketRange struct {
-	MinInclusive uint16
-	MaxExclusive uint16
+	Start uint16
+	End uint16
+}
+
+func (b BucketRange) ASC() BucketRange {
+	return BucketRange{
+		Start: b.Min(),
+		End:   b.Max(),
+	}
+}
+
+func (b BucketRange) DESC() BucketRange {
+	return BucketRange{
+		Start: b.Max(),
+		End:   b.Min(),
+	}
+}
+
+func (b BucketRange) Min() uint16 {
+	if b.Start < b.End {
+		return b.Start
+	}
+	return b.End
+}
+
+func (b BucketRange) Max() uint16 {
+	if b.Start < b.End {
+		return b.End
+	}
+	return b.Start
 }
