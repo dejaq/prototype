@@ -42,7 +42,7 @@ func (m *InMemory) Select(ctx context.Context, timelineID []byte, ranges []domai
 	//log.Println("select messages from timeline", string(timelineID))
 	var result []timeline.Message
 	for bri := range ranges {
-		for bIndex := ranges[bri].Start; bIndex < ranges[bri].End; bIndex++ {
+		for bIndex := ranges[bri].Min(); bIndex < ranges[bri].Max(); bIndex++ {
 			tmpResult, hasMore, err := m.selectFromBucket(ctx, bIndex, limit)
 			if err != nil {
 				return result, hasMore, err
