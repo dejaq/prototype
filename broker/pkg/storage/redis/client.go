@@ -105,8 +105,6 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 
 // Select ...
 func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
-	// TODO implement limit
-	// TODO use maxTimestamp
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
