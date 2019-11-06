@@ -103,87 +103,96 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 	return insertErrors
 }
 
-// Select ...
-func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
+// GetAndLease ...
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
 	var results []timeline.PushLeases
 	var processingError error
 
-	for limit > 0 {
-		for _, bucketRange := range buckets {
-			// TODO get data here in revers order if Start is less than End
-			for i := bucketRange.Min(); i <= bucketRange.Max(); i++ {
-				timelineKey := c.createTimelineKey("cluster_name", timelineID, i)
+	for _, bucketRange := range buckets {
+		// TODO get data here in revers order if Start is less than End
+		for i := bucketRange.Min(); i <= bucketRange.Max(); i++ {
+			timelineKey := c.createTimelineKey("cluster_name", timelineID, i)
 
-				messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
-					Min:    "-inf",
-					Max:    fmt.Sprintf("%v", maxTimestamp),
-					Offset: 0,
-					Count:  int64(limit),
-				}).Result()
+			messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
+				Min:    "-inf",
+				Max:    fmt.Sprintf("%v", maxTimestamp),
+				Offset: 0,
+				Count:  int64(limit),
+			}).Result()
 
-				// TODO maybe not best practice, assign to same var in a loop
+			// TODO maybe not best practice, assign to same var in a loop
+			if err != nil {
+				processingError = err
+				continue
+			}
+
+			for _, msgId := range messagesIds {
+				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
+
+				// set lease on message hashMap
+				data := make(map[string]interface{})
+				data["LockConsumerID"] = consumerId
+				endLeaseTimeMs := uint64(dtime.TimeToMS(time.Now().UTC())) + leaseMs
+				data["TimestampMS"] = fmt.Sprintf("%v", endLeaseTimeMs)
+
+				ok, err := c.client.HMSet(messageKey, data).Result()
 				if err != nil {
 					processingError = err
 					continue
 				}
 
-				for _, msgId := range messagesIds {
-					messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
-
-					// set lease on message hashMap
-					data := make(map[string]interface{})
-					data["LockConsumerID"] = consumerId
-					endLeaseTimeMs := uint64(dtime.TimeToMS(time.Now().UTC())) + leaseMs
-					data["TimestampMS"] = fmt.Sprintf("%v", endLeaseTimeMs)
-
-					ok, err := c.client.HMSet(messageKey, data).Result()
-					if err != nil {
-						processingError = err
-						continue
-					}
-
-					if ok != "OK" {
-						processingError = errors.New("message data was not updated on lease")
-						continue
-					}
-
-					// Confirmation has to be 0 on update (1 on creation)
-					_, err = c.client.ZAdd(timelineKey, redis.Z{
-						Member: msgId,
-						Score:  float64(endLeaseTimeMs),
-					}).Result()
-
-					if err != nil {
-						processingError = err
-						continue
-					}
-
-					rawMessage, err := c.client.HMGet(
-						messageKey,
-						"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
-
-					if err != nil {
-						processingError = err
-						continue
-					}
-
-					timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
-					if err != nil {
-						processingError = err
-						continue
-					}
-
-					results = append(results, timeline.PushLeases{
-						ExpirationTimestampMS: endLeaseTimeMs,
-						ConsumerID:            []byte(consumerId),
-						Message:               timeline.NewLeaseMessage(timelineMessage),
-					})
-
-					limit--
+				if ok != "OK" {
+					processingError = errors.New("message data was not updated on lease")
+					continue
 				}
+
+				// Confirmation has to be 0 on update (1 on creation)
+				_, err = c.client.ZAdd(timelineKey, redis.Z{
+					Member: msgId,
+					Score:  float64(endLeaseTimeMs),
+				}).Result()
+
+				if err != nil {
+					processingError = err
+					continue
+				}
+
+				rawMessage, err := c.client.HMGet(
+					messageKey,
+					"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
+
+				if err != nil {
+					processingError = err
+					continue
+				}
+
+				timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
+				if err != nil {
+					processingError = err
+					continue
+				}
+
+				// there are more messages
+				if limit < 0 {
+					return results, true, processingError
+				}
+
+				// Do not append to results if rich limit
+				if limit < 1 {
+					limit--
+					continue
+				}
+
+				results = append(results, timeline.PushLeases{
+					ExpirationTimestampMS: endLeaseTimeMs,
+					ConsumerID:            []byte(consumerId),
+					Message:               timeline.NewLeaseMessage(timelineMessage),
+				})
+
+				limit--
 			}
 		}
 	}

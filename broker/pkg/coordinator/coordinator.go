@@ -130,7 +130,7 @@ func (c *Coordinator) loadMessages(ctx context.Context) {
 }
 
 func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
-	pushLeaseMessages, _, _ := c.storage.Select(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, dtime.TimeToMS(time.Now()))
+	pushLeaseMessages, _, _ := c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, dtime.TimeToMS(time.Now()))
 	if len(pushLeaseMessages) == 0 {
 		return
 	}
