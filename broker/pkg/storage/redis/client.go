@@ -130,6 +130,13 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 			}
 
 			for _, msgId := range messagesIds {
+				limit--
+
+				// there are more messages
+				if limit < 0 {
+					return results, true, processingError
+				}
+
 				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
 
 				// set lease on message hashMap
@@ -175,24 +182,11 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 					continue
 				}
 
-				// there are more messages
-				if limit < 0 {
-					return results, true, processingError
-				}
-
-				// Do not append to results if rich limit
-				if limit < 1 {
-					limit--
-					continue
-				}
-
 				results = append(results, timeline.PushLeases{
 					ExpirationTimestampMS: endLeaseTimeMs,
 					ConsumerID:            []byte(consumerId),
 					Message:               timeline.NewLeaseMessage(timelineMessage),
 				})
-
-				limit--
 			}
 		}
 	}
