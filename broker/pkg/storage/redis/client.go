@@ -113,8 +113,8 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 
 	for _, bucketRange := range buckets {
 		// TODO get data here in revers order if Start is less than End
-		for i := bucketRange.Min(); i <= bucketRange.Max(); i++ {
-			timelineKey := c.createTimelineKey("cluster_name", timelineID, i)
+		for bucketID := bucketRange.Min(); bucketID <= bucketRange.Max(); bucketID++ {
+			timelineKey := c.createTimelineKey("cluster_name", timelineID, bucketID)
 
 			messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
 				Min:    "-inf",
@@ -137,7 +137,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 					return results, true, processingError
 				}
 
-				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
+				messageKey := c.createMessageKey("cluster_name:", timelineID, bucketID, []byte(msgId))
 
 				// set lease on message hashMap
 				data := make(map[string]interface{})
@@ -176,7 +176,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 					continue
 				}
 
-				timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
+				timelineMessage, err := convertMessageToTimelineMsg(rawMessage, bucketID)
 				if err != nil {
 					processingError = err
 					continue
@@ -194,7 +194,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []d
 	return results, false, processingError
 }
 
-func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
+func convertMessageToTimelineMsg(rawMessage []interface{}, bucketID uint16) (timeline.Message, error) {
 	// TODO implement errors on strconv
 	var message timeline.Message
 	message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
@@ -207,8 +207,8 @@ func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, er
 	message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
 	message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
 
-	bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
-	message.BucketID = uint16(bucketIdUint16)
+	//bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
+	message.BucketID = uint16(bucketID)
 	version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
 	message.Version = uint16(version)
 

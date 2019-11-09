@@ -75,7 +75,7 @@ func main() {
 	synchronization := etcd.NewEtcd(etcdCLI)
 
 	coordinatorConfig := coordinator.Config{
-		NoBuckets:    1,
+		NoBuckets:    3,
 		TopicType:    common.TopicType_Timeline,
 		TickInterval: time.Millisecond * 50,
 	}
@@ -95,16 +95,26 @@ func main() {
 		defer conn.Close()
 		defer logger.Println("closing CLIENT goroutine")
 
-		consumer.NewConsumer(ctx, conn, conn, &consumer.Config{
+		c := consumer.NewConsumer(conn, conn, &consumer.Config{
 			ConsumerID: "alfa",
 			Topic:      "topicOne",
 			Cluster:    "",
 			LeaseMs:    time.Second,
-			ProcessMessageListener: func(lease timeline.PushLeases) {
-				//Process the messages
-				logger.Printf("received message ID=%s body=%s\n", lease.Message.ID, string(lease.Message.Body))
-			},
 		})
+		c.Start(ctx, func(lease timeline.PushLeases) {
+			//Process the messages
+			logger.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+			err := c.Delete(ctx, []timeline.Message{{
+				ID:          lease.Message.ID,
+				TimestampMS: lease.Message.TimestampMS,
+				BucketID:    lease.Message.BucketID,
+				Version:     lease.Message.Version,
+			}})
+			if err != nil {
+				log.Errorf("delete failed", err)
+			}
+		})
+
 		log.Info("consumer handshake success")
 
 		creator := producer.NewProducer(conn, conn, &producer.Config{

@@ -30,30 +30,33 @@ type Consumer struct {
 	handshakeMutex sync.RWMutex
 }
 
-func NewConsumer(ctx context.Context, overseer, carrier *grpc.ClientConn, conf *Config) *Consumer {
+func NewConsumer(overseer, carrier *grpc.ClientConn, conf *Config) *Consumer {
 	result := &Consumer{
 		conf:     conf,
 		overseer: dejaq.NewBrokerClient(overseer),
 		carrier:  dejaq.NewBrokerClient(carrier),
 	}
 
+	return result
+}
+
+func (c *Consumer) Start(ctx context.Context, f func(timeline.PushLeases)) {
+	c.conf.ProcessMessageListener = f
+
 	//TODO make this a proper method and see the goroutine doesn't leak
 	go func() {
-		if err := result.Handshake(context.Background()); err != nil {
-			log.Fatal(err)
+		if err := c.Handshake(ctx); err != nil {
+			log.Println(err)
 		}
 		for {
 			//now preload == process, TODO split it two
-			result.preload(context.Background())
-			time.Sleep(time.Millisecond * 25)
+			c.preload(ctx)
 
 			if ctx.Err() != nil {
 				return
 			}
 		}
 	}()
-
-	return result
 }
 
 // Handshake has to be called before any carrier operation or when one
@@ -97,7 +100,6 @@ func (c *Consumer) preload(ctx context.Context) {
 	requestPosition := dejaq.TimelineConsumeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
-	toDelete := make([]timeline.Message, 0, 128)
 	stream, err := c.carrier.TimelineConsume(ctx, builder)
 	if err != nil {
 		log.Fatalf("subscribe: %v", err)
@@ -115,7 +117,7 @@ func (c *Consumer) preload(ctx context.Context) {
 				break
 			}
 			if err != nil {
-				log.Fatalf("TimelineCreateMessages client failed err=%s", err.Error())
+				log.Printf("TimelineCreateMessages client failed err=%s", err.Error())
 				//TODO if err is invalid/expired sessionID do a handshake automatically
 			}
 			if response == nil { //empty msg ?!?!?! TODO log this as a warning
@@ -136,30 +138,6 @@ func (c *Consumer) preload(ctx context.Context) {
 					BucketID:        msg.BucketID(),
 				},
 			})
-			toDelete = append(toDelete, timeline.Message{
-				ID:          msg.MessageIDBytes(),
-				TimestampMS: msg.TimestampMS(),
-				BucketID:    msg.BucketID(),
-				Version:     msg.Version(),
-			})
-
-			if len(toDelete) > 3 {
-				err := c.Delete(ctx, toDelete)
-				if err != nil {
-					log.Println("delete failed", err)
-				} else {
-					toDelete = toDelete[:0]
-				}
-			}
-		}
-
-		if len(toDelete) > 0 {
-			err := c.Delete(ctx, toDelete)
-			if err != nil {
-				log.Println("delete failed", err)
-			} else {
-				toDelete = toDelete[:0]
-			}
 		}
 	}
 }
