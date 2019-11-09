@@ -1,8 +1,10 @@
 package redis
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 
@@ -12,8 +14,8 @@ import (
 
 	"context"
 
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 )
 
 type Client struct {
@@ -46,15 +48,11 @@ func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketI
 	return "dejaq::" + clusterName + "::" + string(timelineId) + "::" + idBucket + "::" + string(messageId)
 }
 
-func (c *Client) createLeaseKey(clusterName string, timelineId []byte) string {
-	return "dejaq::" + clusterName + "::leased" + string(timelineId) + "::"
-}
-
 // Insert ...
 func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO use unsafe for conversions
 
-	var errors []derrors.MessageIDTuple
+	var insertErrors []derrors.MessageIDTuple
 
 	for _, msg := range messages {
 		timelineKey := c.createTimelineKey("cluster_name", timelineID, msg.BucketID)
@@ -66,13 +64,13 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Message = err.Error()
-			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
 		if ok != 1 {
 			var derror derrors.Dejaror
 			derror.Message = "MessageId was not written on redis"
-			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
 		// TODO improve here, find a better solution to translate a type into map
@@ -92,36 +90,35 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Message = err.Error()
-			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
 		if isOk != "OK" {
 			var derror derrors.Dejaror
 			derror.Message = "Message data was not written on redis"
-			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 	}
 
-	return errors
+	return insertErrors
 }
 
-// Select ...
-func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
-	// TODO implement limit
-	// TODO use maxTimestamp
+// GetAndLease ...
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
-	var results []timeline.Message
+	var results []timeline.PushLeases
 	var processingError error
 
 	for _, bucketRange := range buckets {
-		for i := bucketRange.MinInclusive; i < bucketRange.MaxExclusive; i++ {
+		// TODO get data here in revers order if Start is less than End
+		for i := bucketRange.Min(); i <= bucketRange.Max(); i++ {
 			timelineKey := c.createTimelineKey("cluster_name", timelineID, i)
 
 			messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
 				Min:    "-inf",
-				Max:    "+inf",
+				Max:    fmt.Sprintf("%v", maxTimestamp),
 				Offset: 0,
 				Count:  int64(limit),
 			}).Result()
@@ -133,20 +130,43 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 			}
 
 			for _, msgId := range messagesIds {
-				leasedKey := c.createLeaseKey("cluster_name", timelineID)
+				limit--
 
-				// continue if message is already leased
-				isMember, err := c.client.SIsMember(leasedKey, msgId).Result()
+				// there are more messages
+				if limit < 0 {
+					return results, true, processingError
+				}
+
+				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
+
+				// set lease on message hashMap
+				data := make(map[string]interface{})
+				data["LockConsumerID"] = consumerId
+				endLeaseTimeMs := uint64(dtime.TimeToMS(time.Now().UTC())) + leaseMs
+				data["TimestampMS"] = fmt.Sprintf("%v", endLeaseTimeMs)
+
+				ok, err := c.client.HMSet(messageKey, data).Result()
 				if err != nil {
 					processingError = err
 					continue
 				}
 
-				if isMember {
+				if ok != "OK" {
+					processingError = errors.New("message data was not updated on lease")
 					continue
 				}
 
-				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
+				// Confirmation has to be 0 on update (1 on creation)
+				_, err = c.client.ZAdd(timelineKey, redis.Z{
+					Member: msgId,
+					Score:  float64(endLeaseTimeMs),
+				}).Result()
+
+				if err != nil {
+					processingError = err
+					continue
+				}
+
 				rawMessage, err := c.client.HMGet(
 					messageKey,
 					"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
@@ -162,7 +182,11 @@ func (c *Client) Select(ctx context.Context, timelineID []byte, buckets []domain
 					continue
 				}
 
-				results = append(results, timelineMessage)
+				results = append(results, timeline.PushLeases{
+					ExpirationTimestampMS: endLeaseTimeMs,
+					ConsumerID:            []byte(consumerId),
+					Message:               timeline.NewLeaseMessage(timelineMessage),
+				})
 			}
 		}
 	}
@@ -191,16 +215,6 @@ func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, er
 	return message, nil
 }
 
-// Update - not used at this time
-func (c *Client) Update(ctx context.Context, timelineID []byte, messageTimestamps []storage.MsgTime) []derrors.MessageIDTuple {
-	return nil
-}
-
-// UpdateLeases - not used at this time
-func (c *Client) UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
-	return nil
-}
-
 // Lookup - not used at this time
 func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil
@@ -223,15 +237,11 @@ func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timel
 			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
-		// TODO remove after fix bug of memory leak
-		_ = ok
-
-		// TODO uncomment after fix bug of memory leak
-		//if ok != 1 {
-		//	var derror derrors.Dejaror
-		//	derror.Message = "MessageId was not deleted from redis"
-		//	errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		//}
+		if ok != 1 {
+			var derror derrors.Dejaror
+			derror.Message = "MessageId was not deleted from redis"
+			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+		}
 
 		// delete message data from hashMap
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
@@ -246,12 +256,11 @@ func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timel
 			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
-		// TODO uncomment after fix bug of memory leak
-		//if ok != 8 {
-		//	var derror derrors.Dejaror
-		//	derror.Message = "Message data was not deleted from redis"
-		//	errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		//}
+		if ok != 8 {
+			var derror derrors.Dejaror
+			derror.Message = "Message data was not deleted from redis"
+			errors = append(errors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+		}
 	}
 
 	return errors

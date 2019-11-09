@@ -42,6 +42,11 @@ func (c Consumer) GetID() string {
 	return *(*string)(unsafe.Pointer(&c.ID))
 }
 
+// GetTopic ...
+func (c Consumer) GetTopic() []byte {
+	return []byte(c.Topic)
+}
+
 type Producer struct {
 	GroupID []byte
 	Topic   string
@@ -125,22 +130,10 @@ func (c *Coordinator) loadMessages(ctx context.Context) {
 }
 
 func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
-	available, _, _ := c.storage.Select(ctx, []byte(consumer.Topic), consumer.AssignedBuckets, 10, uint64(time.Now().UTC().Unix()))
-	if len(available) == 0 {
+	pushLeaseMessages, _, _ := c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, dtime.TimeToMS(time.Now()))
+	if len(pushLeaseMessages) == 0 {
 		return
 	}
-	toSend := make([]timeline.PushLeases, len(available))
-	for i := range available {
-		toSend[i] = timeline.PushLeases{
-			ExpirationTimestampMS: uint64(dtime.TimeToMS(time.Now().UTC())) + consumer.LeaseMs,
-			ConsumerID:            consumer.ID,
-			Message:               timeline.NewLeaseMessage(available[i]),
-		}
-		available[i].LockConsumerID = consumer.ID
-		available[i].TimestampMS = toSend[i].ExpirationTimestampMS
-	}
-
-	c.storage.UpdateLeases(ctx, []byte(consumer.Topic), available)
 
 	consumerPipeline, err := c.greeter.GetPipelineFor(consumer.GetID())
 	if err != nil {
@@ -156,8 +149,8 @@ func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consum
 	//
 	//}
 
-	for i := range toSend {
-		consumerPipeline <- toSend[i]
+	for i := range pushLeaseMessages {
+		consumerPipeline <- pushLeaseMessages[i]
 	}
 
 }
