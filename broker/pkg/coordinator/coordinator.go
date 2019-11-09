@@ -25,9 +25,10 @@ const (
 )
 
 var (
-	metricTopicsCounter    = metrics.NewRegisteredCounter(numberOfTopics, nil)
-	metricTimelinesCounter = metrics.NewRegisteredCounter(numberOfTimelines, nil)
-	metricMessagesCounter  = metrics.NewRegisteredCounter(numberOfMessages, nil)
+	metricTopicsCounter     = metrics.NewRegisteredCounter(numberOfTopics, nil)
+	metricTimelinesCounter  = metrics.NewRegisteredCounter(numberOfTimelines, nil)
+	metricMessagesCounter   = metrics.NewRegisteredCounter(numberOfMessages, nil)
+	ErrConsumerNotConnected = errors.NewDejaror("consumer not connected", "load")
 )
 
 type Consumer struct {
@@ -122,37 +123,53 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 func (c *Coordinator) loadMessages(ctx context.Context) {
 	c.lock.RLock()
 
+	wg := sync.WaitGroup{}
+	wg.Add(len(c.consumers))
+	newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	for _, consumer := range c.consumers {
-		c.loadCustomerMessages(ctx, consumer)
+		go func() {
+			msgsSent, sentAllMessges, err := c.loadOneConsumer(newCtx, consumer, 10)
+			if err != nil {
+				log.Println(err)
+			} else if !sentAllMessges {
+				//TODO decrease the weight of this consumer, because it has more messages
+				log.Printf("sent %d msgs but still has more", msgsSent)
+			}
+			wg.Done()
+		}()
 	}
+	wg.Wait()
+
+	//TODO based on the throttler of each consumer change the buckets assigned
 
 	c.lock.RUnlock()
 }
 
-func (c *Coordinator) loadCustomerMessages(ctx context.Context, consumer *Consumer) {
-	pushLeaseMessages, _, _ := c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, 10, dtime.TimeToMS(time.Now()))
+//returns number of sent messages, if it sent all of them, and an error
+func (c *Coordinator) loadOneConsumer(ctx context.Context, consumer *Consumer, limit int) (int, bool, error) {
+	pushLeaseMessages, _, _ := c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now()))
 	if len(pushLeaseMessages) == 0 {
-		return
+		return 0, true, nil
 	}
 
 	consumerPipeline, err := c.greeter.GetPipelineFor(consumer.GetID())
 	if err != nil {
-		//TODO put a timeout and unsubscribe it?
 		//TODO cancel the leases
-		log.Println("loadCustomerMessages failed", err)
-		return
+		log.Println("loadOneConsumer failed", err)
+		return 0, false, ErrConsumerNotConnected
 	}
-	//TODO add timeout here, as each message reaches to client and can take a while
-	//select{
-	//case time.After(3 * time.Second):
-	//	return errors.New("pushing messages timeout")
-	//
-	//}
 
+	sent := 0
 	for i := range pushLeaseMessages {
-		consumerPipeline <- pushLeaseMessages[i]
+		select {
+		case <-ctx.Done():
+			return sent, false, context.DeadlineExceeded
+		default:
+			consumerPipeline <- pushLeaseMessages[i]
+			sent++
+		}
 	}
-
+	return sent, true, nil
 }
 
 func (c *Coordinator) RegisterCustomer(consumer Consumer) {
