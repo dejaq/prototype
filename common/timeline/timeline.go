@@ -118,5 +118,6 @@ func NewLeaseMessage(msg Message) LeaseMessage {
 		ProducerGroupID: msg.ProducerGroupID,
 		Version:         msg.Version,
 		Body:            msg.Body,
+		BucketID:        msg.BucketID,
 	}
 }
