@@ -23,8 +23,9 @@ import (
 )
 
 func main() {
-	msgsCount := 10000
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*25))
+	msgsCount := 100
+	batchSize := 100
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
 
 	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
@@ -62,10 +63,6 @@ func main() {
 	supervisor.AttachToServer(grpServer)
 
 	go func() {
-
-	}()
-
-	go func() {
 		defer logger.Println("closing SERVER goroutine")
 
 		DejaQ.RegisterBrokerServer(ser, grpServer)
@@ -94,7 +91,7 @@ func main() {
 			Cluster:         "",
 			Topic:           "testminibench1",
 			ProducerGroupID: "prod1",
-			BatchSize:       1,
+			BatchSize:       batchSize,
 		})
 		if err != nil {
 			log.Error(err)
@@ -156,20 +153,37 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 	t := time.Now().UTC()
 	left := config.Count
 	var batch []timeline.Message
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		err := creator.InsertMessages(ctx, batch)
+		if err != nil {
+			return errors.Wrap(err, "InsertMessages ERROR")
+		}
+		batch = batch[:0]
+		return nil
+	}
+
 	for left > 0 {
 		left--
 		batch = batch[:0]
 		msgID := config.Count - left
-		//log.Infof("inserting ID %d", msgID)
+		log.Infof("inserting ID %d", msgID)
 		batch = append(batch, timeline.Message{
 			ID:          []byte(fmt.Sprintf("ID %d", msgID)),
 			Body:        []byte(fmt.Sprintf("BODY %d", msgID)),
 			TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond * time.Duration(msgID))),
 		})
-		err := creator.InsertMessages(ctx, batch)
-		if err != nil {
-			return errors.Wrap(err, "InsertMessages ERROR")
+		if len(batch) >= config.BatchSize {
+			if err := flush(); err != nil {
+				return err
+			}
 		}
+	}
+	if err := flush(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -208,7 +222,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 		if err != nil {
 			log.Errorf("delete failed", err)
 		}
-		//logrus.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+		logrus.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
 		wg.Done()
 	})
 

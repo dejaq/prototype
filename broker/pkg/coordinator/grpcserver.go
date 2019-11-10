@@ -155,7 +155,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 			break
 		}
 		if err != nil {
-			_ = fmt.Errorf("TimelineCreateMessages client failed err=%s", err.Error())
+			_ = fmt.Errorf("grpc server TimelineCreateMessages client failed err=%s", err.Error())
 			break
 		}
 
