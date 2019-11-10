@@ -1,27 +1,27 @@
 package redis
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
-
-	"github.com/go-redis/redis"
-
-	"github.com/bgadrian/dejaq-broker/common/timeline"
-
-	"context"
-
+	sTimeline "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	dtime "github.com/bgadrian/dejaq-broker/common/time"
+	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/go-redis/redis"
 )
 
 type Client struct {
 	host   string
 	client *redis.Client
 }
+
+//enforce interface implementation
+var _ = sTimeline.Repository(&Client{})
 
 // NewClient ...
 func NewClient(host string) (*Client, error) {
@@ -104,97 +104,95 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
 	var results []timeline.PushLeases
 	var processingError error
 
-	for _, bucketRange := range buckets {
-		// TODO get data here in revers order if Start is less than End
-		for i := bucketRange.Min(); i <= bucketRange.Max(); i++ {
-			timelineKey := c.createTimelineKey("cluster_name", timelineID, i)
+	// TODO get data here in revers order if Start is less than End
+	for bucketID := buckets.Min(); bucketID <= buckets.Max(); bucketID++ {
+		timelineKey := c.createTimelineKey("cluster_name", timelineID, bucketID)
 
-			messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
-				Min:    "-inf",
-				Max:    fmt.Sprintf("%v", maxTimestamp),
-				Offset: 0,
-				Count:  int64(limit),
-			}).Result()
+		messagesIds, err := c.client.ZRangeByScore(timelineKey, redis.ZRangeBy{
+			Min:    "-inf",
+			Max:    fmt.Sprintf("%v", maxTimestamp),
+			Offset: 0,
+			Count:  int64(limit),
+		}).Result()
 
-			// TODO maybe not best practice, assign to same var in a loop
+		// TODO maybe not best practice, assign to same var in a loop
+		if err != nil {
+			processingError = err
+			continue
+		}
+
+		for _, msgId := range messagesIds {
+			limit--
+
+			// there are more messages
+			if limit < 0 {
+				return results, true, processingError
+			}
+
+			messageKey := c.createMessageKey("cluster_name:", timelineID, bucketID, []byte(msgId))
+
+			// set lease on message hashMap
+			data := make(map[string]interface{})
+			data["LockConsumerID"] = consumerId
+			endLeaseTimeMs := uint64(dtime.TimeToMS(time.Now().UTC())) + leaseMs
+			data["TimestampMS"] = fmt.Sprintf("%v", endLeaseTimeMs)
+
+			ok, err := c.client.HMSet(messageKey, data).Result()
 			if err != nil {
 				processingError = err
 				continue
 			}
 
-			for _, msgId := range messagesIds {
-				limit--
-
-				// there are more messages
-				if limit < 0 {
-					return results, true, processingError
-				}
-
-				messageKey := c.createMessageKey("cluster_name:", timelineID, i, []byte(msgId))
-
-				// set lease on message hashMap
-				data := make(map[string]interface{})
-				data["LockConsumerID"] = consumerId
-				endLeaseTimeMs := uint64(dtime.TimeToMS(time.Now().UTC())) + leaseMs
-				data["TimestampMS"] = fmt.Sprintf("%v", endLeaseTimeMs)
-
-				ok, err := c.client.HMSet(messageKey, data).Result()
-				if err != nil {
-					processingError = err
-					continue
-				}
-
-				if ok != "OK" {
-					processingError = errors.New("message data was not updated on lease")
-					continue
-				}
-
-				// Confirmation has to be 0 on update (1 on creation)
-				_, err = c.client.ZAdd(timelineKey, redis.Z{
-					Member: msgId,
-					Score:  float64(endLeaseTimeMs),
-				}).Result()
-
-				if err != nil {
-					processingError = err
-					continue
-				}
-
-				rawMessage, err := c.client.HMGet(
-					messageKey,
-					"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
-
-				if err != nil {
-					processingError = err
-					continue
-				}
-
-				timelineMessage, err := convertMessageToTimelineMsg(rawMessage)
-				if err != nil {
-					processingError = err
-					continue
-				}
-
-				results = append(results, timeline.PushLeases{
-					ExpirationTimestampMS: endLeaseTimeMs,
-					ConsumerID:            []byte(consumerId),
-					Message:               timeline.NewLeaseMessage(timelineMessage),
-				})
+			if ok != "OK" {
+				processingError = errors.New("message data was not updated on lease")
+				continue
 			}
+
+			// Confirmation has to be 0 on update (1 on creation)
+			_, err = c.client.ZAdd(timelineKey, redis.Z{
+				Member: msgId,
+				Score:  float64(endLeaseTimeMs),
+			}).Result()
+
+			if err != nil {
+				processingError = err
+				continue
+			}
+
+			rawMessage, err := c.client.HMGet(
+				messageKey,
+				"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version").Result()
+
+			if err != nil {
+				processingError = err
+				continue
+			}
+
+			timelineMessage, err := convertMessageToTimelineMsg(rawMessage, bucketID)
+			if err != nil {
+				processingError = err
+				continue
+			}
+
+			results = append(results, timeline.PushLeases{
+				ExpirationTimestampMS: endLeaseTimeMs,
+				ConsumerID:            []byte(consumerId),
+				Message:               timeline.NewLeaseMessage(timelineMessage),
+			})
 		}
 	}
 
 	return results, false, processingError
 }
 
-func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
+func convertMessageToTimelineMsg(rawMessage []interface{}, bucketID uint16) (timeline.Message, error) {
 	// TODO implement errors on strconv
 	var message timeline.Message
 	message.ID = []byte(fmt.Sprintf("%v", rawMessage[0]))
@@ -207,8 +205,8 @@ func convertMessageToTimelineMsg(rawMessage []interface{}) (timeline.Message, er
 	message.ProducerGroupID = []byte(fmt.Sprintf("%v", rawMessage[4]))
 	message.LockConsumerID = []byte(fmt.Sprintf("%v", rawMessage[5]))
 
-	bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
-	message.BucketID = uint16(bucketIdUint16)
+	//bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[6]), 10, 16)
+	message.BucketID = uint16(bucketID)
 	version, _ := strconv.ParseUint(fmt.Sprintf("%v", rawMessage[7]), 10, 16)
 	message.Version = uint16(version)
 
