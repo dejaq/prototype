@@ -168,9 +168,7 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 
 	for left > 0 {
 		left--
-		batch = batch[:0]
 		msgID := config.Count - left
-		log.Infof("inserting ID %d", msgID)
 		batch = append(batch, timeline.Message{
 			ID:          []byte(fmt.Sprintf("ID %d", msgID)),
 			Body:        []byte(fmt.Sprintf("BODY %d", msgID)),
@@ -185,6 +183,7 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 	if err := flush(); err != nil {
 		return err
 	}
+	log.Infof("finished inserting %d messages", config.Count)
 	return nil
 }
 
@@ -209,9 +208,6 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 	})
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
-		if lease.Message.String() == "ID 100" {
-			fmt.Print()
-		}
 		//Process the messages
 		err := c.Delete(ctx, []timeline.Message{{
 			ID:          lease.Message.ID,
@@ -222,7 +218,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 		if err != nil {
 			log.Errorf("delete failed", err)
 		}
-		logrus.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+		//logrus.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
 		wg.Done()
 	})
 
@@ -239,6 +235,6 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 	}()
 
 	wg.Wait()
-	//cancel()
+	logrus.Infof("consumer finished %d messages", conf.WaitForCount)
 	return nil
 }
