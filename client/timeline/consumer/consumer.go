@@ -109,6 +109,9 @@ func (c *Consumer) preload(ctx context.Context) {
 	for {
 		err = nil
 
+		if ctx.Err() != nil {
+			break
+		}
 		for err == nil {
 			//time.Sleep(time.Millisecond * 200)
 			//Recv is blocking
@@ -117,7 +120,7 @@ func (c *Consumer) preload(ctx context.Context) {
 				break
 			}
 			if err != nil {
-				log.Printf("TimelineCreateMessages client failed err=%s", err.Error())
+				log.Printf("consumer preload client failed err=%s", err.Error())
 				//TODO if err is invalid/expired sessionID do a handshake automatically
 			}
 			if response == nil { //empty msg ?!?!?! TODO log this as a warning
