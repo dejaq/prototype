@@ -268,9 +268,7 @@ func writeTimelineResponse(errors []derrors.MessageIDTuple, builder *flatbuffers
 
 	grpc.TimelineResponseStart(builder)
 	grpc.TimelineResponseAddMessagesErrors(builder, rootListErrors)
-	grpc.TimelineResponseEnd(builder)
-
-	return grpc.ErrorEnd(builder)
+	return grpc.TimelineResponseEnd(builder)
 }
 
 func writeError(err derrors.Dejaror, builder *flatbuffers.Builder) flatbuffers.UOffsetT {

@@ -20,7 +20,7 @@ type Repository interface {
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// GetAndLease message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
 	// GEt messages from storage and apply Lease on them
-	GetAndLease(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error)
+	GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error)
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
