@@ -160,3 +160,7 @@ func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
 	}
 	return result
 }
+
+func (s *Greeter) LeasesSent(c *Consumer, count int) {
+	//TODO increment leases
+}

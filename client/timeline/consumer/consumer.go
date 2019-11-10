@@ -113,14 +113,15 @@ func (c *Consumer) preload(ctx context.Context) {
 			break
 		}
 		for err == nil {
-			//time.Sleep(time.Millisecond * 200)
 			//Recv is blocking
 			response, err = stream.Recv()
 			if err == io.EOF { //it means the stream batch is over
 				break
 			}
 			if err != nil {
-				log.Printf("consumer preload client failed err=%s", err.Error())
+				if err != context.Canceled {
+					log.Printf("consumer preload client failed err=%s", err.Error())
+				}
 				//TODO if err is invalid/expired sessionID do a handshake automatically
 			}
 			if response == nil { //empty msg ?!?!?! TODO log this as a warning
