@@ -124,7 +124,7 @@ func main() {
 			Cluster:         "",
 			Topic:           "topicOne",
 			ProducerGroupID: "ProducerMega",
-		})
+		}, "dummyp1")
 		if err := creator.Handshake(ctx); err != nil {
 			log.Fatal("producer handshake failed", err)
 		}
