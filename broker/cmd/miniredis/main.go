@@ -75,12 +75,15 @@ func main() {
 	synchronization := etcd.NewEtcd(etcdCLI)
 
 	coordinatorConfig := coordinator.Config{
-		NoBuckets:    3,
-		TopicType:    common.TopicType_Timeline,
-		TickInterval: time.Millisecond * 50,
+		NoBuckets: 3,
+		TopicType: common.TopicType_Timeline,
 	}
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, synchronization, greeter)
+	dealer := coordinator.NewExclusiveDealer()
+
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, synchronization, greeter,
+		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
+			redisClient, dealer, greeter), dealer)
 	supervisor.AttachToServer(grpServer)
 
 	go func() {
