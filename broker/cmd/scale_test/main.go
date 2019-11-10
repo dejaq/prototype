@@ -29,7 +29,7 @@ import (
 func main() {
 	msgsCount := 89
 	batchSize := 5
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*12))
 
 	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
@@ -118,11 +118,10 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
 			defer wg.Done()
 			err := Produce(ctx, conn, msgCounter, &PConfig{
-				Count:   msgsCount,
-				Cluster: "",
-				Topic:   topic,
-				//ProducerGroupID: producerGroupID,
-				ProducerGroupID: fmt.Sprintf("%s|%s", topic, producerGroupID),
+				Count:           msgsCount,
+				Cluster:         "",
+				Topic:           topic,
+				ProducerGroupID: producerGroupID,
 				BatchSize:       batchSize,
 			})
 			if err != nil {
@@ -139,9 +138,8 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 				WaitForCount: msgsCount,
 				Cluster:      "",
 				Topic:        topic,
-				//ConsumerID:   consumerID,
-				ConsumerID: fmt.Sprintf("%s|%s", topic, consumerID),
-				Lease:      time.Millisecond * 20000,
+				ConsumerID:   consumerID,
+				Lease:        time.Millisecond * 1000,
 			})
 			if err != nil {
 				log.Error(err)

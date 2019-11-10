@@ -14,15 +14,43 @@ var (
 	ErrNotFound               = errors.New("not found")
 )
 
+// a 2 dimensional map of strings.
+//first layer is the consumer/producerID, 2nd the topicID and the 3rd a string
+type idsPerTopic struct {
+	data map[string]map[string]string
+}
+
+func newidsPerTopic() *idsPerTopic {
+	return &idsPerTopic{
+		make(map[string]map[string]string, 100),
+	}
+}
+
+func (d *idsPerTopic) Add(id, topicID, value string) {
+	if _, exists := d.data[id]; !exists {
+		d.data[id] = make(map[string]string, 1)
+	}
+	d.data[id][topicID] = value
+}
+
+func (d *idsPerTopic) Get(id, topicID string) (string, bool) {
+	if v, ok := d.data[id]; ok {
+		if v2, ok2 := v[topicID]; ok2 {
+			return v2, true
+		}
+	}
+	return "", false
+}
+
 func NewGreeter() *Greeter {
 	return &Greeter{
-		opMutex:                       sync.RWMutex{},
-		consumerIDsAndSessionIDs:      make(map[string]string, 128),
-		consumerSessionIDAndID:        make(map[string]string, 128),
-		consumerSessionsIDs:           make(map[string]*Consumer, 128),
-		consumerIDsAndPipelines:       make(map[string]chan timeline.PushLeases), //not buffered!!!
-		producerSessionIDs:            make(map[string]*Producer),
-		producerGroupIDsAndSessionIDs: make(map[string]string),
+		opMutex:                        sync.RWMutex{},
+		consumerIDsAndSessionIDs:       newidsPerTopic(),
+		consumerSessionIDAndID:         make(map[string]string, 128),
+		consumerSessionsIDs:            make(map[string]*Consumer, 128),
+		consumerSessionIDsAndPipelines: make(map[string]chan timeline.PushLeases), //not buffered!!!
+		producerSessionIDs:             make(map[string]*Producer),
+		producerIDsAndSessionIDs:       newidsPerTopic(),
 	}
 }
 
@@ -33,32 +61,35 @@ type ConsumerPipelineTuple struct {
 
 // Greeter is in charge of keeping the local state of all Clients
 type Greeter struct {
-	opMutex                  sync.RWMutex
-	consumerIDsAndSessionIDs map[string]string
-	consumerSessionIDAndID   map[string]string
-	consumerSessionsIDs      map[string]*Consumer
-	consumerIDsAndPipelines  map[string]chan timeline.PushLeases
+	opMutex                        sync.RWMutex
+	consumerIDsAndSessionIDs       *idsPerTopic
+	consumerSessionIDAndID         map[string]string
+	consumerSessionsIDs            map[string]*Consumer
+	consumerSessionIDsAndPipelines map[string]chan timeline.PushLeases
 
-	producerSessionIDs            map[string]*Producer
-	producerGroupIDsAndSessionIDs map[string]string
+	producerSessionIDs       map[string]*Producer
+	producerIDsAndSessionIDs *idsPerTopic
+}
+
+func randomSessionID() string {
+	session := make([]byte, 128, 128)
+	rand.Read(session)
+	return string(session)
 }
 
 func (s *Greeter) ConsumerHandshake(c Consumer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	if _, alreadyExists := s.consumerIDsAndSessionIDs[c.GetID()]; alreadyExists {
-		return "", errors.New("handshake already existed")
+	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.Topic); exists {
+		return "", errors.New("handshake already exists")
 	}
 
-	session := make([]byte, 128, 128)
-	rand.Read(session)
-	sessionID := string(session)
-
-	s.consumerIDsAndSessionIDs[c.GetID()] = sessionID
+	sessionID := randomSessionID()
+	s.consumerIDsAndSessionIDs.Add(c.GetID(), c.Topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = &c
-	s.consumerIDsAndPipelines[c.GetID()] = nil
+	s.consumerSessionIDsAndPipelines[sessionID] = nil
 
 	return sessionID, nil
 }
@@ -67,18 +98,12 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	producerID := string(req.GroupID)
-	sessionID, alreadyExists := s.producerGroupIDsAndSessionIDs[producerID]
-
-	if alreadyExists {
-		return "", errors.New("handshake already done")
+	if _, alreadyExists := s.producerIDsAndSessionIDs.Get(req.ProducerID, req.Topic); alreadyExists {
+		return "", errors.New("producerID already has a handshake")
 	}
 
-	session := make([]byte, 128, 128)
-	rand.Read(session)
-	sessionID = string(session)
-
-	s.producerGroupIDsAndSessionIDs[producerID] = sessionID
+	sessionID := randomSessionID()
+	s.producerIDsAndSessionIDs.Add(req.ProducerID, req.Topic, sessionID)
 	s.producerSessionIDs[sessionID] = req
 
 	return sessionID, nil
@@ -88,31 +113,36 @@ func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.PushLeases,
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	consumerID, hadHandshake := s.consumerSessionIDAndID[sessionID]
+	_, hadHandshake := s.consumerSessionIDAndID[sessionID]
 	if !hadHandshake {
 		return nil, errors.New("session was not found")
 	}
-	s.consumerIDsAndPipelines[consumerID] = make(chan timeline.PushLeases) //not buffered!!!
-	return s.consumerIDsAndPipelines[consumerID], nil
+	if pipe, alreadyHasAPipeline := s.consumerSessionIDsAndPipelines[sessionID]; alreadyHasAPipeline && pipe != nil {
+		return nil, errors.New("there is already an active connection for this consumerID")
+	}
+
+	s.consumerSessionIDsAndPipelines[sessionID] = make(chan timeline.PushLeases) //not buffered!!!
+	return s.consumerSessionIDsAndPipelines[sessionID], nil
 }
 
 func (s *Greeter) ConsumerDisconnected(sessionID string) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	consumerID := s.consumerSessionIDAndID[sessionID]
-	s.consumerIDsAndPipelines[consumerID] = nil
+	close(s.consumerSessionIDsAndPipelines[sessionID])
+	s.consumerSessionIDsAndPipelines[sessionID] = nil
 }
 
-func (s *Greeter) GetPipelineFor(consumerID string) (chan timeline.PushLeases, error) {
+func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
-	if _, hasSession := s.consumerIDsAndSessionIDs[consumerID]; !hasSession {
+	sessionID, hasSession := s.consumerIDsAndSessionIDs.Get(string(c.ID), c.Topic)
+	if !hasSession {
 		return nil, ErrConsumerNotSubscribed
 	}
 
-	pipeline, isConnectedNow := s.consumerIDsAndPipelines[consumerID]
+	pipeline, isConnectedNow := s.consumerSessionIDsAndPipelines[sessionID]
 	if !isConnectedNow {
 		return nil, ErrConsumerIsNotConnected
 	}
@@ -150,12 +180,11 @@ func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
-	result := make([]ConsumerPipelineTuple, 0, len(s.consumerIDsAndPipelines))
-	for consumerID := range s.consumerIDsAndPipelines {
-		sessionID := s.consumerIDsAndSessionIDs[consumerID]
+	result := make([]ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
+	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		result = append(result, ConsumerPipelineTuple{
 			C:        s.consumerSessionsIDs[sessionID],
-			Pipeline: s.consumerIDsAndPipelines[consumerID],
+			Pipeline: pipe,
 		})
 	}
 	return result
