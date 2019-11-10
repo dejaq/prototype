@@ -70,8 +70,16 @@ func (rcv *TimelineProducerHandshakeRequest) Cluster() []byte {
 	return nil
 }
 
+func (rcv *TimelineProducerHandshakeRequest) ProducerID() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func TimelineProducerHandshakeRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(5)
+	builder.StartObject(6)
 }
 func TimelineProducerHandshakeRequestAddTraceID(builder *flatbuffers.Builder, traceID flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(traceID), 0)
@@ -87,6 +95,9 @@ func TimelineProducerHandshakeRequestAddTopicID(builder *flatbuffers.Builder, to
 }
 func TimelineProducerHandshakeRequestAddCluster(builder *flatbuffers.Builder, cluster flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(4, flatbuffers.UOffsetT(cluster), 0)
+}
+func TimelineProducerHandshakeRequestAddProducerID(builder *flatbuffers.Builder, producerID flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(producerID), 0)
 }
 func TimelineProducerHandshakeRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -60,6 +60,7 @@ table TimelineProducerHandshakeRequest {
     producerGroupID:string;
     topicID:string;
     cluster:string;
+    producerID:string;
 }
 
 table TimelineProducerHandshakeResponse {

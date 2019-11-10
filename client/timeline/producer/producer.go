@@ -24,14 +24,16 @@ type Producer struct {
 	carrier        dejaq.BrokerClient
 	sessionID      string
 	handshakeMutex sync.RWMutex
+	id             string
 }
 
 // NewProducer creates a new timeline producer
-func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config) *Producer {
+func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config, producerID string) *Producer {
 	result := &Producer{
 		conf:     conf,
 		overseer: dejaq.NewBrokerClient(overseer),
 		carrier:  dejaq.NewBrokerClient(carrier),
+		id:       producerID,
 	}
 	return result
 }
@@ -48,10 +50,12 @@ func (c *Producer) Handshake(ctx context.Context) error {
 	clusterPos := builder.CreateString(c.conf.Cluster)
 	producerGroupPos := builder.CreateString(c.conf.ProducerGroupID)
 	topicIDPos := builder.CreateString(c.conf.Topic)
+	producerIDPos := builder.CreateString(c.id)
 	dejaq.TimelineProducerHandshakeRequestStart(builder)
 	dejaq.TimelineProducerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineProducerHandshakeRequestAddProducerGroupID(builder, producerGroupPos)
 	dejaq.TimelineProducerHandshakeRequestAddTopicID(builder, topicIDPos)
+	dejaq.TimelineProducerHandshakeRequestAddProducerID(builder, producerIDPos)
 	root := dejaq.TimelineProducerHandshakeRequestEnd(builder)
 	builder.Finish(root)
 
