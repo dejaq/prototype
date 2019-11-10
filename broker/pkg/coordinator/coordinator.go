@@ -147,26 +147,33 @@ func (c *Coordinator) loadMessages(ctx context.Context) {
 
 //returns number of sent messages, if it sent all of them, and an error
 func (c *Coordinator) loadOneConsumer(ctx context.Context, consumer *Consumer, limit int) (int, bool, error) {
-	pushLeaseMessages, _, _ := c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets, consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now()))
-	if len(pushLeaseMessages) == 0 {
-		return 0, true, nil
-	}
-
-	consumerPipeline, err := c.greeter.GetPipelineFor(consumer.GetID())
-	if err != nil {
-		//TODO cancel the leases
-		log.Println("loadOneConsumer failed", err)
-		return 0, false, ErrConsumerNotConnected
-	}
-
 	sent := 0
-	for i := range pushLeaseMessages {
-		select {
-		case <-ctx.Done():
-			return sent, false, context.DeadlineExceeded
-		default:
-			consumerPipeline <- pushLeaseMessages[i]
-			sent++
+	var hasMoreForThisBucket bool
+	var pushLeaseMessages []timeline.PushLeases
+	for bi := range consumer.AssignedBuckets {
+		hasMoreForThisBucket = true //we presume it has
+		for hasMoreForThisBucket {
+			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets[bi], consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now()))
+			if len(pushLeaseMessages) == 0 {
+				break
+			}
+
+			consumerPipeline, err := c.greeter.GetPipelineFor(consumer.GetID())
+			if err != nil {
+				//TODO cancel the leases
+				log.Println("loadOneConsumer failed", err)
+				return sent, false, ErrConsumerNotConnected
+			}
+
+			for i := range pushLeaseMessages {
+				select {
+				case <-ctx.Done():
+					return sent, false, context.DeadlineExceeded
+				default:
+					consumerPipeline <- pushLeaseMessages[i]
+					sent++
+				}
+			}
 		}
 	}
 	return sent, true, nil
