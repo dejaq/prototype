@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
-	sTimeline "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -18,24 +17,57 @@ import (
 type Client struct {
 	host   string
 	client *redis.Client
+	// map[operationType]redisHash
+	script map[string]string
 }
 
-//enforce interface implementation
-var _ = sTimeline.Repository(&Client{})
+var errorsType = map[string]string{
+	"1": "messageId already exists, you can not set it again",
+	"2": "cannot add new entry on timeline sorted set",
+	"3": "cannot insert all properties into hashMap",
+}
+
+var scripts = map[string]string{
+	"insert":      Scripts.insert,
+	"getAndLease": Scripts.getAndLease,
+	"delete":      Scripts.delete,
+}
 
 // NewClient ...
 func NewClient(host string) (*Client, error) {
-	client := redis.NewClient(&redis.Options{Addr: host})
-	_, err := client.Ping().Result()
+	c := redis.NewClient(&redis.Options{Addr: host})
+	_, err := c.Ping().Result()
 
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{
+	client := Client{
 		host:   host,
-		client: client,
-	}, nil
+		client: c,
+	}
+
+	// load scripts
+	if err := loadScripts(&client, scripts); err != nil {
+		return nil, err
+	}
+
+	return &client, nil
+}
+
+func loadScripts(c *Client, s map[string]string) error {
+	hashes := make(map[string]string)
+	for k, v := range s {
+		hash, err := c.client.ScriptLoad(v).Result()
+		if err != nil {
+			return err
+		}
+		hashes[k] = hash
+	}
+
+	c.script = hashes
+
+	return nil
 }
 
 func (c *Client) createTimelineKey(clusterName string, timelineId []byte, bucketId uint16) string {
@@ -51,41 +83,27 @@ func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketI
 // Insert ...
 func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO use unsafe for conversions
+	// TODO create batches and insert
 
 	var insertErrors []derrors.MessageIDTuple
 
 	for _, msg := range messages {
 		timelineKey := c.createTimelineKey("cluster_name", timelineID, msg.BucketID)
-		ok, err := c.client.ZAdd(timelineKey, redis.Z{
-			Member: msg.ID,
-			Score:  float64(msg.TimestampMS),
-		}).Result()
-
-		if err != nil {
-			var derror derrors.Dejaror
-			derror.Message = err.Error()
-			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		}
-
-		if ok != 1 {
-			var derror derrors.Dejaror
-			derror.Message = "MessageId was not written on redis"
-			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		}
-
-		// TODO improve here, find a better solution to translate a type into map
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
-		data := make(map[string]interface{})
-		data["ID"] = string(msg.ID)
-		data["TimestampMS"] = string(msg.TimestampMS)
-		data["BodyID"] = string(msg.BodyID)
-		data["Body"] = string(msg.Body)
-		data["ProducerGroupID"] = string(msg.ProducerGroupID)
-		data["LockConsumerID"] = string(msg.LockConsumerID)
-		data["BucketID"] = strconv.Itoa(int(msg.BucketID))
-		data["Version"] = strconv.Itoa(int(msg.Version))
 
-		isOk, err := c.client.HMSet(messageKey, data).Result()
+		data := []string{
+			"ID", string(msg.ID),
+			"TimestampMS", string(msg.TimestampMS),
+			"BodyID", string(msg.BodyID),
+			"Body", string(msg.Body),
+			"ProducerGroupID", string(msg.ProducerGroupID),
+			"LockConsumerID", string(msg.LockConsumerID),
+			"BucketID", strconv.Itoa(int(msg.BucketID)),
+			"Version", strconv.Itoa(int(msg.Version)),
+		}
+
+		keys := []string{timelineKey, messageKey, string(msg.ID), strconv.Itoa(int(msg.TimestampMS))}
+		ok, err := c.client.EvalSha(c.script["insert"], keys, data).Result()
 
 		if err != nil {
 			var derror derrors.Dejaror
@@ -93,10 +111,14 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
-		if isOk != "OK" {
+		if ok != "0" {
 			var derror derrors.Dejaror
-			derror.Message = "Message data was not written on redis"
+			derror.Message = errorsType[ok.(string)]
 			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+
+			if ok == "3" {
+				// TODO rollback here, could not insert into hashmap, here we can use retry mechanism
+			}
 		}
 	}
 
