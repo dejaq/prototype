@@ -21,7 +21,7 @@ func NewGreeter() *Greeter {
 		consumerSessionIDAndID:        make(map[string]string, 128),
 		consumerSessionsIDs:           make(map[string]*Consumer, 128),
 		consumerIDsAndPipelines:       make(map[string]chan timeline.PushLeases), //not buffered!!!
-		producerSessionIDs:            make(map[string]Producer),
+		producerSessionIDs:            make(map[string]*Producer),
 		producerGroupIDsAndSessionIDs: make(map[string]string),
 	}
 }
@@ -39,7 +39,7 @@ type Greeter struct {
 	consumerSessionsIDs      map[string]*Consumer
 	consumerIDsAndPipelines  map[string]chan timeline.PushLeases
 
-	producerSessionIDs            map[string]Producer
+	producerSessionIDs            map[string]*Producer
 	producerGroupIDsAndSessionIDs map[string]string
 }
 
@@ -63,7 +63,7 @@ func (s *Greeter) ConsumerHandshake(c Consumer) (string, error) {
 	return sessionID, nil
 }
 
-func (s *Greeter) ProducerHandshake(req Producer) (string, error) {
+func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
@@ -135,7 +135,7 @@ func (s *Greeter) GetTopicFor(sessionID []byte) (string, error) {
 	return "", ErrNotFound
 }
 
-func (s *Greeter) GetProducerSessionData(sessionID []byte) (Producer, error) {
+func (s *Greeter) GetProducerSessionData(sessionID []byte) (*Producer, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
@@ -143,7 +143,7 @@ func (s *Greeter) GetProducerSessionData(sessionID []byte) (Producer, error) {
 	if hadHandshake {
 		return sessionData, nil
 	}
-	return Producer{}, ErrNotFound
+	return nil, ErrNotFound
 }
 
 func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
@@ -159,4 +159,8 @@ func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
 		})
 	}
 	return result
+}
+
+func (s *Greeter) LeasesSent(c *Consumer, count int) {
+	//TODO increment leases
 }

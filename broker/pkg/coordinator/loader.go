@@ -23,6 +23,7 @@ type Loader struct {
 	storage storage.Repository
 	dealer  Dealer
 	greeter *Greeter
+	timer   *LoaderTimer
 }
 
 func NewLoader(conf *LConfig, storage storage.Repository, dealer Dealer, greeter *Greeter) *Loader {
@@ -32,6 +33,12 @@ func NewLoader(conf *LConfig, storage storage.Repository, dealer Dealer, greeter
 		dealer:  dealer,
 		opMutex: sync.Mutex{},
 		greeter: greeter,
+		//TODO move the min to the NewLoader as parameter, each Storage would want different setting
+		timer: NewTimer(&LoaderTimerConfig{
+			Min:  time.Millisecond * 5,
+			Max:  time.Second * 2,
+			Step: time.Millisecond * 25,
+		}),
 	}
 }
 
@@ -51,9 +58,15 @@ func (c *Loader) Start(ctx context.Context) {
 				c.cancel = nil
 				c.myCtx = nil
 				return
-			case <-time.After(time.Millisecond * 15):
+			case <-time.After(c.timer.GetNextDuration()):
 				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*5)
-				c.loadMessages(thisIntervalCtx)
+				allConsumersGotAllMessages := c.loadMessages(thisIntervalCtx)
+				if allConsumersGotAllMessages {
+					c.timer.Increase() //we can wait for more time next time
+				} else {
+					//make the tick faster, we need to compensate
+					c.timer.Decrease()
+				}
 			}
 		}
 	}()
@@ -72,11 +85,13 @@ func (c *Loader) Stop() {
 	c.myCtx = nil
 }
 
-func (c *Loader) loadMessages(ctx context.Context) {
+func (c *Loader) loadMessages(ctx context.Context) bool {
 	wg := sync.WaitGroup{}
 
-	consumersAndPipelines := c.greeter.GetAllActiveConsumers()
+	allFinished := true
+	allFinishedMutex := sync.Mutex{}
 
+	consumersAndPipelines := c.greeter.GetAllActiveConsumers()
 	consumers := make([]*Consumer, 0, len(consumersAndPipelines))
 	for i := range consumersAndPipelines {
 		consumers = append(consumers, consumersAndPipelines[i].C)
@@ -90,16 +105,22 @@ func (c *Loader) loadMessages(ctx context.Context) {
 			msgsSent, sentAllMessges, err := c.loadOneConsumer(newCtx, cons, 10, p)
 			if err != nil {
 				log.Println(err)
-			} else if !sentAllMessges {
-				//TODO decrease the weight of this consumer, because it has more messages
-				log.Printf("sent %d msgs but still has more", msgsSent)
 			}
+
+			allFinishedMutex.Lock()
+			if !sentAllMessges {
+				allFinished = false
+			}
+			allFinishedMutex.Unlock()
+
+			c.greeter.LeasesSent(cons, msgsSent)
+
 			wg.Done()
 		}(tuple.C, tuple.Pipeline)
 	}
 	wg.Wait()
 
-	//TODO based on the throttler of each consumer change the buckets assigned
+	return !allFinished
 }
 
 //returns number of sent messages, if it sent all of them, and an error
@@ -129,17 +150,36 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 	return sent, true, nil
 }
 
+type LoaderTimerConfig struct {
+	Min, Max time.Duration
+	Step     time.Duration
+}
 type LoaderTimer struct {
+	conf    *LoaderTimerConfig
+	Current time.Duration
+}
+
+func NewTimer(conf *LoaderTimerConfig) *LoaderTimer {
+	return &LoaderTimer{
+		conf:    conf,
+		Current: conf.Min,
+	}
 }
 
 func (t *LoaderTimer) GetNextDuration() time.Duration {
-	return time.Millisecond * 15
+	return t.Current
 }
 
 func (t *LoaderTimer) Decrease() {
-
+	t.Current = t.Current - t.conf.Step
+	if t.Current < t.conf.Min {
+		t.Current = t.conf.Min
+	}
 }
 
 func (t *LoaderTimer) Increase() {
-
+	t.Current = t.Current + t.conf.Step
+	if t.Current > t.conf.Max {
+		t.Current = t.conf.Max
+	}
 }
