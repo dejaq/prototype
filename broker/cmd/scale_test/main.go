@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/bgadrian/dejaq-broker/broker/pkg/coordinator"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/redis"
 	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
@@ -25,9 +27,9 @@ import (
 )
 
 func main() {
-	msgsCount := 100
-	batchSize := 100
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*5))
+	msgsCount := 89
+	batchSize := 5
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
 
 	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
@@ -53,7 +55,7 @@ func main() {
 	}
 
 	coordinatorConfig := coordinator.Config{
-		NoBuckets: 1,
+		NoBuckets: 89,
 		TopicType: common.TopicType_Timeline,
 	}
 
@@ -85,52 +87,75 @@ func main() {
 	defer conn.Close()
 	defer logger.Println("closing CLIENT goroutine")
 
+	topics := []string{"topic_1", "topic_2", "topic_3"}
+
+	producerGroupIDs := []string{"producer_group_1", "producer_group_1", "producer_group_2"}
+	//producerGroupIDs := []string{"producer_group_1", "producer_group_2", "producer_group_3"}
+	consumerIDs := []string{"consumer_id_1", "consumer_id_2", "consumer_id_3", "consumer_id_4"}
+
 	wg := sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		err := Produce(ctx, conn, &PConfig{
-			Count:           msgsCount,
-			Cluster:         "",
-			Topic:           "testminibench1",
-			ProducerGroupID: "prod1",
-			BatchSize:       batchSize,
-		})
-		if err != nil {
-			log.Error(err)
-		}
-		wg.Done()
-	}()
-	go func() {
-		err := Consume(ctx, conn, &CConfig{
-			WaitForCount: msgsCount,
-			Cluster:      "",
-			Topic:        "testminibench1",
-			ConsumerID:   "consumer1",
-			Lease:        time.Millisecond * 20000,
-		})
-		if err != nil {
-			log.Error(err)
-		}
-		wg.Done()
-	}()
 
-	wg.Wait() //wait for consuemrs and producers
+	for _, topic := range topics {
+		wg.Add(1)
+		go func(topic string) {
+			defer wg.Done()
+			deployTopicTest(ctx, conn, producerGroupIDs, consumerIDs, topic, msgsCount, batchSize)
+		}(topic)
+	}
 
-	//go func() {
-	//	for range ctx.Done() {
-	//	}
-	//	logger.Println("sending server stop")
+	wg.Wait()
+
 	cancel() //propagate trough the context
 	ser.GracefulStop()
-	//}()
-	//
-	////Wait for CTRL+C
-	//c := make(chan os.Signal, 1)
-	//signal.Notify(c, os.Interrupt)
-	//// Block until we receive our signal.
-	//<-c
-	//logger.Println("shutting down signal received, waiting ...")
-	//os.Exit(0)
+}
+
+func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupIDs, consumerIDs []string, topic string, msgsCount, batchSize int) {
+
+	wg := sync.WaitGroup{}
+	msgCounter := new(atomic.Int32)
+	for _, producerGroupID := range producerGroupIDs {
+		wg.Add(1)
+		go func(producerGroupID string, msgCounter *atomic.Int32) {
+			defer wg.Done()
+			err := Produce(ctx, conn, msgCounter, &PConfig{
+				Count:   msgsCount,
+				Cluster: "",
+				Topic:   topic,
+				//ProducerGroupID: producerGroupID,
+				ProducerGroupID: fmt.Sprintf("%s|%s", topic, producerGroupID),
+				BatchSize:       batchSize,
+			})
+			if err != nil {
+				log.Error(err)
+			}
+		}(producerGroupID, msgCounter)
+	}
+
+	for _, consumerID := range consumerIDs {
+		wg.Add(1)
+		go func(consumerID string, counter *atomic.Int32) {
+			defer wg.Done()
+			err := Consume(ctx, conn, counter, &CConfig{
+				WaitForCount: msgsCount,
+				Cluster:      "",
+				Topic:        topic,
+				//ConsumerID:   consumerID,
+				ConsumerID: fmt.Sprintf("%s|%s", topic, consumerID),
+				Lease:      time.Millisecond * 20000,
+			})
+			if err != nil {
+				log.Error(err)
+			}
+		}(consumerID, msgCounter)
+	}
+
+	wg.Wait() //wait for consumers and producers
+
+	if msgCounter.Load() == 0 {
+		logrus.Infof("Successfully produced and consumed %d messages", msgsCount)
+	} else {
+		logrus.Errorf("Failed to consume all the produced messages, %d left", msgCounter.Load())
+	}
 }
 
 type PConfig struct {
@@ -141,7 +166,7 @@ type PConfig struct {
 	BatchSize       int
 }
 
-func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error {
+func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int32, config *PConfig) error {
 	creator := producer.NewProducer(conn, conn, &producer.Config{
 		Cluster:         config.Cluster,
 		Topic:           config.Topic,
@@ -164,6 +189,7 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 		if err != nil {
 			return errors.Wrap(err, "InsertMessages ERROR")
 		}
+		msgCounter.Add(int32(len(batch)))
 		batch = batch[:0]
 		return nil
 	}
@@ -171,9 +197,10 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 	for left > 0 {
 		left--
 		msgID := config.Count - left
+		log.Infof("inserting ID %d", msgID)
 		batch = append(batch, timeline.Message{
-			ID:          []byte(fmt.Sprintf("ID %d", msgID)),
-			Body:        []byte(fmt.Sprintf("BODY %d", msgID)),
+			ID:          []byte(fmt.Sprintf("ID %s|msg_%d", config.ProducerGroupID, msgID)),
+			Body:        []byte(fmt.Sprintf("BODY %s|msg_%d", config.ProducerGroupID, msgID)),
 			TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond * time.Duration(msgID))),
 		})
 		if len(batch) >= config.BatchSize {
@@ -185,7 +212,6 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 	if err := flush(); err != nil {
 		return err
 	}
-	log.Infof("finished inserting %d messages", config.Count)
 	return nil
 }
 
@@ -198,10 +224,7 @@ type CConfig struct {
 	Timeout      time.Duration
 }
 
-func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
-	wg := sync.WaitGroup{}
-	wg.Add(conf.WaitForCount)
-
+func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int32, conf *CConfig) error {
 	c := consumer.NewConsumer(conn, conn, &consumer.Config{
 		ConsumerID: conf.ConsumerID,
 		Topic:      conf.Topic,
@@ -211,6 +234,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
 		//Process the messages
+		msgsCounter.Dec()
 		err := c.Delete(ctx, []timeline.Message{{
 			ID:          lease.Message.ID,
 			TimestampMS: lease.Message.TimestampMS,
@@ -220,23 +244,17 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 		if err != nil {
 			log.Errorf("delete failed", err)
 		}
-		//logrus.Printf("received message ID=%s body=%s from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
-		wg.Done()
+		logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
 	})
 
 	log.Info("consumer handshake success")
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				//wg.Add(-conf.WaitForCount)
-				return
-			}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
 		}
-	}()
+	}
 
-	wg.Wait()
-	logrus.Infof("consumer finished %d messages", conf.WaitForCount)
 	return nil
 }

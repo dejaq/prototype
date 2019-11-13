@@ -46,9 +46,10 @@ func (c Consumer) GetTopic() []byte {
 }
 
 type Producer struct {
-	GroupID []byte
-	Topic   string
-	Cluster string
+	GroupID    []byte
+	Topic      string
+	Cluster    string
+	ProducerID string
 }
 
 type Coordinator struct {
@@ -85,10 +86,10 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
-		TimelineConsumerSubscribed: func(ctx context.Context, consumer Consumer) {
+		TimelineConsumerSubscribed: func(ctx context.Context, consumer *Consumer) {
 			c.RegisterCustomer(consumer)
 		},
-		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer Consumer) {
+		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer *Consumer) {
 			c.DeRegisterCustomer(consumer)
 		},
 		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
@@ -96,18 +97,18 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
-		TimelineProducerSubscribed: func(i context.Context, producer Producer) {
+		TimelineProducerSubscribed: func(i context.Context, producer *Producer) {
 
 		},
 	})
 }
 
-func (c *Coordinator) RegisterCustomer(consumer Consumer) {
+func (c *Coordinator) RegisterCustomer(consumer *Consumer) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 }
 
-func (c *Coordinator) DeRegisterCustomer(consumer Consumer) {
+func (c *Coordinator) DeRegisterCustomer(consumer *Consumer) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 }
