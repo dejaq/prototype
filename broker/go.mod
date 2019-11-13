@@ -27,6 +27,7 @@ require (
 	github.com/jonboulle/clockwork v0.1.0 // indirect
 	github.com/onsi/ginkgo v1.10.3 // indirect
 	github.com/onsi/gomega v1.7.1 // indirect
+	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4 // indirect
 	github.com/prometheus/common v0.6.0
 	github.com/rcrowley/go-metrics v0.0.0-20190826022208-cac0b30c2563
