@@ -102,6 +102,7 @@ func main() {
 			ConsumerID: "alfa",
 			Topic:      "topicOne",
 			Cluster:    "",
+			MaxBufferSize: 100,
 			LeaseMs:    time.Second,
 		})
 		c.Start(ctx, func(lease timeline.PushLeases) {
