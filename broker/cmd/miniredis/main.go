@@ -100,10 +100,11 @@ func main() {
 		defer logger.Println("closing CLIENT goroutine")
 
 		c := consumer.NewConsumer(conn, conn, &consumer.Config{
-			ConsumerID: "alfa",
-			Topic:      "topicOne",
-			Cluster:    "",
-			LeaseMs:    time.Second,
+			ConsumerID:    "alfa",
+			Topic:         "topicOne",
+			Cluster:       "",
+			MaxBufferSize: 100,
+			LeaseDuration: time.Second,
 		})
 		c.Start(ctx, func(lease timeline.PushLeases) {
 			//Process the messages

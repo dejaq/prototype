@@ -203,6 +203,8 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 				continue
 			}
 
+			timelineMessage.TimestampMS -= leaseMs
+
 			results = append(results, timeline.PushLeases{
 				ExpirationTimestampMS: endLeaseTimeMs,
 				ConsumerID:            []byte(consumerId),

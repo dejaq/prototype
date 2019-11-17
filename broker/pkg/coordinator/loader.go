@@ -13,6 +13,8 @@ import (
 
 type LConfig struct {
 	TopicDefaultNoOfBuckets uint16
+	PrefetchMaxNoMsgs       uint16
+	PrefetchMaxMilliseconds uint64
 }
 
 type Loader struct {
@@ -129,9 +131,9 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 	var hasMoreForThisBucket bool
 	var pushLeaseMessages []timeline.PushLeases
 	for bi := range consumer.AssignedBuckets {
-		hasMoreForThisBucket = true //we presume it has
+		hasMoreForThisBucket = true // we presume it has
 		for hasMoreForThisBucket {
-			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets[bi], consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now()))
+			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets[bi], consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
@@ -141,6 +143,8 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 				case <-ctx.Done():
 					return sent, false, context.DeadlineExceeded
 				default:
+					//TODO this will panic if the consumer disconnects during loading
+					//find a way to corelate between ConsumerDisconnected and this action
 					consumerPipeline <- pushLeaseMessages[i]
 					sent++
 				}
