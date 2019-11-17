@@ -3,7 +3,6 @@ package coordinator
 import (
 	"context"
 	"math/rand"
-	"sync"
 	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
@@ -57,7 +56,6 @@ type Coordinator struct {
 	dealer          Dealer
 	storage         storage.Repository
 	synchronization synchronization.Repository
-	lock            *sync.RWMutex
 	greeter         *Greeter
 	loader          *Loader
 }
@@ -72,7 +70,6 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 		conf:            config,
 		storage:         timelineStorage,
 		synchronization: synchronization,
-		lock:            &sync.RWMutex{},
 		greeter:         greeter,
 		loader:          loader,
 		dealer:          dealer,
@@ -84,33 +81,36 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 }
 
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
-	server.SetListeners(&GRPCListeners{
-		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
-		TimelineConsumerSubscribed: func(ctx context.Context, consumer *Consumer) {
-			c.RegisterCustomer(consumer)
+	server.SetListeners(&TimelineListeners{
+		ConsumerHandshake: func(ctx context.Context, consumer *Consumer) (string, error) {
+			//TODO ask the Catalog if the topic exists
+			return c.greeter.ConsumerHandshake(consumer)
 		},
-		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer *Consumer) {
-			c.DeRegisterCustomer(consumer)
+		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.PushLeases, error) {
+			return c.greeter.ConsumerConnected(sessionID)
 		},
-		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
+		ConsumerDisconnected: func(sessionID string) {
+			c.greeter.ConsumerDisconnected(sessionID)
+		},
+		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
-		TimelineProducerSubscribed: func(i context.Context, producer *Producer) {
 
+		ProducerHandshake: func(i context.Context, producer *Producer) (string, error) {
+			//TODO ask the Catalog if the topic exists
+			return c.greeter.ProducerHandshake(producer)
+		},
+		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
+			return c.greeter.GetProducerSessionData(sessionID)
+		},
+		CreateMessagesListener: c.listenerTimelineCreateMessages,
+		DeleteRequest: func(ctx context.Context, sessionID string) (topicID string, err error) {
+			//TODO ask the Catalog if the topic exists
+			return c.greeter.GetTopicFor(sessionID)
 		},
 	})
-}
-
-func (c *Coordinator) RegisterCustomer(consumer *Consumer) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-}
-
-func (c *Coordinator) DeRegisterCustomer(consumer *Consumer) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic string, msgs []timeline.Message) []errors.MessageIDTuple {
