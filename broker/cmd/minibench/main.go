@@ -102,11 +102,12 @@ func main() {
 	}()
 	go func() {
 		err := Consume(ctx, conn, &CConfig{
-			WaitForCount: msgsCount,
-			Cluster:      "",
-			Topic:        "testminibench1",
-			ConsumerID:   "consumer1",
-			Lease:        time.Millisecond * 20000,
+			WaitForCount:  msgsCount,
+			Cluster:       "",
+			Topic:         "testminibench1",
+			ConsumerID:    "consumer1",
+			MaxBufferSize: 100,
+			Lease:         time.Millisecond * 20000,
 		})
 		if err != nil {
 			log.Error(err)
@@ -190,12 +191,13 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 }
 
 type CConfig struct {
-	WaitForCount int
-	Cluster      string
-	Topic        string
-	ConsumerID   string
-	Lease        time.Duration
-	Timeout      time.Duration
+	WaitForCount  int
+	Cluster       string
+	Topic         string
+	ConsumerID    string
+	MaxBufferSize int64
+	Lease         time.Duration
+	Timeout       time.Duration
 }
 
 func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
@@ -207,6 +209,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 		Topic:         conf.Topic,
 		Cluster:       conf.Cluster,
 		LeaseDuration: conf.Lease,
+		MaxBufferSize: conf.MaxBufferSize,
 	})
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
