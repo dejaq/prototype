@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"errors"
+	"log"
 	"math/rand"
 	"sync"
 
@@ -26,7 +27,7 @@ func newidsPerTopic() *idsPerTopic {
 	}
 }
 
-func (d *idsPerTopic) Add(id, topicID, value string) {
+func (d *idsPerTopic) Set(id, topicID, value string) {
 	if _, exists := d.data[id]; !exists {
 		d.data[id] = make(map[string]string, 1)
 	}
@@ -86,7 +87,10 @@ func (s *Greeter) ConsumerHandshake(c Consumer) (string, error) {
 	}
 
 	sessionID := randomSessionID()
-	s.consumerIDsAndSessionIDs.Add(c.GetID(), c.Topic, sessionID)
+	if _, duplicateSessionID := s.consumerSessionsIDs[sessionID]; duplicateSessionID {
+		log.Fatal("duplicate random sessionID")
+	}
+	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.Topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = &c
 	s.consumerSessionIDsAndPipelines[sessionID] = nil
@@ -103,7 +107,7 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	}
 
 	sessionID := randomSessionID()
-	s.producerIDsAndSessionIDs.Add(req.ProducerID, req.Topic, sessionID)
+	s.producerIDsAndSessionIDs.Set(req.ProducerID, req.Topic, sessionID)
 	s.producerSessionIDs[sessionID] = req
 
 	return sessionID, nil
@@ -137,13 +141,13 @@ func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) 
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
-	sessionID, hasSession := s.consumerIDsAndSessionIDs.Get(string(c.ID), c.Topic)
+	sessionID, hasSession := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.Topic)
 	if !hasSession {
 		return nil, ErrConsumerNotSubscribed
 	}
 
 	pipeline, isConnectedNow := s.consumerSessionIDsAndPipelines[sessionID]
-	if !isConnectedNow {
+	if !isConnectedNow || pipeline == nil {
 		return nil, ErrConsumerIsNotConnected
 	}
 	return pipeline, nil

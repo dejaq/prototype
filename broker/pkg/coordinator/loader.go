@@ -141,6 +141,8 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 				case <-ctx.Done():
 					return sent, false, context.DeadlineExceeded
 				default:
+					//TODO this will panic if the consumer disconnects during loading
+					//find a way to corelate between ConsumerDisconnected and this action
 					consumerPipeline <- pushLeaseMessages[i]
 					sent++
 				}

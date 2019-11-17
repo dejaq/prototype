@@ -18,7 +18,7 @@ type Config struct {
 	ConsumerID             string
 	Topic                  string
 	Cluster                string
-	LeaseMs                time.Duration
+	LeaseDuration          time.Duration
 	ProcessMessageListener func(timeline.PushLeases)
 }
 
@@ -75,7 +75,7 @@ func (c *Consumer) Handshake(ctx context.Context) error {
 	dejaq.TimelineConsumerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineConsumerHandshakeRequestAddConsumerID(builder, consumerIDPos)
 	dejaq.TimelineConsumerHandshakeRequestAddTopicID(builder, topicIDPos)
-	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseMs))
+	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseDuration))
 	root := dejaq.TimelineConsumerHandshakeRequestEnd(builder)
 	builder.Finish(root)
 
