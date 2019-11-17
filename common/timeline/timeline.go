@@ -85,6 +85,10 @@ type PushLeases struct {
 	Message               LeaseMessage
 }
 
+func (l PushLeases) GetConsumerID() string {
+	return *(*string)(unsafe.Pointer(&l.ConsumerID))
+}
+
 // LeaseMessage is the message representation received by a consumer
 type LeaseMessage struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes

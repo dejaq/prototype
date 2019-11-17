@@ -18,7 +18,8 @@ type Config struct {
 	ConsumerID             string
 	Topic                  string
 	Cluster                string
-	LeaseMs                time.Duration
+	MaxBufferSize          int64
+	LeaseDuration          time.Duration
 	ProcessMessageListener func(timeline.PushLeases)
 }
 
@@ -27,14 +28,16 @@ type Consumer struct {
 	overseer       dejaq.BrokerClient
 	carrier        dejaq.BrokerClient
 	sessionID      string
+	msgBuffer      chan timeline.PushLeases
 	handshakeMutex sync.RWMutex
 }
 
 func NewConsumer(overseer, carrier *grpc.ClientConn, conf *Config) *Consumer {
 	result := &Consumer{
-		conf:     conf,
-		overseer: dejaq.NewBrokerClient(overseer),
-		carrier:  dejaq.NewBrokerClient(carrier),
+		conf:      conf,
+		overseer:  dejaq.NewBrokerClient(overseer),
+		carrier:   dejaq.NewBrokerClient(carrier),
+		msgBuffer: make(chan timeline.PushLeases, conf.MaxBufferSize),
 	}
 
 	return result
@@ -75,7 +78,7 @@ func (c *Consumer) Handshake(ctx context.Context) error {
 	dejaq.TimelineConsumerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineConsumerHandshakeRequestAddConsumerID(builder, consumerIDPos)
 	dejaq.TimelineConsumerHandshakeRequestAddTopicID(builder, topicIDPos)
-	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseMs))
+	dejaq.TimelineConsumerHandshakeRequestAddLeaseTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseDuration))
 	root := dejaq.TimelineConsumerHandshakeRequestEnd(builder)
 	builder.Finish(root)
 
@@ -106,6 +109,23 @@ func (c *Consumer) preload(ctx context.Context) {
 	}
 
 	var response *dejaq.TimelinePushLeaseResponse
+	go func() {
+		for lease := range c.msgBuffer {
+			if ctx.Err() != nil {
+				break
+			}
+			if lease.Message.TimestampMS < dtime.TimeToMS(time.Now()) {
+				c.conf.ProcessMessageListener(lease)
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Duration(lease.Message.TimestampMS - dtime.TimeToMS(time.Now())) * time.Millisecond):
+					c.conf.ProcessMessageListener(lease)
+				}
+			}
+		}
+	}()
 	for {
 		err = nil
 
@@ -130,7 +150,7 @@ func (c *Consumer) preload(ctx context.Context) {
 
 			//TODO pass an object from a pool, to reuse it
 			msg := response.Message(nil)
-			c.conf.ProcessMessageListener(timeline.PushLeases{
+			c.msgBuffer <- timeline.PushLeases{
 				ExpirationTimestampMS: response.ExpirationTSMSUTC(),
 				ConsumerID:            response.ConsumerIDBytes(),
 				Message: timeline.LeaseMessage{
@@ -141,7 +161,7 @@ func (c *Consumer) preload(ctx context.Context) {
 					Body:            msg.BodyBytes(),
 					BucketID:        msg.BucketID(),
 				},
-			})
+			}
 		}
 	}
 }
