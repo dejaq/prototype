@@ -53,14 +53,14 @@ func main() {
 	grpServer := coordinator.NewGRPCServer(nil, greeter)
 
 	// start in memory redis server
-	//redisServer, err := redis.NewServer()
-	//if err != nil {
-	//	logger.Fatalf("Failed to start redis service: %v", err)
-	//}
+	redisServer, err := redis.NewServer()
+	if err != nil {
+		logger.Fatalf("Failed to start redis service: %v", err)
+	}
 
 	// redis client that implement timeline interface
-	//redisClient, err := redis.NewClient(redisServer.Addr())
-	redisClient, err := redis.NewClient("127.0.0.1:6379")
+	redisClient, err := redis.NewClient(redisServer.Addr())
+	// redisClient, err := redis.NewClient("127.0.0.1:6379")
 	if err != nil {
 		logger.Fatalf("Failed to connect to redis server: %v", err)
 	}
