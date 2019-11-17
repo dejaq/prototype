@@ -7,5 +7,5 @@ func TimeToMS(t time.Time) uint64 {
 }
 
 func DurationToMS(d time.Duration) uint64 {
-	return uint64(d * time.Millisecond)
+	return uint64(d / time.Millisecond)
 }

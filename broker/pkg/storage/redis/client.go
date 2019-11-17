@@ -77,7 +77,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
 		data := make(map[string]interface{})
 		data["ID"] = string(msg.ID)
-		data["TimestampMS"] = string(msg.TimestampMS)
+		data["TimestampMS"] = strconv.FormatUint(msg.TimestampMS, 10)
 		data["BodyID"] = string(msg.BodyID)
 		data["Body"] = string(msg.Body)
 		data["ProducerGroupID"] = string(msg.ProducerGroupID)
@@ -180,6 +180,8 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 				processingError = err
 				continue
 			}
+
+			timelineMessage.TimestampMS -= leaseMs
 
 			results = append(results, timeline.PushLeases{
 				ExpirationTimestampMS: endLeaseTimeMs,
