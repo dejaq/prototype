@@ -203,10 +203,10 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 	wg.Add(conf.WaitForCount)
 
 	c := consumer.NewConsumer(conn, conn, &consumer.Config{
-		ConsumerID: conf.ConsumerID,
-		Topic:      conf.Topic,
-		Cluster:    conf.Cluster,
-		LeaseMs:    conf.Lease,
+		ConsumerID:    conf.ConsumerID,
+		Topic:         conf.Topic,
+		Cluster:       conf.Cluster,
+		LeaseDuration: conf.Lease,
 	})
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
@@ -230,7 +230,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, conf *CConfig) error {
 		for {
 			select {
 			case <-ctx.Done():
-				//wg.Add(-conf.WaitForCount)
+				//wg.Set(-conf.WaitForCount)
 				return
 			}
 		}

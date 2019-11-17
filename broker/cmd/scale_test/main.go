@@ -27,9 +27,9 @@ import (
 )
 
 func main() {
-	msgsCount := 89
-	batchSize := 5
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*10))
+	msgsCount := 50
+	batchSize := 15
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*15))
 
 	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
@@ -90,7 +90,6 @@ func main() {
 	topics := []string{"topic_1", "topic_2", "topic_3"}
 
 	producerGroupIDs := []string{"producer_group_1", "producer_group_1", "producer_group_2"}
-	//producerGroupIDs := []string{"producer_group_1", "producer_group_2", "producer_group_3"}
 	consumerIDs := []string{"consumer_id_1", "consumer_id_2", "consumer_id_3", "consumer_id_4"}
 
 	wg := sync.WaitGroup{}
@@ -118,11 +117,10 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
 			defer wg.Done()
 			err := Produce(ctx, conn, msgCounter, &PConfig{
-				Count:   msgsCount,
-				Cluster: "",
-				Topic:   topic,
-				//ProducerGroupID: producerGroupID,
-				ProducerGroupID: fmt.Sprintf("%s|%s", topic, producerGroupID),
+				Count:           msgsCount / len(producerGroupIDs),
+				Cluster:         "",
+				Topic:           topic,
+				ProducerGroupID: producerGroupID,
 				BatchSize:       batchSize,
 			})
 			if err != nil {
@@ -139,9 +137,8 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 				WaitForCount: msgsCount,
 				Cluster:      "",
 				Topic:        topic,
-				//ConsumerID:   consumerID,
-				ConsumerID: fmt.Sprintf("%s|%s", topic, consumerID),
-				Lease:      time.Millisecond * 20000,
+				ConsumerID:   consumerID,
+				Lease:        time.Millisecond * 1000,
 			})
 			if err != nil {
 				log.Error(err)
@@ -152,9 +149,9 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 	wg.Wait() //wait for consumers and producers
 
 	if msgCounter.Load() == 0 {
-		logrus.Infof("Successfully produced and consumed %d messages", msgsCount)
+		logrus.Infof("Successfully produced and consumed %d messages on topic=%s", msgsCount, topic)
 	} else {
-		logrus.Errorf("Failed to consume all the produced messages, %d left", msgCounter.Load())
+		logrus.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
 	}
 }
 
@@ -197,11 +194,10 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int3
 	for left > 0 {
 		left--
 		msgID := config.Count - left
-		log.Infof("inserting ID %d", msgID)
 		batch = append(batch, timeline.Message{
 			ID:          []byte(fmt.Sprintf("ID %s|msg_%d", config.ProducerGroupID, msgID)),
 			Body:        []byte(fmt.Sprintf("BODY %s|msg_%d", config.ProducerGroupID, msgID)),
-			TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond * time.Duration(msgID))),
+			TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID))),
 		})
 		if len(batch) >= config.BatchSize {
 			if err := flush(); err != nil {
@@ -212,6 +208,7 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int3
 	if err := flush(); err != nil {
 		return err
 	}
+	log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.ProducerGroupID, config.Topic)
 	return nil
 }
 
@@ -226,13 +223,16 @@ type CConfig struct {
 
 func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int32, conf *CConfig) error {
 	c := consumer.NewConsumer(conn, conn, &consumer.Config{
-		ConsumerID: conf.ConsumerID,
-		Topic:      conf.Topic,
-		Cluster:    conf.Cluster,
-		LeaseMs:    conf.Lease,
+		ConsumerID:    conf.ConsumerID,
+		Topic:         conf.Topic,
+		Cluster:       conf.Cluster,
+		LeaseDuration: conf.Lease,
 	})
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
+		if lease.GetConsumerID() != conf.ConsumerID {
+			log.Fatalf("server sent message for another consumer me=%s sent=%s", conf.ConsumerID, lease.GetConsumerID())
+		}
 		//Process the messages
 		msgsCounter.Dec()
 		err := c.Delete(ctx, []timeline.Message{{
@@ -244,7 +244,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int
 		if err != nil {
 			log.Errorf("delete failed", err)
 		}
-		logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+		//logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
 	})
 
 	log.Info("consumer handshake success")

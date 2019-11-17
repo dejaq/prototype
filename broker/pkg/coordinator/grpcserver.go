@@ -92,7 +92,7 @@ func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.Ti
 }
 
 func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream grpc.Broker_TimelineConsumeServer) error {
-	buffer, err := s.greeter.ConsumerConnected(string(req.SessionID()))
+	pipeline, err := s.greeter.ConsumerConnected(string(req.SessionID()))
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream gr
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case lease, ok := <-buffer:
+		case lease, ok := <-pipeline:
 			if !ok {
 				return nil //channel closed
 			}
@@ -125,8 +125,11 @@ func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream gr
 			grpc.TimelinePushLeaseMessageAddBody(builder, bodyPosition)
 			msgOffset := grpc.TimelinePushLeaseMessageEnd(builder)
 
+			consumerIDPosition := builder.CreateByteVector(lease.ConsumerID)
 			grpc.TimelinePushLeaseResponseStart(builder)
 			grpc.TimelinePushLeaseResponseAddMessage(builder, msgOffset)
+			grpc.TimelinePushLeaseResponseAddConsumerID(builder, consumerIDPosition)
+			grpc.TimelinePushLeaseResponseAddExpirationTSMSUTC(builder, lease.ExpirationTimestampMS)
 			rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
 
 			builder.Finish(rootPosition)
