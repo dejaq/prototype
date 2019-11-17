@@ -134,11 +134,12 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 		go func(consumerID string, counter *atomic.Int32) {
 			defer wg.Done()
 			err := Consume(ctx, conn, counter, &CConfig{
-				WaitForCount: msgsCount,
-				Cluster:      "",
-				Topic:        topic,
-				ConsumerID:   consumerID,
-				Lease:        time.Millisecond * 1000,
+				WaitForCount:  msgsCount,
+				Cluster:       "",
+				Topic:         topic,
+				ConsumerID:    consumerID,
+				MaxBufferSize: 100,
+				Lease:         time.Millisecond * 1000,
 			})
 			if err != nil {
 				log.Error(err)
@@ -213,12 +214,13 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int3
 }
 
 type CConfig struct {
-	WaitForCount int
-	Cluster      string
-	Topic        string
-	ConsumerID   string
-	Lease        time.Duration
-	Timeout      time.Duration
+	WaitForCount  int
+	Cluster       string
+	Topic         string
+	ConsumerID    string
+	MaxBufferSize int64
+	Lease         time.Duration
+	Timeout       time.Duration
 }
 
 func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int32, conf *CConfig) error {
@@ -227,6 +229,7 @@ func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int
 		Topic:         conf.Topic,
 		Cluster:       conf.Cluster,
 		LeaseDuration: conf.Lease,
+		MaxBufferSize: conf.MaxBufferSize,
 	})
 
 	c.Start(ctx, func(lease timeline.PushLeases) {
