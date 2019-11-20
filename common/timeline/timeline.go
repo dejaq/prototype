@@ -29,9 +29,19 @@ type Message struct {
 func (m Message) GetID() string {
 	return *(*string)(unsafe.Pointer(&m.ID))
 }
+
+func (m Message) GetBodyID() string {
+	return *(*string)(unsafe.Pointer(&m.BodyID))
+}
+
+func (m Message) GetBody() string {
+	return *(*string)(unsafe.Pointer(&m.Body))
+}
+
 func (m Message) GetProducerGroupID() string {
 	return *(*string)(unsafe.Pointer(&m.ProducerGroupID))
 }
+
 func (m Message) GetLockConsumerID() string {
 	return *(*string)(unsafe.Pointer(&m.LockConsumerID))
 }

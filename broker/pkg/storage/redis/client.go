@@ -18,14 +18,27 @@ type Client struct {
 	host   string
 	client *redis.Client
 	// map[operationType]redisHash
-	script map[string]string
+	operationToScriptHash map[string]string
 }
 
 var errorsType = map[string]string{
 	"1": "messageId already exists, you can not set it again",
 	"2": "cannot add new entry on timeline sorted set",
-	"3": "cannot insert all properties into hashMap",
+	"3": "cannot insert all properties into hashMap, rollback fail",
+	"4": "fail insert, rollback with success",
 }
+
+type ErrMessageAlreadyExists struct{ e string }
+
+func (e *ErrMessageAlreadyExists) Error() string { return e.e }
+
+type ErrStorageInconsistentData struct{ e string }
+
+func (e *ErrStorageInconsistentData) Error() string { return e.e }
+
+type ErrFailToAddRecord struct{ e string }
+
+func (e *ErrFailToAddRecord) Error() string { return e.e }
 
 var scripts = map[string]string{
 	"insert":      Scripts.insert,
@@ -33,8 +46,8 @@ var scripts = map[string]string{
 	"delete":      Scripts.delete,
 }
 
-// NewClient ...
-func NewClient(host string) (*Client, error) {
+// New ...
+func New(host string) (*Client, error) {
 	c := redis.NewClient(&redis.Options{Addr: host})
 	_, err := c.Ping().Result()
 
@@ -65,7 +78,7 @@ func loadScripts(c *Client, s map[string]string) error {
 		hashes[k] = hash
 	}
 
-	c.script = hashes
+	c.operationToScriptHash = hashes
 
 	return nil
 }
@@ -92,18 +105,18 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
 
 		data := []string{
-			"ID", string(msg.ID),
-			"TimestampMS", string(msg.TimestampMS),
-			"BodyID", string(msg.BodyID),
-			"Body", string(msg.Body),
-			"ProducerGroupID", string(msg.ProducerGroupID),
-			"LockConsumerID", string(msg.LockConsumerID),
+			"ID", msg.GetID(),
+			"TimestampMS", strconv.Itoa(int(msg.TimestampMS)),
+			"BodyID", msg.GetBodyID(),
+			"Body", msg.GetBody(),
+			"ProducerGroupID", msg.GetProducerGroupID(),
+			"LockConsumerID", msg.GetLockConsumerID(),
 			"BucketID", strconv.Itoa(int(msg.BucketID)),
 			"Version", strconv.Itoa(int(msg.Version)),
 		}
 
-		keys := []string{timelineKey, messageKey, string(msg.ID), strconv.Itoa(int(msg.TimestampMS))}
-		ok, err := c.client.EvalSha(c.script["insert"], keys, data).Result()
+		keys := []string{timelineKey, messageKey, data[1], data[3]}
+		ok, err := c.client.EvalSha(c.operationToScriptHash["insert"], keys, data).Result()
 
 		if err != nil {
 			var derror derrors.Dejaror
@@ -111,14 +124,29 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
-		if ok != "0" {
+		// already exists
+		if ok == "1" {
 			var derror derrors.Dejaror
 			derror.Message = errorsType[ok.(string)]
+			derror.WrappedErr = &ErrMessageAlreadyExists{e: errorsType[ok.(string)]}
 			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+		}
 
-			if ok == "3" {
-				// TODO rollback here, could not insert into hashmap, here we can use retry mechanism
-			}
+		// fail to add
+		if ok == "2" || ok == "4" {
+			var derror derrors.Dejaror
+			derror.Message = errorsType[ok.(string)]
+			derror.WrappedErr = &ErrFailToAddRecord{e: errorsType[ok.(string)]}
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+		}
+
+		// inconsistent data
+		if ok == "3" {
+			var derror derrors.Dejaror
+			derror.Message = errorsType[ok.(string)]
+			e := &ErrStorageInconsistentData{e: errorsType[ok.(string)]}
+			derror.WrappedErr = e
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 	}
 

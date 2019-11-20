@@ -28,9 +28,14 @@ var Scripts = struct {
 		
 		-- check if is ok, rollback transaction if not
 		if okhmap.ok ~= 'OK' then
-			return "3"
+	        local removeOk = redis.call("ZREM", timeline_key, message_id)
+	        if removeOk ~= 1 then
+		        return "3"
+		    end
+	      
+	       return "4"
 		end
-		
+	
 		return "0"
 	`,
 	getAndLease: `return 100`,
