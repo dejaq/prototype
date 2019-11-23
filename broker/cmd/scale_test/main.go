@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// redis client that implement timeline interface
-	redisClient, err := redis.NewClient(redisServer.Addr())
+	redisClient, err := redis.New(redisServer.Addr())
 	if err != nil {
 		logger.Fatalf("Failed to connect to redis server: %v", err)
 	}

@@ -8,5 +8,9 @@ import (
 func NewServer() (*miniredis.Miniredis, error) {
 	s, err := miniredis.Run()
 	// close server somewhere
+
+	//s.FlushDB()
+	//s.FlushAll()
+	//s.FlushDB()
 	return s, err
 }
