@@ -2,7 +2,9 @@ package coordinator
 
 import (
 	"context"
+	"github.com/bgadrian/dejaq-broker/common/protocol"
 	"math/rand"
+	"time"
 	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
@@ -10,7 +12,9 @@ import (
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/prometheus/common/log"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -83,7 +87,10 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&TimelineListeners{
 		ConsumerHandshake: func(ctx context.Context, consumer *Consumer) (string, error) {
-			//TODO ask the Catalog if the topic exists
+			_, err := c.synchronization.GetTopic(ctx, consumer.Topic)
+			if err != nil {
+				return "", err
+			}
 			return c.greeter.ConsumerHandshake(consumer)
 		},
 		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.PushLeases, error) {
@@ -97,11 +104,10 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
-
 		ProducerHandshake: func(i context.Context, producer *Producer) (string, error) {
-			//TODO ask the Catalog if the topic exists
 			return c.greeter.ProducerHandshake(producer)
 		},
+		CreateTimelineRequest: c.createTopic,
 		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
 			return c.greeter.GetProducerSessionData(sessionID)
 		},
@@ -111,6 +117,57 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			return c.greeter.GetTopicFor(sessionID)
 		},
 	})
+}
+
+//func (c *Coordinator) registerConsumer(ctx context.Context, consumer *Consumer) {
+//	consumerSync := synchronization.Consumer{
+//		OverseerBrokerID: consumer.Cluster,
+//		CarrierBrokerID:  consumer.Cluster,
+//	}
+//	consumerSync.ConsumerID = consumer.GetID()
+//	consumerSync.Topic = string(consumer.GetTopic())
+//	// TODO add the rest of the params
+//	err := c.synchronization.AddConsumer(ctx, consumerSync)
+//	if err != nil {
+//		log.Error(err)
+//	}
+//}
+//
+//func (c *Coordinator) deRegisterConsumer(ctx context.Context, consumer *Consumer) {
+//	c.synchronization.RemoveConsumer(ctx, consumer.GetID())
+//}
+//
+//func (c *Coordinator) registerProducer(ctx context.Context, producer *Producer) {
+//	producerSync := synchronization.Producer{
+//		ProducerID:       producer.ProducerID,
+//		OverseerBrokerID: producer.Cluster,
+//		CarrierBrokerID:  producer.Cluster,
+//	}
+//	producerSync.Cluster = producer.Cluster
+//	producerSync.Topic = producer.Topic
+//
+//	err := c.synchronization.AddProducer(ctx, producerSync)
+//	if err != nil {
+//		log.Error(err)
+//	}
+//}
+
+func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
+	err := c.storage.CreateTopic(ctx, topic)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	syncTopic := synchronization.Topic{}
+	syncTopic.ID = topic
+	syncTopic.CreationTimestamp = dtime.TimeToMS(time.Now())
+	syncTopic.ProvisionStatus = protocol.TopicProvisioningStatus_Live
+	syncTopic.Settings = settings
+
+	err = c.synchronization.AddTopic(ctx, syncTopic)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic string, msgs []timeline.Message) []errors.MessageIDTuple {
