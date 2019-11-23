@@ -78,7 +78,7 @@ func randomSessionID() string {
 	return string(session)
 }
 
-func (s *Greeter) ConsumerHandshake(c Consumer) (string, error) {
+func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
@@ -92,7 +92,7 @@ func (s *Greeter) ConsumerHandshake(c Consumer) (string, error) {
 	}
 	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.Topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
-	s.consumerSessionsIDs[sessionID] = &c
+	s.consumerSessionsIDs[sessionID] = c
 	s.consumerSessionIDsAndPipelines[sessionID] = nil
 
 	return sessionID, nil
@@ -153,27 +153,27 @@ func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) 
 	return pipeline, nil
 }
 
-func (s *Greeter) GetTopicFor(sessionID []byte) (string, error) {
+func (s *Greeter) GetTopicFor(sessionID string) (string, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
 	//for now we do not know if is a producer or a consumer
-	if sessionData, isProducer := s.producerSessionIDs[string(sessionID)]; isProducer {
+	if sessionData, isProducer := s.producerSessionIDs[sessionID]; isProducer {
 		return sessionData.Topic, nil
 	}
 
-	if sessionData, isConsumer := s.consumerSessionsIDs[string(sessionID)]; isConsumer {
+	if sessionData, isConsumer := s.consumerSessionsIDs[sessionID]; isConsumer {
 		return sessionData.Topic, nil
 	}
 
 	return "", ErrNotFound
 }
 
-func (s *Greeter) GetProducerSessionData(sessionID []byte) (*Producer, error) {
+func (s *Greeter) GetProducerSessionData(sessionID string) (*Producer, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
-	sessionData, hadHandshake := s.producerSessionIDs[string(sessionID)]
+	sessionData, hadHandshake := s.producerSessionIDs[sessionID]
 	if hadHandshake {
 		return sessionData, nil
 	}
