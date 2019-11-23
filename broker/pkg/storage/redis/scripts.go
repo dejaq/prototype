@@ -1,7 +1,7 @@
 package redis
 
-// Scripts hold scripts that need to be loaded into redis
-var Scripts = struct {
+// scripts hold scripts that need to be loaded into redis
+var scripts = struct {
 	insert      string
 	getAndLease string
 	delete      string
