@@ -40,7 +40,7 @@ func main() {
 	}
 	ser := grpc.NewServer(grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}))
 
-	grpServer := coordinator.NewGRPCServer(nil, greeter)
+	grpServer := coordinator.NewGRPCServer(nil)
 
 	// start in memory redis server
 	redisServer, err := redis.NewServer()
