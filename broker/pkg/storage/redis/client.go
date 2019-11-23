@@ -48,6 +48,11 @@ func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketI
 	return "dejaq::" + clusterName + "::" + string(timelineId) + "::" + idBucket + "::" + string(messageId)
 }
 
+func (c *Client) CreateTopic(ctx context.Context, timelineID string) error {
+	// TODO add implementation
+	return nil
+}
+
 // Insert ...
 func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO use unsafe for conversions

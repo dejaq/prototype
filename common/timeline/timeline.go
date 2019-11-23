@@ -60,7 +60,7 @@ type Topic struct {
 
 type TopicSettings struct {
 	//TODO add all settings, and find a way to differentiate the mutable ones
-	ReplicaCount int
+	ReplicaCount int32
 	//The number of seconds, compared to Now(), that a message is allowed to be set on the timeline. How far in the future is allowed, eg: 1year. 0 for infinity.
 	MaxSecondsFutureAllowed uint64 //default 1year
 	//Largest duration allowed for a lease.

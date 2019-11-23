@@ -2,8 +2,9 @@ package coordinator
 
 import (
 	"context"
+	"github.com/bgadrian/dejaq-broker/common/protocol"
 	"math/rand"
-	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
@@ -11,7 +12,9 @@ import (
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
 	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
+	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/prometheus/common/log"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -57,7 +60,6 @@ type Coordinator struct {
 	dealer          Dealer
 	storage         storage.Repository
 	synchronization synchronization.Repository
-	lock            *sync.RWMutex
 	greeter         *Greeter
 	loader          *Loader
 }
@@ -72,7 +74,6 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 		conf:            config,
 		storage:         timelineStorage,
 		synchronization: synchronization,
-		lock:            &sync.RWMutex{},
 		greeter:         greeter,
 		loader:          loader,
 		dealer:          dealer,
@@ -86,31 +87,73 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&GRPCListeners{
 		TimelineCreateMessagesListener: c.listenerTimelineCreateMessages,
+		TimelineCreateListener: c.createTopic,
 		TimelineConsumerSubscribed: func(ctx context.Context, consumer *Consumer) {
-			c.RegisterCustomer(consumer)
+			c.registerConsumer(ctx, consumer)
 		},
 		TimelineConsumerUnSubscribed: func(ctx context.Context, consumer *Consumer) {
-			c.DeRegisterCustomer(consumer)
+			c.deRegisterConsumer(ctx, consumer)
 		},
 		TimelineDeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
-		TimelineProducerSubscribed: func(i context.Context, producer *Producer) {
-
+		TimelineProducerSubscribed: func(ctx context.Context, producer *Producer) {
+			c.registerProducer(ctx, producer)
 		},
 	})
 }
 
-func (c *Coordinator) RegisterCustomer(consumer *Consumer) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *Coordinator) registerConsumer(ctx context.Context, consumer *Consumer) {
+	consumerSync := synchronization.Consumer{
+		OverseerBrokerID: consumer.Cluster,
+		CarrierBrokerID:  consumer.Cluster,
+	}
+	consumerSync.ConsumerID = consumer.GetID()
+	consumerSync.Topic = string(consumer.GetTopic())
+	// TODO add the rest of the params
+	err := c.synchronization.AddConsumer(ctx, consumerSync)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
-func (c *Coordinator) DeRegisterCustomer(consumer *Consumer) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *Coordinator) deRegisterConsumer(ctx context.Context, consumer *Consumer) {
+	c.synchronization.RemoveConsumer(ctx, consumer.GetID())
+}
+
+func (c *Coordinator) registerProducer(ctx context.Context, producer *Producer) {
+	producerSync := synchronization.Producer{
+		ProducerID:       producer.ProducerID,
+		OverseerBrokerID: producer.Cluster,
+		CarrierBrokerID:  producer.Cluster,
+	}
+	producerSync.Cluster = producer.Cluster
+	producerSync.Topic = producer.Topic
+
+	err := c.synchronization.AddProducer(ctx, producerSync)
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
+	err := c.storage.CreateTopic(ctx, topic)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	syncTopic := synchronization.Topic{}
+	syncTopic.ID = topic
+	syncTopic.CreationTimestamp = dtime.TimeToMS(time.Now())
+	syncTopic.ProvisionStatus = protocol.TopicProvisioningStatus_Live
+	syncTopic.Settings = settings
+
+	err = c.synchronization.AddTopic(ctx, syncTopic)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic string, msgs []timeline.Message) []errors.MessageIDTuple {

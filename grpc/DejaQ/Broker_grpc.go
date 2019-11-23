@@ -17,6 +17,8 @@ type BrokerClient interface{
   	opts... grpc.CallOption) (* TimelineProducerHandshakeResponse, error)  
   TimelineConsumerHandshake(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (* TimelineConsumerHandshakeResponse, error)  
+  TimelineCreate(ctx context.Context, in *flatbuffers.Builder, 
+  	opts... grpc.CallOption) (* Error, error)  
   TimelineCount(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (* TimelineCountResponse, error)  
   TimelineConsume(ctx context.Context, in *flatbuffers.Builder, 
@@ -51,6 +53,14 @@ func (c *brokerClient) TimelineConsumerHandshake(ctx context.Context, in *flatbu
 	opts... grpc.CallOption) (* TimelineConsumerHandshakeResponse, error) {
   out := new(TimelineConsumerHandshakeResponse)
   err := grpc.Invoke(ctx, "/DejaQ.Broker/TimelineConsumerHandshake", in, out, c.cc, opts...)
+  if err != nil { return nil, err }
+  return out, nil
+}
+
+func (c *brokerClient) TimelineCreate(ctx context.Context, in *flatbuffers.Builder, 
+	opts... grpc.CallOption) (* Error, error) {
+  out := new(Error)
+  err := grpc.Invoke(ctx, "/DejaQ.Broker/TimelineCreate", in, out, c.cc, opts...)
   if err != nil { return nil, err }
   return out, nil
 }
@@ -208,6 +218,7 @@ func (x *brokerTimelineDeleteClient) CloseAndRecv() (*TimelineResponse, error) {
 type BrokerServer interface {
   TimelineProducerHandshake(context.Context, *TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error)  
   TimelineConsumerHandshake(context.Context, *TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error)  
+  TimelineCreate(context.Context, *TimelineCreateRequest) (*flatbuffers.Builder, error)  
   TimelineCount(context.Context, *TimelineCountRequest) (*flatbuffers.Builder, error)  
   TimelineConsume(*TimelineConsumeRequest, Broker_TimelineConsumeServer) error  
   TimelineCreateMessages(Broker_TimelineCreateMessagesServer) error  
@@ -249,6 +260,23 @@ func _Broker_TimelineConsumerHandshake_Handler(srv interface{}, ctx context.Cont
   
   handler := func(ctx context.Context, req interface{}) (interface{}, error) {
     return srv.(BrokerServer).TimelineConsumerHandshake(ctx, req.(* TimelineConsumerHandshakeRequest))
+  }
+  return interceptor(ctx, in, info, handler)
+}
+
+
+func _Broker_TimelineCreate_Handler(srv interface{}, ctx context.Context,
+	dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+  in := new(TimelineCreateRequest)
+  if err := dec(in); err != nil { return nil, err }
+  if interceptor == nil { return srv.(BrokerServer).TimelineCreate(ctx, in) }
+  info := &grpc.UnaryServerInfo{
+    Server: srv,
+    FullMethod: "/DejaQ.Broker/TimelineCreate",
+  }
+  
+  handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+    return srv.(BrokerServer).TimelineCreate(ctx, req.(* TimelineCreateRequest))
   }
   return interceptor(ctx, in, info, handler)
 }
@@ -402,6 +430,10 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
     {
       MethodName: "TimelineConsumerHandshake",
       Handler: _Broker_TimelineConsumerHandshake_Handler, 
+    },
+    {
+      MethodName: "TimelineCreate",
+      Handler: _Broker_TimelineCreate_Handler, 
     },
     {
       MethodName: "TimelineCount",

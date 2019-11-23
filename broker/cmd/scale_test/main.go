@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
 	"math/rand"
 	"net"
 	"strconv"
@@ -60,8 +61,9 @@ func main() {
 	}
 
 	dealer := coordinator.NewExclusiveDealer()
+	synchronization := overseer.NewCatalog()
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, nil, greeter,
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, synchronization, greeter,
 		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
 			redisClient, dealer, greeter), dealer)
 	supervisor.AttachToServer(grpServer)
@@ -112,6 +114,7 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 
 	wg := sync.WaitGroup{}
 	msgCounter := new(atomic.Int32)
+
 	for _, producerGroupID := range producerGroupIDs {
 		wg.Add(1)
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
@@ -175,6 +178,21 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int3
 	}
 	log.Info("producer handshake success")
 
+	err := creator.TimelineCreate(ctx, config.Topic, timeline.TopicSettings{
+		ReplicaCount:            0,
+		MaxSecondsFutureAllowed: 10,
+		MaxSecondsLease:         10,
+		ChecksumBodies:          false,
+		MaxBodySizeBytes:        100000,
+		RQSLimitPerClient:       100000,
+		MinimumProtocolVersion:  0,
+		MinimumDriverVersion:    0,
+		BucketCount:             100,
+	})
+	if err != nil {
+		return err
+	}
+	log.Info("producer topic created success")
 	t := time.Now().UTC()
 	left := config.Count
 	var batch []timeline.Message
