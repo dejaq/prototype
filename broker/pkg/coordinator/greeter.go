@@ -153,6 +153,14 @@ func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) 
 	return pipeline, nil
 }
 
+func (s *Greeter) GetConsumer(sessionID string) (*Consumer, error){
+	consumer, ok := s.consumerSessionsIDs[sessionID]
+	if !ok {
+		return nil, errors.New("consumer not found")
+	}
+	return consumer, nil
+}
+
 func (s *Greeter) GetTopicFor(sessionID string) (string, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()

@@ -104,13 +104,13 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	for _, tuple := range consumersAndPipelines {
 		go func(cons *Consumer, p chan timeline.PushLeases) {
-			msgsSent, sentAllMessges, err := c.loadOneConsumer(newCtx, cons, 10, p)
+			msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, cons, 10, p)
 			if err != nil {
 				log.Println(err)
 			}
 
 			allFinishedMutex.Lock()
-			if !sentAllMessges {
+			if !sentAllMessages {
 				allFinished = false
 			}
 			allFinishedMutex.Unlock()

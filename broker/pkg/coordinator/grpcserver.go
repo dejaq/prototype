@@ -18,12 +18,13 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 //TimelineListeners Coordinator can listen and react to these calls
 type TimelineListeners struct {
 	ProducerHandshake      func(context.Context, *Producer) (string, error)
+	CreateTimeline         func(context.Context, string, timeline.TopicSettings)
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerConnected    func(context.Context, string) (chan timeline.PushLeases, error)
-	ConsumerDisconnected func(string)
+	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
 	DeleteMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
@@ -98,7 +99,7 @@ func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream gr
 	}
 
 	defer func() {
-		s.listeners.ConsumerDisconnected(string(req.SessionID()))
+		s.listeners.ConsumerDisconnected(stream.Context(), string(req.SessionID()))
 	}()
 
 	var builder *flatbuffers.Builder
@@ -140,6 +141,26 @@ func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream gr
 		}
 	}
 	return nil
+}
+
+func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreateRequest) (*flatbuffers.Builder, error) {
+	var settings timeline.TopicSettings
+	settings.BucketCount = req.BucketCount()
+	settings.ReplicaCount = req.ReplicaCount()
+	settings.ChecksumBodies = req.ChecksumBodies()
+	settings.MaxSecondsLease = req.MaxSecondsLease()
+	settings.MaxBodySizeBytes = req.MaxBodySizeBytes()
+	settings.RQSLimitPerClient = req.RqsLimitPerClient()
+	settings.MinimumDriverVersion = req.MinimumDriverVersion()
+	settings.MinimumProtocolVersion = req.MinimumProtocolVersion()
+	settings.MaxSecondsFutureAllowed = req.MaxSecondsFutureAllowed()
+
+	s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
+	builder := flatbuffers.NewBuilder(128)
+	grpc.ErrorStart(builder)
+	root := grpc.ErrorEnd(builder)
+	builder.Finish(root)
+	return builder, nil
 }
 
 func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
