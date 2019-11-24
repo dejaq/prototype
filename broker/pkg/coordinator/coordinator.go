@@ -86,27 +86,17 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&TimelineListeners{
-		ConsumerHandshake: func(ctx context.Context, consumer *Consumer) (string, error) {
-			_, err := c.synchronization.GetTopic(ctx, consumer.Topic)
-			if err != nil {
-				return "", err
-			}
-			return c.greeter.ConsumerHandshake(consumer)
-		},
+		ConsumerHandshake: c.consumerHandshake,
 		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.PushLeases, error) {
 			return c.greeter.ConsumerConnected(sessionID)
 		},
-		ConsumerDisconnected: func(sessionID string) {
-			c.greeter.ConsumerDisconnected(sessionID)
-		},
+		ConsumerDisconnected: c.consumerDisconnected,
 		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
-		ProducerHandshake: func(i context.Context, producer *Producer) (string, error) {
-			return c.greeter.ProducerHandshake(producer)
-		},
+		ProducerHandshake: c.producerHandshake,
 		CreateTimeline: c.createTopic,
 		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
 			return c.greeter.GetProducerSessionData(sessionID)
@@ -126,38 +116,68 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	})
 }
 
-//func (c *Coordinator) registerConsumer(ctx context.Context, consumer *Consumer) {
-//	consumerSync := synchronization.Consumer{
-//		OverseerBrokerID: consumer.Cluster,
-//		CarrierBrokerID:  consumer.Cluster,
-//	}
-//	consumerSync.ConsumerID = consumer.GetID()
-//	consumerSync.Topic = string(consumer.GetTopic())
-//	// TODO add the rest of the params
-//	err := c.synchronization.AddConsumer(ctx, consumerSync)
-//	if err != nil {
-//		log.Error(err)
-//	}
-//}
-//
-//func (c *Coordinator) deRegisterConsumer(ctx context.Context, consumer *Consumer) {
-//	c.synchronization.RemoveConsumer(ctx, consumer.GetID())
-//}
-//
-//func (c *Coordinator) registerProducer(ctx context.Context, producer *Producer) {
-//	producerSync := synchronization.Producer{
-//		ProducerID:       producer.ProducerID,
-//		OverseerBrokerID: producer.Cluster,
-//		CarrierBrokerID:  producer.Cluster,
-//	}
-//	producerSync.Cluster = producer.Cluster
-//	producerSync.Topic = producer.Topic
-//
-//	err := c.synchronization.AddProducer(ctx, producerSync)
-//	if err != nil {
-//		log.Error(err)
-//	}
-//}
+func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
+	_, err := c.synchronization.GetTopic(ctx, consumer.Topic)
+	if err != nil {
+		return "", err
+	}
+	sessionID, err := c.greeter.ConsumerHandshake(consumer)
+	if err != nil {
+		log.Error(err)
+		return sessionID, err
+	}
+
+	consumerSync := synchronization.Consumer{
+		SessionID:        sessionID,
+		OverseerBrokerID: consumer.Cluster,
+		CarrierBrokerID:  consumer.Cluster,
+	}
+	consumerSync.ConsumerID = consumer.GetID()
+	consumerSync.Topic = string(consumer.GetTopic())
+	// TODO add the rest of the params
+
+	err = c.synchronization.AddConsumer(ctx, consumerSync)
+	if err != nil {
+		log.Error(err)
+		return sessionID, err
+	}
+
+	return sessionID, err
+}
+
+func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string) error {
+	consumer, err := c.greeter.GetConsumer(sessionID)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	c.greeter.ConsumerDisconnected(sessionID)
+	return c.synchronization.RemoveConsumer(ctx, consumer.Topic, string(consumer.ID))
+}
+
+func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error){
+	sessionID, err := c.greeter.ProducerHandshake(producer)
+	if err != nil {
+		log.Error(err)
+		return sessionID, err
+	}
+	producerSync := synchronization.Producer{
+		SessionID:        sessionID,
+		ProducerID:       producer.ProducerID,
+		OverseerBrokerID: producer.Cluster,
+		CarrierBrokerID:  producer.Cluster,
+	}
+	producerSync.Cluster = producer.Cluster
+	producerSync.Topic = producer.Topic
+
+	err = c.synchronization.AddProducer(ctx, producerSync)
+	if err != nil {
+		log.Error(err)
+		return sessionID, err
+	}
+	return sessionID, err
+}
 
 func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
 	err := c.storage.CreateTopic(ctx, topic)

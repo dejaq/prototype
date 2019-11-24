@@ -14,6 +14,7 @@ type Topic struct {
 type Consumer struct {
 	consumer.Config
 
+	SessionID        string
 	OverseerBrokerID string
 	CarrierBrokerID  string
 }
@@ -21,6 +22,7 @@ type Consumer struct {
 type Producer struct {
 	producer.Config
 
+	SessionID        string
 	ProducerID       string
 	OverseerBrokerID string
 	CarrierBrokerID  string

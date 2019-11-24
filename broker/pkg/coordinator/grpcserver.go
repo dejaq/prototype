@@ -24,7 +24,7 @@ type TimelineListeners struct {
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerConnected    func(context.Context, string) (chan timeline.PushLeases, error)
-	ConsumerDisconnected func(string)
+	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
 	DeleteMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
@@ -99,7 +99,7 @@ func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream gr
 	}
 
 	defer func() {
-		s.listeners.ConsumerDisconnected(string(req.SessionID()))
+		s.listeners.ConsumerDisconnected(stream.Context(), string(req.SessionID()))
 	}()
 
 	var builder *flatbuffers.Builder
