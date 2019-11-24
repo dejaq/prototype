@@ -23,7 +23,7 @@ type TimelineListeners struct {
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
-	ConsumerConnected    func(context.Context, string) (chan timeline.PushLeases, error)
+	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
 	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
