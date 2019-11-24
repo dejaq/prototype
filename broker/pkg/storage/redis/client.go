@@ -162,11 +162,11 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, error) {
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
-	var results []timeline.PushLeases
+	var results []timeline.Lease
 	var processingError error
 
 	// TODO get data here in revers order if Start is less than End
@@ -241,7 +241,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 
 			timelineMessage.TimestampMS -= leaseMs
 
-			results = append(results, timeline.PushLeases{
+			results = append(results, timeline.Lease{
 				ExpirationTimestampMS: endLeaseTimeMs,
 				ConsumerID:            []byte(consumerId),
 				Message:               timeline.NewLeaseMessage(timelineMessage),

@@ -20,7 +20,7 @@ type Config struct {
 	Cluster                string
 	MaxBufferSize          int64
 	LeaseDuration          time.Duration
-	ProcessMessageListener func(timeline.PushLeases)
+	ProcessMessageListener func(timeline.Lease)
 }
 
 type Consumer struct {
@@ -28,28 +28,29 @@ type Consumer struct {
 	overseer       dejaq.BrokerClient
 	carrier        dejaq.BrokerClient
 	sessionID      string
-	msgBuffer      chan timeline.PushLeases
+	msgBuffer      chan timeline.Lease
 	handshakeMutex sync.RWMutex
 }
 
-func NewConsumer(overseer, carrier *grpc.ClientConn, conf *Config) *Consumer {
+func NewConsumer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Config) *Consumer {
 	result := &Consumer{
 		conf:      conf,
-		overseer:  dejaq.NewBrokerClient(overseer),
+		overseer:  overseer,
 		carrier:   dejaq.NewBrokerClient(carrier),
-		msgBuffer: make(chan timeline.PushLeases, conf.MaxBufferSize),
+		msgBuffer: make(chan timeline.Lease, conf.MaxBufferSize),
 	}
 
 	return result
 }
 
-func (c *Consumer) Start(ctx context.Context, f func(timeline.PushLeases)) {
+func (c *Consumer) Start(ctx context.Context, f func(timeline.Lease)) {
 	c.conf.ProcessMessageListener = f
 
 	//TODO make this a proper method and see the goroutine doesn't leak
 	go func() {
 		if err := c.Handshake(ctx); err != nil {
 			log.Println(err)
+			return
 		}
 		for {
 			//now preload == process, TODO split it two
@@ -120,7 +121,7 @@ func (c *Consumer) preload(ctx context.Context) {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(time.Duration(lease.Message.TimestampMS - dtime.TimeToMS(time.Now())) * time.Millisecond):
+				case <-time.After(time.Duration(lease.Message.TimestampMS-dtime.TimeToMS(time.Now())) * time.Millisecond):
 					c.conf.ProcessMessageListener(lease)
 				}
 			}
@@ -150,7 +151,7 @@ func (c *Consumer) preload(ctx context.Context) {
 
 			//TODO pass an object from a pool, to reuse it
 			msg := response.Message(nil)
-			c.msgBuffer <- timeline.PushLeases{
+			c.msgBuffer <- timeline.Lease{
 				ExpirationTimestampMS: response.ExpirationTSMSUTC(),
 				ConsumerID:            response.ConsumerIDBytes(),
 				Message: timeline.LeaseMessage{
@@ -210,4 +211,8 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 	//	}
 	//}
 	return nil
+}
+
+func (c *Consumer) GetConsumerID() string {
+	return c.conf.ConsumerID
 }
