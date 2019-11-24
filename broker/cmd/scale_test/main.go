@@ -28,7 +28,7 @@ import (
 )
 
 func main() {
-	msgsCount := 50
+	msgsCount := 123
 	batchSize := 15
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*15))
 

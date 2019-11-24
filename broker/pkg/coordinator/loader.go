@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"github.com/bgadrian/dejaq-broker/common/protocol"
 	"log"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ func NewLoader(conf *LConfig, storage storage.Repository, dealer Dealer, greeter
 		//TODO move the min to the NewLoader as parameter, each Storage would want different setting
 		timer: NewTimer(&LoaderTimerConfig{
 			Min:  time.Millisecond * 5,
-			Max:  time.Second * 2,
+			Max:  time.Millisecond * 300,
 			Step: time.Millisecond * 25,
 		}),
 	}
@@ -93,16 +94,36 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	allFinished := true
 	allFinishedMutex := sync.Mutex{}
 
-	consumersAndPipelines := c.greeter.GetAllActiveConsumers()
-	consumers := make([]*Consumer, 0, len(consumersAndPipelines))
-	for i := range consumersAndPipelines {
-		consumers = append(consumers, consumersAndPipelines[i].C)
-	}
-	c.dealer.Shuffle(consumers, c.conf.TopicDefaultNoOfBuckets)
+	hydratingConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(protocol.Hydration_Requested)
+	activeConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(protocol.Hydration_Done)
 
-	wg.Add(len(consumers))
+	newHydrateCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	for _, tuple := range hydratingConsumersAndPipelines {
+		wg.Add(1)
+		go func(cons *Consumer, p chan timeline.PushLeases) {
+			cons.HydrateStatus = protocol.Hydration_InProgress
+			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, cons, p)
+			if err != nil {
+				log.Println(err)
+			}
+
+			c.greeter.LeasesSent(cons, msgsSent)
+			cons.HydrateStatus = protocol.Hydration_Done
+			wg.Done()
+		}(tuple.C, tuple.Pipeline)
+	}
+
+	activeConsumers := make([]*Consumer, 0, len(activeConsumersAndPipelines))
+
+	for i := range activeConsumersAndPipelines {
+		activeConsumers = append(activeConsumers, activeConsumersAndPipelines[i].C)
+	}
+
+	c.dealer.Shuffle(activeConsumers, c.conf.TopicDefaultNoOfBuckets)
+
 	newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
-	for _, tuple := range consumersAndPipelines {
+	for _, tuple := range activeConsumersAndPipelines {
+		wg.Add(1)
 		go func(cons *Consumer, p chan timeline.PushLeases) {
 			msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, cons, 10, p)
 			if err != nil {
@@ -123,6 +144,10 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	wg.Wait()
 
 	return !allFinished
+}
+
+func (c *Loader) hydrateOneConsumer(ctx context.Context, consumer *Consumer, consumerPipeline chan<- timeline.PushLeases) (int, error) {
+	return 0, nil
 }
 
 //returns number of sent messages, if it sent all of them, and an error

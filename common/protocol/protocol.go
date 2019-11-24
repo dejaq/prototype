@@ -3,16 +3,25 @@ package protocol
 type WriteConsistency uint8
 
 const (
-	WriteConsistency_Master      = iota
-	WriteConsistency_Quorum      = 1
-	WriteConsistency_AllReplicas = 2
-	WriteConsistency_FireForget  = 3
+	WriteConsistency_Master     WriteConsistency = iota
+	WriteConsistency_Quorum
+	WriteConsistency_AllReplicas
+	WriteConsistency_FireForget
+)
+
+type HydrationStatus uint8
+
+const (
+	Hydration_None HydrationStatus = iota
+	Hydration_Requested
+	Hydration_InProgress
+	Hydration_Done
 )
 
 type TopicProvisioningStatus uint8
 
 const (
-	TopicProvisioningStatus_Creating = iota
-	TopicProvisioningStatus_Live     = 2
-	TopicProvisioningStatus_Deleting = 3
+	TopicProvisioningStatus_Creating TopicProvisioningStatus = iota
+	TopicProvisioningStatus_Live
+	TopicProvisioningStatus_Deleting
 )
