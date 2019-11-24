@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
 	"net"
 	"os"
 	"os/signal"
@@ -16,9 +17,6 @@ import (
 
 	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
 	"github.com/bgadrian/dejaq-broker/common/metrics/exporter"
-
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization/etcd"
-	"go.etcd.io/etcd/clientv3"
 
 	"github.com/bgadrian/dejaq-broker/common"
 
@@ -65,15 +63,17 @@ func main() {
 		logger.Fatalf("Failed to connect to redis server: %v", err)
 	}
 
-	etcdCLI, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{"localhost:2379", "localhost:22379", "localhost:32379"},
-		DialTimeout: 5 * time.Second,
-	})
-	if err == nil {
-		defer etcdCLI.Close()
-	}
+	//etcdCLI, err := clientv3.New(clientv3.Config{
+	//	Endpoints:   []string{"localhost:2379", "localhost:22379", "localhost:32379"},
+	//	DialTimeout: 5 * time.Second,
+	//})
+	//if err == nil {
+	//	defer etcdCLI.Close()
+	//}
+	//
+	//synchronization := etcd.NewEtcd(etcdCLI)
 
-	synchronization := etcd.NewEtcd(etcdCLI)
+	synchronization := overseer.NewCatalog()
 
 	coordinatorConfig := coordinator.Config{
 		NoBuckets: 3,

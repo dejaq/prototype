@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
 	"math/rand"
 	"net"
 	"strconv"
@@ -58,8 +59,9 @@ func main() {
 	}
 
 	dealer := coordinator.NewExclusiveDealer()
+	synchronization := overseer.NewCatalog()
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, nil, greeter,
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, synchronization, greeter,
 		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
 			redisClient, dealer, greeter), dealer)
 	supervisor.AttachToServer(grpServer)
