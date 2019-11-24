@@ -116,7 +116,7 @@ func main() {
 	defer logger.Println("closing CLIENT goroutine")
 	chief := client.NewOverseerClient()
 
-	topics := []string{"topic_1"} //, "topic_2", "topic_3"}
+	topics := []string{"topic_1", "topic_2", "topic_3"}
 
 	producerGroupIDs := []string{"producer_group_1", "producer_group_1", "producer_group_2"}
 	consumerIDs := []string{"consumer_id_1", "consumer_id_2", "consumer_id_3", "consumer_id_4"}
