@@ -16,6 +16,7 @@ type Config struct {
 	Cluster         string
 	Topic           string
 	ProducerGroupID string
+	ProducerID      string
 }
 
 type Producer struct {
@@ -28,12 +29,12 @@ type Producer struct {
 }
 
 // NewProducer creates a new timeline producer
-func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config, producerID string) *Producer {
+func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config) *Producer {
 	result := &Producer{
 		conf:     conf,
 		overseer: dejaq.NewBrokerClient(overseer),
 		carrier:  dejaq.NewBrokerClient(carrier),
-		id:       producerID,
+		id:       conf.ProducerID,
 	}
 	return result
 }
@@ -138,4 +139,15 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		log.Fatalf("insert3 err: %s", err.Error())
 	}
 	return err
+}
+
+func (c *Producer) GetProducerGroupID() string {
+	return c.conf.ProducerGroupID
+}
+func (c *Producer) GetProducerID() string {
+	return c.conf.ProducerID
+}
+
+func (c *Producer) GetTopic() string {
+	return c.conf.Topic
 }

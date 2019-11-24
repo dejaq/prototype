@@ -149,7 +149,8 @@ func Produce(ctx context.Context, conn *grpc.ClientConn, config *PConfig) error 
 		Cluster:         config.Cluster,
 		Topic:           config.Topic,
 		ProducerGroupID: config.ProducerGroupID,
-	}, config.ProducerGroupID+"_producer"+strconv.Itoa(rand.Int()))
+		ProducerID:      config.ProducerGroupID + "_producer" + strconv.Itoa(rand.Int()),
+	})
 	if err := creator.Handshake(ctx); err != nil {
 		return errors.Wrap(err, "producer handshake failed")
 	}
