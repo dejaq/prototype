@@ -68,35 +68,6 @@ func (c *Producer) Handshake(ctx context.Context) error {
 	return nil
 }
 
-func (c *Producer) TimelineCreate(ctx context.Context, id string, topicSettings timeline.TopicSettings) error {
-	c.handshakeMutex.RLock()
-	defer c.handshakeMutex.RLock()
-
-	var builder *flatbuffers.Builder
-
-	builder = flatbuffers.NewBuilder(128)
-	topicIDPos := builder.CreateString(id)
-
-	dejaq.TimelineCreateRequestStart(builder)
-	dejaq.TimelineCreateRequestAddId(builder, topicIDPos)
-	dejaq.TimelineCreateRequestAddBucketCount(builder, topicSettings.BucketCount)
-	dejaq.TimelineCreateRequestAddChecksumBodies(builder, topicSettings.ChecksumBodies)
-	dejaq.TimelineCreateRequestAddMaxBodySizeBytes(builder, topicSettings.MaxBodySizeBytes)
-	dejaq.TimelineCreateRequestAddMaxSecondsLease(builder, topicSettings.MaxSecondsLease)
-	dejaq.TimelineCreateRequestAddMinimumDriverVersion(builder, topicSettings.MinimumDriverVersion)
-	dejaq.TimelineCreateRequestAddMinimumProtocolVersion(builder, topicSettings.MinimumProtocolVersion)
-	dejaq.TimelineCreateRequestAddReplicaCount(builder, topicSettings.ReplicaCount)
-	dejaq.TimelineCreateRequestAddRqsLimitPerClient(builder, topicSettings.RQSLimitPerClient)
-	root := dejaq.TimelineCreateRequestEnd(builder)
-
-	builder.Finish(root)
-	_, err := c.overseer.TimelineCreate(ctx, builder)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // InsertMessages creates a stream and push all the messages.
 //It fails if it does not have a valid session from the overseer
 //Thread safe

@@ -3,6 +3,7 @@ module github.com/bgadrian/dejaq-broker/broker
 require (
 	github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6 // indirect
 	github.com/alicebob/miniredis v2.5.0+incompatible
+	github.com/aws/aws-sdk-go v1.25.41 // indirect
 	github.com/bgadrian/dejaq-broker/client v0.0.0-00010101000000-000000000000
 	github.com/bgadrian/dejaq-broker/common v0.0.0
 	github.com/bgadrian/dejaq-broker/grpc v0.0.0

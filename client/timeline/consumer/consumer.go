@@ -120,7 +120,7 @@ func (c *Consumer) preload(ctx context.Context) {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(time.Duration(lease.Message.TimestampMS - dtime.TimeToMS(time.Now())) * time.Millisecond):
+				case <-time.After(time.Duration(lease.Message.TimestampMS-dtime.TimeToMS(time.Now())) * time.Millisecond):
 					c.conf.ProcessMessageListener(lease)
 				}
 			}
@@ -210,4 +210,8 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 	//	}
 	//}
 	return nil
+}
+
+func (c *Consumer) GetConsumerID() string {
+	return c.conf.ConsumerID
 }
