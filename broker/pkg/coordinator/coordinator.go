@@ -107,14 +107,21 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ProducerHandshake: func(i context.Context, producer *Producer) (string, error) {
 			return c.greeter.ProducerHandshake(producer)
 		},
-		CreateTimelineRequest: c.createTopic,
+		CreateTimeline: c.createTopic,
 		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
 			return c.greeter.GetProducerSessionData(sessionID)
 		},
 		CreateMessagesListener: c.listenerTimelineCreateMessages,
 		DeleteRequest: func(ctx context.Context, sessionID string) (topicID string, err error) {
-			//TODO ask the Catalog if the topic exists
-			return c.greeter.GetTopicFor(sessionID)
+			topic, err := c.greeter.GetTopicFor(sessionID)
+			if err != nil {
+				return "", err
+			}
+			_, err = c.synchronization.GetTopic(ctx, topic)
+			if err != nil {
+				return "", err
+			}
+			return topic, nil
 		},
 	})
 }

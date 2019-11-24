@@ -18,7 +18,7 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 //TimelineListeners Coordinator can listen and react to these calls
 type TimelineListeners struct {
 	ProducerHandshake      func(context.Context, *Producer) (string, error)
-	CreateTimelineRequest  func(context.Context, string, timeline.TopicSettings)
+	CreateTimeline         func(context.Context, string, timeline.TopicSettings)
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
@@ -155,7 +155,7 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 	settings.MinimumProtocolVersion = req.MinimumProtocolVersion()
 	settings.MaxSecondsFutureAllowed = req.MaxSecondsFutureAllowed()
 
-	s.listeners.CreateTimelineRequest(ctx, string(req.Id()), settings)
+	s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
 	builder := flatbuffers.NewBuilder(128)
 	grpc.ErrorStart(builder)
 	root := grpc.ErrorEnd(builder)

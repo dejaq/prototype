@@ -40,7 +40,6 @@ require (
 	go.etcd.io/etcd v3.3.15+incompatible
 	go.uber.org/atomic v1.4.0
 	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0 // indirect
-	google.golang.org/appengine v1.4.0
 	google.golang.org/grpc v1.24.0
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )

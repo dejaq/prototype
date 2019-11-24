@@ -34,11 +34,11 @@ type Repository interface {
 
 	AddConsumer(ctx context.Context, consumer Consumer) error
 	UpdateConsumer(ctx context.Context, consumer Consumer) error
-	GetConsumer(ctx context.Context, consumerID string) (Consumer, error)
-	RemoveConsumer(ctx context.Context, consumerID string) error
+	GetConsumer(ctx context.Context, topic, consumerID string) (Consumer, error)
+	RemoveConsumer(ctx context.Context, topic, consumerID string) error
 
 	AddProducer(ctx context.Context, producer Producer) error
 	UpdateProducer(ctx context.Context, producer Producer) error
-	GetProducer(ctx context.Context, producerID string) (Producer, error)
-	RemoveProducer(ctx context.Context, producerID string) error
+	GetProducer(ctx context.Context, topic, producerID string) (Producer, error)
+	RemoveProducer(ctx context.Context, topic, producerID string) error
 }

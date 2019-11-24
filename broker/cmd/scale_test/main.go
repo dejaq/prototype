@@ -132,6 +132,8 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 		}(producerGroupID, msgCounter)
 	}
 
+	time.Sleep(time.Second) // sleep to allow producers to handshake and create topic
+
 	for _, consumerID := range consumerIDs {
 		wg.Add(1)
 		go func(consumerID string, counter *atomic.Int32) {
