@@ -2,10 +2,11 @@ package coordinator
 
 import (
 	"context"
-	"github.com/bgadrian/dejaq-broker/common/protocol"
 	"math/rand"
 	"time"
 	"unsafe"
+
+	"github.com/bgadrian/dejaq-broker/common/protocol"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
@@ -34,7 +35,7 @@ var (
 type Consumer struct {
 	ID              []byte
 	AssignedBuckets []domain.BucketRange
-	HydrateStatus protocol.HydrationStatus
+	HydrateStatus   protocol.HydrationStatus
 	Topic           string
 	Cluster         string
 	LeaseMs         uint64
@@ -88,7 +89,7 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&TimelineListeners{
 		ConsumerHandshake: c.consumerHandshake,
-		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.PushLeases, error) {
+		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.Lease, error) {
 			return c.greeter.ConsumerConnected(sessionID)
 		},
 		ConsumerDisconnected: c.consumerDisconnected,
@@ -98,7 +99,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			return c.storage.Delete(ctx, []byte(timelineID), msgs)
 		},
 		ProducerHandshake: c.producerHandshake,
-		CreateTimeline: c.createTopic,
+		CreateTimeline:    c.createTopic,
 		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
 			return c.greeter.GetProducerSessionData(sessionID)
 		},
@@ -157,7 +158,7 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 	return c.synchronization.RemoveConsumer(ctx, consumer.Topic, string(consumer.ID))
 }
 
-func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error){
+func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {
 	sessionID, err := c.greeter.ProducerHandshake(producer)
 	if err != nil {
 		log.Error(err)

@@ -24,6 +24,11 @@ func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceC
 	left := config.Count
 	var batch []timeline.Message
 
+	err := config.Producer.Handshake(ctx)
+	if err != nil {
+		return err
+	}
+
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil

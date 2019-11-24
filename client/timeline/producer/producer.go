@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -25,7 +26,6 @@ type Producer struct {
 	carrier        dejaq.BrokerClient
 	sessionID      string
 	handshakeMutex sync.RWMutex
-	id             string
 }
 
 // NewProducer creates a new timeline producer
@@ -34,7 +34,6 @@ func NewProducer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Co
 		conf:     conf,
 		overseer: overseer,
 		carrier:  dejaq.NewBrokerClient(carrier),
-		id:       conf.ProducerID,
 	}
 	return result
 }
@@ -51,7 +50,7 @@ func (c *Producer) Handshake(ctx context.Context) error {
 	clusterPos := builder.CreateString(c.conf.Cluster)
 	producerGroupPos := builder.CreateString(c.conf.ProducerGroupID)
 	topicIDPos := builder.CreateString(c.conf.Topic)
-	producerIDPos := builder.CreateString(c.id)
+	producerIDPos := builder.CreateString(c.conf.ProducerID)
 	dejaq.TimelineProducerHandshakeRequestStart(builder)
 	dejaq.TimelineProducerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineProducerHandshakeRequestAddProducerGroupID(builder, producerGroupPos)
@@ -74,6 +73,10 @@ func (c *Producer) Handshake(ctx context.Context) error {
 func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
+
+	if c.sessionID == "" {
+		return errors.New("missing sessionID")
+	}
 
 	stream, err := c.carrier.TimelineCreateMessages(ctx)
 	if err != nil {
