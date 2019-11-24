@@ -211,7 +211,7 @@ func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
 	return result
 }
 
-func (s *Greeter) GetAllCustomersWithHydrateStatus(hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
+func (s *Greeter) GetAllConsumersWithHydrateStatus(hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
