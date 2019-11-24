@@ -34,6 +34,7 @@ var (
 type Consumer struct {
 	ID              []byte
 	AssignedBuckets []domain.BucketRange
+	HydrateStatus protocol.HydrationStatus
 	Topic           string
 	Cluster         string
 	LeaseMs         uint64
