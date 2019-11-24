@@ -8,37 +8,66 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bgadrian/dejaq-broker/client/satellite"
-
-	"github.com/bgadrian/dejaq-broker/common/timeline"
-
-	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
-	"github.com/bgadrian/dejaq-broker/client/timeline/sync_consume"
-
-	"github.com/bgadrian/dejaq-broker/client/timeline/sync_produce"
-
-	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
-
-	"go.uber.org/atomic"
-
 	"github.com/bgadrian/dejaq-broker/broker/pkg/coordinator"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/redis"
+	storageTimeline "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	brokerClient "github.com/bgadrian/dejaq-broker/client"
+	"github.com/bgadrian/dejaq-broker/client/satellite"
+	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
 	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
+	"github.com/bgadrian/dejaq-broker/client/timeline/sync_consume"
+	"github.com/bgadrian/dejaq-broker/client/timeline/sync_produce"
 	"github.com/bgadrian/dejaq-broker/common"
+	"github.com/bgadrian/dejaq-broker/common/timeline"
 	"github.com/bgadrian/dejaq-broker/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 )
 
 func main() {
 	msgsCount := 123
 	batchSize := 15
+
+	viper.BindEnv("STORAGE")
+	logger := logrus.New()
+
+	var storageClient storageTimeline.Repository
+	if viper.GetString("STORAGE") == "redis" {
+		// start in memory redis server
+		redisServer, err := redis.NewServer()
+		if err != nil {
+			logger.Fatalf("Failed to start redis service: %v", err)
+		}
+
+		// redis client that implement timeline interface
+		storageClient, err = redis.New(redisServer.Addr())
+		//redisClient, err := redis.New("127.0.0.1:6379")
+		if err != nil {
+			logger.Fatalf("Failed to connect to redis server: %v", err)
+		}
+	} else {
+
+		// start in memory redis server
+		redisServer, err := redis.NewServer()
+		if err != nil {
+			logger.Fatalf("Failed to start redis service: %v", err)
+		}
+
+		// redis client that implement timeline interface
+		storageClient, err = redis.New(redisServer.Addr())
+		if err != nil {
+			logger.Fatalf("Failed to connect to redis server: %v", err)
+		}
+
+	}
+
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*15))
 
-	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:9000")
@@ -49,18 +78,6 @@ func main() {
 
 	grpServer := coordinator.NewGRPCServer(nil)
 
-	// start in memory redis server
-	redisServer, err := redis.NewServer()
-	if err != nil {
-		logger.Fatalf("Failed to start redis service: %v", err)
-	}
-
-	// redis client that implement timeline interface
-	redisClient, err := redis.New(redisServer.Addr())
-	if err != nil {
-		logger.Fatalf("Failed to connect to redis server: %v", err)
-	}
-
 	coordinatorConfig := coordinator.Config{
 		NoBuckets: 89,
 		TopicType: common.TopicType_Timeline,
@@ -69,9 +86,9 @@ func main() {
 	dealer := coordinator.NewExclusiveDealer()
 	synchronization := overseer.NewCatalog()
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, synchronization, greeter,
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, synchronization, greeter,
 		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
-			redisClient, dealer, greeter), dealer)
+			storageClient, dealer, greeter), dealer)
 	supervisor.AttachToServer(grpServer)
 
 	go func() {
@@ -88,8 +105,8 @@ func main() {
 	time.Sleep(time.Second)
 
 	clientConfig := satellite.Config{
-		Cluster: "",
-		Seeds:   []string{"127.0.0.1:9000"},
+		Cluster:        "",
+		OverseersSeeds: []string{"127.0.0.1:9000"},
 	}
 	client, err := satellite.NewClient(ctx, logrus.New(), &clientConfig)
 	if err != nil {
@@ -97,7 +114,7 @@ func main() {
 	}
 	defer client.Close()
 	defer logger.Println("closing CLIENT goroutine")
-	overseer := client.NewOverseerClient()
+	chief := client.NewOverseerClient()
 
 	topics := []string{"topic_1", "topic_2", "topic_3"}
 
@@ -110,7 +127,8 @@ func main() {
 		wg.Add(1)
 		go func(topic string) {
 			defer wg.Done()
-			err := overseer.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
+
+			err := chief.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
 				ReplicaCount:            0,
 				MaxSecondsFutureAllowed: 10,
 				MaxSecondsLease:         10,
@@ -123,7 +141,11 @@ func main() {
 			})
 			if err != nil {
 				logrus.WithError(err).Fatal("failed creating topic")
+				return
 			}
+
+			time.Sleep(time.Millisecond * 300)
+
 			deployTopicTest(ctx, client, producerGroupIDs, consumerIDs, topic, msgsCount, batchSize)
 		}(topic)
 	}
@@ -160,8 +182,6 @@ func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGr
 			}
 		}(producerGroupID, msgCounter)
 	}
-
-	time.Sleep(time.Second) // sleep to allow producers to handshake and create topic
 
 	for _, consumerID := range consumerIDs {
 		wg.Add(1)

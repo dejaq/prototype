@@ -32,10 +32,10 @@ type Consumer struct {
 	handshakeMutex sync.RWMutex
 }
 
-func NewConsumer(overseer, carrier *grpc.ClientConn, conf *Config) *Consumer {
+func NewConsumer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Config) *Consumer {
 	result := &Consumer{
 		conf:      conf,
-		overseer:  dejaq.NewBrokerClient(overseer),
+		overseer:  overseer,
 		carrier:   dejaq.NewBrokerClient(carrier),
 		msgBuffer: make(chan timeline.PushLeases, conf.MaxBufferSize),
 	}
@@ -50,6 +50,7 @@ func (c *Consumer) Start(ctx context.Context, f func(timeline.PushLeases)) {
 	go func() {
 		if err := c.Handshake(ctx); err != nil {
 			log.Println(err)
+			return
 		}
 		for {
 			//now preload == process, TODO split it two

@@ -15,8 +15,8 @@ import (
 )
 
 type Config struct {
-	Cluster string
-	Seeds   []string
+	Cluster        string
+	OverseersSeeds []string
 }
 
 var _ = brokerClient.Client(&Satellite{})
@@ -32,7 +32,7 @@ func NewClient(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*S
 	}
 	result.baseCtx, result.closeEverything = context.WithCancel(ctx)
 
-	for _, seed := range conf.Seeds {
+	for _, seed := range conf.OverseersSeeds {
 		conn, err := grpc.Dial(seed, grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
 		if err != nil || conn == nil {
 			logger.WithError(err).Errorf("Failed to connect to: %s", seed)
@@ -45,10 +45,9 @@ func NewClient(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*S
 		return nil, ErrNoConnection
 	}
 
-	//for _, conn := range result.conns {
-	//	//TODO instantiate overseers here
-	//	//result.overseers = append(result.overseers, )
-	//}
+	for _, conn := range result.conns {
+		result.overseers = append(result.overseers, dejaq.NewBrokerClient(conn))
+	}
 
 	return result, nil
 }
@@ -71,14 +70,14 @@ func (s *Satellite) NewConsumer(conf *consumer.Config) *consumer.Consumer {
 	//TODO to find the carrier we have to call the overseer
 	//with the topic, and get a list of overseers and send them
 	//to the consumer
-	return consumer.NewConsumer(s.conns[0], s.conns[0], conf)
+	return consumer.NewConsumer(s.overseers[0], s.conns[0], conf)
 }
 
 func (s *Satellite) NewProducer(conf *producer.Config) *producer.Producer {
 	//TODO to find the carrier we have to call the overseer
 	//with the topic, and get a list of overseers and send them
 	//to the producer
-	return producer.NewProducer(s.conns[0], s.conns[0], conf)
+	return producer.NewProducer(s.overseers[0], s.conns[0], conf)
 }
 
 func (s *Satellite) Close() {

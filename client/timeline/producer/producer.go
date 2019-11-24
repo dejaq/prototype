@@ -29,10 +29,10 @@ type Producer struct {
 }
 
 // NewProducer creates a new timeline producer
-func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config) *Producer {
+func NewProducer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Config) *Producer {
 	result := &Producer{
 		conf:     conf,
-		overseer: dejaq.NewBrokerClient(overseer),
+		overseer: overseer,
 		carrier:  dejaq.NewBrokerClient(carrier),
 		id:       conf.ProducerID,
 	}
@@ -109,7 +109,7 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 	if err != nil && err != io.EOF {
 		log.Fatalf("insert3 err: %s", err.Error())
 	}
-	return err
+	return nil
 }
 
 func (c *Producer) GetProducerGroupID() string {
