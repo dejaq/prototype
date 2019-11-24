@@ -28,6 +28,9 @@ table TimelineResponse {
 }
 
 table TimelineCreateRequest {
+    traceID:string;
+    timeoutMS:ulong;
+    cluster:string;
     id:string;
     replicaCount:int;
     maxSecondsFutureAllowed:ulong;
