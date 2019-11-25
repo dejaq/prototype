@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -16,6 +17,7 @@ type Config struct {
 	Cluster         string
 	Topic           string
 	ProducerGroupID string
+	ProducerID      string
 }
 
 type Producer struct {
@@ -24,16 +26,14 @@ type Producer struct {
 	carrier        dejaq.BrokerClient
 	sessionID      string
 	handshakeMutex sync.RWMutex
-	id             string
 }
 
 // NewProducer creates a new timeline producer
-func NewProducer(overseer, carrier *grpc.ClientConn, conf *Config, producerID string) *Producer {
+func NewProducer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Config) *Producer {
 	result := &Producer{
 		conf:     conf,
-		overseer: dejaq.NewBrokerClient(overseer),
+		overseer: overseer,
 		carrier:  dejaq.NewBrokerClient(carrier),
-		id:       producerID,
 	}
 	return result
 }
@@ -50,7 +50,7 @@ func (c *Producer) Handshake(ctx context.Context) error {
 	clusterPos := builder.CreateString(c.conf.Cluster)
 	producerGroupPos := builder.CreateString(c.conf.ProducerGroupID)
 	topicIDPos := builder.CreateString(c.conf.Topic)
-	producerIDPos := builder.CreateString(c.id)
+	producerIDPos := builder.CreateString(c.conf.ProducerID)
 	dejaq.TimelineProducerHandshakeRequestStart(builder)
 	dejaq.TimelineProducerHandshakeRequestAddCluster(builder, clusterPos)
 	dejaq.TimelineProducerHandshakeRequestAddProducerGroupID(builder, producerGroupPos)
@@ -73,6 +73,10 @@ func (c *Producer) Handshake(ctx context.Context) error {
 func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
+
+	if c.sessionID == "" {
+		return errors.New("missing sessionID")
+	}
 
 	stream, err := c.carrier.TimelineCreateMessages(ctx)
 	if err != nil {
@@ -108,5 +112,16 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 	if err != nil && err != io.EOF {
 		log.Fatalf("insert3 err: %s", err.Error())
 	}
-	return err
+	return nil
+}
+
+func (c *Producer) GetProducerGroupID() string {
+	return c.conf.ProducerGroupID
+}
+func (c *Producer) GetProducerID() string {
+	return c.conf.ProducerID
+}
+
+func (c *Producer) GetTopic() string {
+	return c.conf.Topic
 }

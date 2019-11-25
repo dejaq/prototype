@@ -113,10 +113,3 @@ func (d GladiatorDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 		consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
 	}
 }
-
-func reverse(s []uint16) []uint16 {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-	return s
-}

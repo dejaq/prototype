@@ -84,6 +84,11 @@ func (c *Client) createMessageKey(clusterName string, timelineId []byte, bucketI
 	return c.createBucketKey(clusterName, timelineId, bucketId) + "::" + string(messageId)
 }
 
+func (c *Client) CreateTopic(ctx context.Context, timelineID string) error {
+	// TODO add implementation
+	return nil
+}
+
 // Insert ...
 func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO create batches and insert
@@ -157,11 +162,11 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.PushLeases, bool, []derrors.MessageIDTuple) {
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, []derrors.MessageIDTuple) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
-	var results []timeline.PushLeases
+	var results []timeline.Lease
 	var getErrors []derrors.MessageIDTuple
 
 	keys := []string{
@@ -244,7 +249,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 			continue
 		}
 
-		results = append(results, timeline.PushLeases{
+		results = append(results, timeline.Lease{
 			ExpirationTimestampMS: endLeaseMS,
 			ConsumerID:            []byte(consumerId),
 			Message:               timeline.NewLeaseMessage(timelineMessage),

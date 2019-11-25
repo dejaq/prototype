@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/bgadrian/dejaq-broker/common/protocol"
+
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 )
 
@@ -16,12 +18,12 @@ var (
 )
 
 // a 2 dimensional map of strings.
-//first layer is the consumer/producerID, 2nd the topicID and the 3rd a string
+// first layer is the consumer/producerID, 2nd the topicID and the 3rd a string
 type idsPerTopic struct {
 	data map[string]map[string]string
 }
 
-func newidsPerTopic() *idsPerTopic {
+func newIDsPerTopic() *idsPerTopic {
 	return &idsPerTopic{
 		make(map[string]map[string]string, 100),
 	}
@@ -46,18 +48,18 @@ func (d *idsPerTopic) Get(id, topicID string) (string, bool) {
 func NewGreeter() *Greeter {
 	return &Greeter{
 		opMutex:                        sync.RWMutex{},
-		consumerIDsAndSessionIDs:       newidsPerTopic(),
+		consumerIDsAndSessionIDs:       newIDsPerTopic(),
 		consumerSessionIDAndID:         make(map[string]string, 128),
 		consumerSessionsIDs:            make(map[string]*Consumer, 128),
-		consumerSessionIDsAndPipelines: make(map[string]chan timeline.PushLeases), //not buffered!!!
+		consumerSessionIDsAndPipelines: make(map[string]chan timeline.Lease), //not buffered!!!
 		producerSessionIDs:             make(map[string]*Producer),
-		producerIDsAndSessionIDs:       newidsPerTopic(),
+		producerIDsAndSessionIDs:       newIDsPerTopic(),
 	}
 }
 
 type ConsumerPipelineTuple struct {
 	C        *Consumer
-	Pipeline chan timeline.PushLeases
+	Pipeline chan timeline.Lease
 }
 
 // Greeter is in charge of keeping the local state of all Clients
@@ -66,7 +68,7 @@ type Greeter struct {
 	consumerIDsAndSessionIDs       *idsPerTopic
 	consumerSessionIDAndID         map[string]string
 	consumerSessionsIDs            map[string]*Consumer
-	consumerSessionIDsAndPipelines map[string]chan timeline.PushLeases
+	consumerSessionIDsAndPipelines map[string]chan timeline.Lease
 
 	producerSessionIDs       map[string]*Producer
 	producerIDsAndSessionIDs *idsPerTopic
@@ -89,6 +91,9 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	sessionID := randomSessionID()
 	if _, duplicateSessionID := s.consumerSessionsIDs[sessionID]; duplicateSessionID {
 		log.Fatal("duplicate random sessionID")
+	}
+	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
+		c.HydrateStatus = protocol.Hydration_None
 	}
 	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.Topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
@@ -113,7 +118,7 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	return sessionID, nil
 }
 
-func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.PushLeases, error) {
+func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.Lease, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
@@ -125,7 +130,10 @@ func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.PushLeases,
 		return nil, errors.New("there is already an active connection for this consumerID")
 	}
 
-	s.consumerSessionIDsAndPipelines[sessionID] = make(chan timeline.PushLeases) //not buffered!!!
+	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
+		c.HydrateStatus = protocol.Hydration_Requested
+	}
+	s.consumerSessionIDsAndPipelines[sessionID] = make(chan timeline.Lease) //not buffered!!!
 	return s.consumerSessionIDsAndPipelines[sessionID], nil
 }
 
@@ -137,7 +145,7 @@ func (s *Greeter) ConsumerDisconnected(sessionID string) {
 	s.consumerSessionIDsAndPipelines[sessionID] = nil
 }
 
-func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) {
+func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.Lease, error) {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
@@ -151,6 +159,16 @@ func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.PushLeases, error) 
 		return nil, ErrConsumerIsNotConnected
 	}
 	return pipeline, nil
+}
+
+func (s *Greeter) GetConsumer(sessionID string) (*Consumer, error) {
+	s.opMutex.RLock()
+	defer s.opMutex.RUnlock()
+	consumer, ok := s.consumerSessionsIDs[sessionID]
+	if !ok {
+		return nil, errors.New("consumer not found")
+	}
+	return consumer, nil
 }
 
 func (s *Greeter) GetTopicFor(sessionID string) (string, error) {
@@ -188,6 +206,24 @@ func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		result = append(result, ConsumerPipelineTuple{
 			C:        s.consumerSessionsIDs[sessionID],
+			Pipeline: pipe,
+		})
+	}
+	return result
+}
+
+func (s *Greeter) GetAllConsumersWithHydrateStatus(hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
+	s.opMutex.RLock()
+	defer s.opMutex.RUnlock()
+
+	result := make([]ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
+	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
+		consumer := s.consumerSessionsIDs[sessionID]
+		if consumer.HydrateStatus != hydrateStatus {
+			continue
+		}
+		result = append(result, ConsumerPipelineTuple{
+			C:        consumer,
 			Pipeline: pipe,
 		})
 	}

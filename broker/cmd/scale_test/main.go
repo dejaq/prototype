@@ -5,33 +5,69 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
-
 	"github.com/bgadrian/dejaq-broker/broker/pkg/coordinator"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/redis"
+	storageTimeline "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
+	brokerClient "github.com/bgadrian/dejaq-broker/client"
+	"github.com/bgadrian/dejaq-broker/client/satellite"
 	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
 	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
+	"github.com/bgadrian/dejaq-broker/client/timeline/sync_consume"
+	"github.com/bgadrian/dejaq-broker/client/timeline/sync_produce"
 	"github.com/bgadrian/dejaq-broker/common"
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	"github.com/bgadrian/dejaq-broker/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 )
 
 func main() {
-	msgsCount := 50
+	msgsCount := 123
 	batchSize := 15
+
+	viper.BindEnv("STORAGE")
+	logger := logrus.New()
+
+	var storageClient storageTimeline.Repository
+	if viper.GetString("STORAGE") == "redis" {
+		// start in memory redis server
+		redisServer, err := redis.NewServer()
+		if err != nil {
+			logger.Fatalf("Failed to start redis service: %v", err)
+		}
+
+		// redis client that implement timeline interface
+		storageClient, err = redis.New(redisServer.Addr())
+		//redisClient, err := redis.New("127.0.0.1:6379")
+		if err != nil {
+			logger.Fatalf("Failed to connect to redis server: %v", err)
+		}
+	} else {
+
+		// start in memory redis server
+		redisServer, err := redis.NewServer()
+		if err != nil {
+			logger.Fatalf("Failed to start redis service: %v", err)
+		}
+
+		// redis client that implement timeline interface
+		storageClient, err = redis.New(redisServer.Addr())
+		if err != nil {
+			logger.Fatalf("Failed to connect to redis server: %v", err)
+		}
+
+	}
+
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*15))
 
-	logger := logrus.New()
 	greeter := coordinator.NewGreeter()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:9000")
@@ -42,28 +78,17 @@ func main() {
 
 	grpServer := coordinator.NewGRPCServer(nil)
 
-	// start in memory redis server
-	redisServer, err := redis.NewServer()
-	if err != nil {
-		logger.Fatalf("Failed to start redis service: %v", err)
-	}
-
-	// redis client that implement timeline interface
-	redisClient, err := redis.New(redisServer.Addr())
-	if err != nil {
-		logger.Fatalf("Failed to connect to redis server: %v", err)
-	}
-
 	coordinatorConfig := coordinator.Config{
 		NoBuckets: 89,
 		TopicType: common.TopicType_Timeline,
 	}
 
 	dealer := coordinator.NewExclusiveDealer()
+	synchronization := overseer.NewCatalog()
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, redisClient, nil, greeter,
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, synchronization, greeter,
 		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
-			redisClient, dealer, greeter), dealer)
+			storageClient, dealer, greeter), dealer)
 	supervisor.AttachToServer(grpServer)
 
 	go func() {
@@ -79,13 +104,17 @@ func main() {
 	//wait for the server to be up
 	time.Sleep(time.Second)
 
-	//CLIENT
-	conn, err := grpc.Dial("127.0.0.1:9000", grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
-	if err != nil {
-		logger.Fatalf("Failed to connect: %v", err)
+	clientConfig := satellite.Config{
+		Cluster:        "",
+		OverseersSeeds: []string{"127.0.0.1:9000"},
 	}
-	defer conn.Close()
+	client, err := satellite.NewClient(ctx, logrus.New(), &clientConfig)
+	if err != nil {
+		logrus.WithError(err).Fatal("brokerClient")
+	}
+	defer client.Close()
 	defer logger.Println("closing CLIENT goroutine")
+	chief := client.NewOverseerClient()
 
 	topics := []string{"topic_1", "topic_2", "topic_3"}
 
@@ -98,7 +127,26 @@ func main() {
 		wg.Add(1)
 		go func(topic string) {
 			defer wg.Done()
-			deployTopicTest(ctx, conn, producerGroupIDs, consumerIDs, topic, msgsCount, batchSize)
+
+			err := chief.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
+				ReplicaCount:            0,
+				MaxSecondsFutureAllowed: 10,
+				MaxSecondsLease:         10,
+				ChecksumBodies:          false,
+				MaxBodySizeBytes:        100000,
+				RQSLimitPerClient:       100000,
+				MinimumProtocolVersion:  0,
+				MinimumDriverVersion:    0,
+				BucketCount:             100,
+			})
+			if err != nil {
+				logrus.WithError(err).Fatal("failed creating topic")
+				return
+			}
+
+			time.Sleep(time.Millisecond * 300)
+
+			deployTopicTest(ctx, client, producerGroupIDs, consumerIDs, topic, msgsCount, batchSize)
 		}(topic)
 	}
 
@@ -108,21 +156,27 @@ func main() {
 	ser.GracefulStop()
 }
 
-func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupIDs, consumerIDs []string, topic string, msgsCount, batchSize int) {
+func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGroupIDs, consumerIDs []string, topic string, msgsCount, batchSize int) {
 
 	wg := sync.WaitGroup{}
 	msgCounter := new(atomic.Int32)
+
 	for _, producerGroupID := range producerGroupIDs {
 		wg.Add(1)
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
 			defer wg.Done()
-			err := Produce(ctx, conn, msgCounter, &PConfig{
-				Count:           msgsCount / len(producerGroupIDs),
-				Cluster:         "",
-				Topic:           topic,
-				ProducerGroupID: producerGroupID,
-				BatchSize:       batchSize,
-			})
+			pc := sync_produce.SyncProduceConfig{
+				Count:     msgsCount / len(producerGroupIDs),
+				BatchSize: batchSize,
+				Producer: client.NewProducer(&producer.Config{
+					Cluster:         "",
+					Topic:           topic,
+					ProducerGroupID: producerGroupID,
+					ProducerID:      fmt.Sprintf("%s:%d", producerGroupID, rand.Int()),
+				}),
+			}
+
+			err := sync_produce.Produce(ctx, msgCounter, &pc)
 			if err != nil {
 				log.Error(err)
 			}
@@ -133,14 +187,16 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 		wg.Add(1)
 		go func(consumerID string, counter *atomic.Int32) {
 			defer wg.Done()
-			err := Consume(ctx, conn, counter, &CConfig{
-				WaitForCount:  msgsCount,
-				Cluster:       "",
-				Topic:         topic,
-				ConsumerID:    consumerID,
-				MaxBufferSize: 100,
-				Lease:         time.Millisecond * 1000,
-			})
+			cc := sync_consume.SyncConsumeConfig{
+				Consumer: client.NewConsumer(&consumer.Config{
+					ConsumerID:    consumerID,
+					Topic:         topic,
+					Cluster:       "",
+					MaxBufferSize: 100,
+					LeaseDuration: time.Millisecond * 1000,
+				}),
+			}
+			err := sync_consume.Consume(ctx, counter, &cc)
 			if err != nil {
 				log.Error(err)
 			}
@@ -154,110 +210,4 @@ func deployTopicTest(ctx context.Context, conn *grpc.ClientConn, producerGroupID
 	} else {
 		logrus.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
 	}
-}
-
-type PConfig struct {
-	Count           int
-	Cluster         string
-	Topic           string
-	ProducerGroupID string
-	BatchSize       int
-}
-
-func Produce(ctx context.Context, conn *grpc.ClientConn, msgCounter *atomic.Int32, config *PConfig) error {
-	creator := producer.NewProducer(conn, conn, &producer.Config{
-		Cluster:         config.Cluster,
-		Topic:           config.Topic,
-		ProducerGroupID: config.ProducerGroupID,
-	}, config.ProducerGroupID+"_producer"+strconv.Itoa(rand.Int()))
-	if err := creator.Handshake(ctx); err != nil {
-		return errors.Wrap(err, "producer handshake failed")
-	}
-	log.Info("producer handshake success")
-
-	t := time.Now().UTC()
-	left := config.Count
-	var batch []timeline.Message
-
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		err := creator.InsertMessages(ctx, batch)
-		if err != nil {
-			return errors.Wrap(err, "InsertMessages ERROR")
-		}
-		msgCounter.Add(int32(len(batch)))
-		batch = batch[:0]
-		return nil
-	}
-
-	for left > 0 {
-		left--
-		msgID := config.Count - left
-		batch = append(batch, timeline.Message{
-			ID:          []byte(fmt.Sprintf("ID %s|msg_%d", config.ProducerGroupID, msgID)),
-			Body:        []byte(fmt.Sprintf("BODY %s|msg_%d", config.ProducerGroupID, msgID)),
-			TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID))),
-		})
-		if len(batch) >= config.BatchSize {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
-	}
-	if err := flush(); err != nil {
-		return err
-	}
-	log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.ProducerGroupID, config.Topic)
-	return nil
-}
-
-type CConfig struct {
-	WaitForCount  int
-	Cluster       string
-	Topic         string
-	ConsumerID    string
-	MaxBufferSize int64
-	Lease         time.Duration
-	Timeout       time.Duration
-}
-
-func Consume(ctx context.Context, conn *grpc.ClientConn, msgsCounter *atomic.Int32, conf *CConfig) error {
-	c := consumer.NewConsumer(conn, conn, &consumer.Config{
-		ConsumerID:    conf.ConsumerID,
-		Topic:         conf.Topic,
-		Cluster:       conf.Cluster,
-		LeaseDuration: conf.Lease,
-		MaxBufferSize: conf.MaxBufferSize,
-	})
-
-	c.Start(ctx, func(lease timeline.PushLeases) {
-		if lease.GetConsumerID() != conf.ConsumerID {
-			log.Fatalf("server sent message for another consumer me=%s sent=%s", conf.ConsumerID, lease.GetConsumerID())
-		}
-		//Process the messages
-		msgsCounter.Dec()
-		err := c.Delete(ctx, []timeline.Message{{
-			ID:          lease.Message.ID,
-			TimestampMS: lease.Message.TimestampMS,
-			BucketID:    lease.Message.BucketID,
-			Version:     lease.Message.Version,
-		}})
-		if err != nil {
-			log.Errorf("delete failed", err)
-		}
-		//logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
-	})
-
-	log.Info("consumer handshake success")
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		}
-	}
-
-	return nil
 }

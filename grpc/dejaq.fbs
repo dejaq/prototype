@@ -27,6 +27,21 @@ table TimelineResponse {
     err:Error;
 }
 
+table TimelineCreateRequest {
+    traceID:string;
+    timeoutMS:ulong;
+    cluster:string;
+    id:string;
+    replicaCount:int;
+    maxSecondsFutureAllowed:ulong;
+    maxSecondsLease:ulong;
+    checksumBodies:bool;
+    maxBodySizeBytes:ulong;
+    rqsLimitPerClient:ulong;
+    minimumProtocolVersion:ushort;
+    minimumDriverVersion:ushort;
+    bucketCount:uint;
+}
 
 table TimelineCreateMessageRequest {
     traceID:string;
@@ -132,6 +147,7 @@ rpc_service Broker {
     //overseeer
     TimelineProducerHandshake(TimelineProducerHandshakeRequest):TimelineProducerHandshakeResponse;
     TimelineConsumerHandshake(TimelineConsumerHandshakeRequest):TimelineConsumerHandshakeResponse;
+    TimelineCreate(TimelineCreateRequest):Error;
     TimelineCount(TimelineCountRequest):TimelineCountResponse;
 
 

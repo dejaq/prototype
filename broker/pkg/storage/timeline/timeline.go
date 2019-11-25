@@ -16,11 +16,13 @@ type MsgTime struct {
 }
 
 type Repository interface {
+	// Create a sample interface
+	CreateTopic(ctx context.Context, timelineID string) error
 	// INSERT messages (timelineID, []messages) map[msgID]error
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
 	// GetAndLease message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
-	// GEt messages from storage and apply Lease on them
-	GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.PushLeases, bool, []errors.MessageIDTuple)
+	// Get messages from storage and apply Lease on them
+	GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, []errors.MessageIDTuple)
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE messages by TimelineID, MessageID map[msgID]error
