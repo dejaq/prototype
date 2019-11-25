@@ -60,7 +60,7 @@ func main() {
 
 	// redis client that implement timeline interface
 	redisClient, err := redis.New(redisServer.Addr())
-	//redisClient, err := redis.New("127.0.0.1:6379")
+	// redisClient, err := redis.New("127.0.0.1:6379")
 	if err != nil {
 		logger.Fatalf("Failed to connect to redis server: %v", err)
 	}
@@ -108,7 +108,12 @@ func main() {
 		})
 		c.Start(ctx, func(lease timeline.PushLeases) {
 			//Process the messages
-			logger.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+			logger.Printf("received message ID='%s' endLeaseMS='%v' body='%s' from bucket=%d\n",
+				lease.Message.ID,
+				lease.ExpirationTimestampMS,
+				string(lease.Message.Body),
+				lease.Message.BucketID,
+			)
 			err := c.Delete(ctx, []timeline.Message{{
 				ID:          lease.Message.ID,
 				TimestampMS: lease.Message.TimestampMS,
