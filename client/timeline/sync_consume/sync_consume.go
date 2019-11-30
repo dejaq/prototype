@@ -2,6 +2,7 @@ package sync_consume
 
 import (
 	"context"
+	"strings"
 
 	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -18,6 +19,10 @@ func Consume(ctx context.Context, msgsCounter *atomic.Int32, conf *SyncConsumeCo
 		if lease.GetConsumerID() != conf.Consumer.GetConsumerID() {
 			log.Fatalf("server sent message for another consumer me=%s sent=%s", conf.Consumer.GetConsumerID(), lease.GetConsumerID())
 		}
+		if !strings.Contains(lease.Message.GetID(), conf.Consumer.GetTopicID()) {
+			log.Fatalf("server sent message for another topic: %s sent consumerID: %s, msgID: %s, producedBy: %s",
+				conf.Consumer.GetTopicID(), lease.GetConsumerID(), lease.Message.GetID(), lease.Message.GetProducerGroupID())
+		}
 		//Process the messages
 		msgsCounter.Dec()
 		err := conf.Consumer.Delete(ctx, []timeline.Message{{
@@ -32,7 +37,7 @@ func Consume(ctx context.Context, msgsCounter *atomic.Int32, conf *SyncConsumeCo
 		//logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
 	})
 
-	log.Info("consumer handshake success")
+	//log.Info("consumer handshake success")
 
 	for {
 		select {

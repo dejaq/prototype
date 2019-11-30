@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +141,8 @@ func (c *Consumer) preload(ctx context.Context) {
 				break
 			}
 			if err != nil {
-				if err != context.Canceled {
+				//TODO find out why errors.Is is not working
+				if !strings.Contains(err.Error(), context.Canceled.Error()) {
 					log.Printf("consumer preload client failed err=%s", err.Error())
 				}
 				//TODO if err is invalid/expired sessionID do a handshake automatically
@@ -215,4 +217,8 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 
 func (c *Consumer) GetConsumerID() string {
 	return c.conf.ConsumerID
+}
+
+func (c *Consumer) GetTopicID() string {
+	return c.conf.Topic
 }

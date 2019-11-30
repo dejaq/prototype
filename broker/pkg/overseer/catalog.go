@@ -16,7 +16,7 @@ type Catalog struct {
 	producers map[string]synchronization.Producer
 }
 
-func NewCatalog() synchronization.Repository {
+func NewCatalog() synchronization.Catalog {
 	return &Catalog{
 		topics:    make(map[string]synchronization.Topic),
 		consumers: make(map[string]synchronization.Consumer),
