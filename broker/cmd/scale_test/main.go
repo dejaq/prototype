@@ -31,10 +31,11 @@ import (
 var consumersBufferSize = int64(100)
 
 func main() {
-	msgsCountPerTopic := 123
+	msgsCountPerTopic := 33
 	batchSize := 15
 	bucketCount := uint16(100)
 	topicCount := 2
+	timeoutSeconds := time.Duration(7)
 
 	viper.BindEnv("STORAGE")
 	logger := logrus.New()
@@ -69,7 +70,7 @@ func main() {
 
 	}
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*15))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*timeoutSeconds))
 
 	greeter := coordinator.NewGreeter()
 
@@ -214,7 +215,7 @@ func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGr
 				return
 			}
 		case <-ctx.Done():
-			logrus.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
+			logrus.Panicf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
 			return
 		}
 	}

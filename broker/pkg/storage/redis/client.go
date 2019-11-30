@@ -3,8 +3,8 @@ package redis
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
+	"unsafe"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
@@ -115,7 +115,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 
 		if err != nil {
 			var derror derrors.Dejaror
-			derror.Module = 2
+			derror.Module = derrors.ModuleStorage
 			derror.Operation = "insert"
 			derror.Message = err.Error()
 			derror.ShouldRetry = true
@@ -129,7 +129,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		}
 
 		var derror derrors.Dejaror
-		derror.Module = 2
+		derror.Module = derrors.ModuleStorage
 		derror.Operation = "insert"
 
 		switch ok {
@@ -191,12 +191,13 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 	data, err := c.client.EvalSha(c.operationToScriptHash["getAndLease"], keys, argv).Result()
 	if err != nil {
 		var derror derrors.Dejaror
-		derror.Module = 2
+		derror.Module = derrors.ModuleStorage
 		derror.Operation = "getAndLease"
 		derror.Message = err.Error()
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
 		getErrors = append(getErrors, derrors.MessageIDTuple{Error: derror})
+		return nil, false, getErrors
 	}
 
 	// TODO not the best practice, find a better solution here to remove interface mess
@@ -213,7 +214,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 		// no success
 		if code != "0" {
 			var derror derrors.Dejaror
-			derror.Module = 2
+			derror.Module = derrors.ModuleStorage
 			derror.Operation = "getAndLease"
 
 			switch code {
@@ -240,7 +241,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 
 		if err != nil {
 			var derror derrors.Dejaror
-			derror.Module = 2
+			derror.Module = derrors.ModuleStorage
 			derror.Operation = "getAndLease"
 			derror.Message = err.Error()
 			derror.ShouldRetry = true
@@ -261,10 +262,8 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 
 func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
 	// TODO implement errors
-	// TODO find better type conversion
 
 	var message timeline.Message
-
 	// TODO they are not came on same order (on container order was respected)
 	var key string
 	for i, v := range rawMessage {
@@ -274,27 +273,35 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 			continue
 		}
 
+		vAsString, ok := v.(string)
+		if !ok {
+			return timeline.Message{}, errors.New("malformed message")
+		}
 		switch key {
 		case "ID":
-			message.ID = []byte(fmt.Sprintf("%v", v))
+			message.ID = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "TimestampMS":
-			timestamp, _ := strconv.ParseUint(fmt.Sprintf("%v", v), 10, 64)
+			timestamp, _ := strconv.ParseUint(vAsString, 10, 64)
 			message.TimestampMS = timestamp
 		case "BodyID":
-			message.BodyID = []byte(fmt.Sprintf("%v", v))
+			message.BodyID = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "Body":
-			message.Body = []byte(fmt.Sprintf("%v", v))
+			message.Body = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "ProducerGroupID":
-			message.ProducerGroupID = []byte(fmt.Sprintf("%v", v))
+			message.ProducerGroupID = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "LockConsumerID":
-			message.LockConsumerID = []byte(fmt.Sprintf("%v", v))
+			message.LockConsumerID = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "BucketID":
-			bucketIdUint16, _ := strconv.ParseUint(fmt.Sprintf("%v", v), 10, 16)
+			bucketIdUint16, _ := strconv.ParseUint(vAsString, 10, 16)
 			message.BucketID = uint16(bucketIdUint16)
 		case "Version":
-			version, _ := strconv.ParseUint(fmt.Sprintf("%v", v), 10, 16)
+			version, _ := strconv.ParseUint(vAsString, 10, 16)
 			message.Version = uint16(version)
 		}
+	}
+
+	if len(message.ID) == 0 {
+		return message, errors.New("the message did not had the ID")
 	}
 
 	return message, nil
@@ -374,4 +381,7 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 // SelectByProducer - not used at this time
 func (c *Client) SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message {
 	return nil
+}
+
+type LeaseLu struct {
 }
