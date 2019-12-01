@@ -36,9 +36,9 @@ func main() {
 	msgsCountPerTopic := 33
 	batchSize := 15
 	bucketCount := uint16(100)
-	topicCount := 2
-	producersCount := 3
-	consumersCount := 33
+	topicCount := 11
+	producersCount := 5
+	consumersCount := 7
 	timeoutSeconds := time.Duration(70)
 	//compared to now(), random TS of the produced messages
 	produceDeltaMin := time.Millisecond * 100
@@ -76,7 +76,7 @@ func main() {
 		chief := client.NewOverseerClient()
 		defer func() {
 			client.Close()
-			logger.Println("closing CLIENT goroutine")
+			//logger.Println("closing gRPC CLIENT goroutine")
 		}()
 
 		topicID := fmt.Sprintf("topic_%d", topicIndex)

@@ -212,7 +212,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 	}
 
 	_, err = stream.CloseAndRecv()
-	if err != nil && err != io.EOF && err != context.Canceled {
+	if err != nil && err != io.EOF && !strings.Contains(err.Error(), context.Canceled.Error()) {
 		return fmt.Errorf("delete3 err: %w", err)
 	}
 	//if response != nil && response.MessagesErrorsLength() > 0 {
