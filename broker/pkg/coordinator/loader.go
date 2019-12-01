@@ -2,8 +2,7 @@ package coordinator
 
 import (
 	"context"
-	"errors"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 
@@ -97,8 +96,8 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	allFinished := true
 	allFinishedMutex := sync.Mutex{}
 
-	hydratingConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Requested)
-	activeConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Done)
+	hydratingConsumersAndPipelines := c.greeter.GetAllConnectedConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Requested)
+	activeConsumersAndPipelines := c.greeter.GetAllConnectedConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Done)
 
 	newHydrateCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	for _, tuple := range hydratingConsumersAndPipelines {
@@ -143,7 +142,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 
 				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, 100, tuple)
 				if err != nil {
-					log.Println(err)
+					logrus.WithError(err).Error("loadOneConsumer failed")
 					return
 				}
 
@@ -190,13 +189,9 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 				}
 				select {
 				case <-ctx.Done():
-					logrus.Infof("loadOneConsumer timed out for consumer: %s on topic: %s", tuple.C.ID, tuple.C.Topic)
-					return sent, false, context.DeadlineExceeded
-				case _, open := <-tuple.Connected:
-					if !open {
-						logrus.Infof("client d/c during a load: %s", tuple.C.ID)
-						return sent, true, errors.New("consumer d/c")
-					}
+					return sent, true, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.ID, tuple.C.Topic, context.DeadlineExceeded)
+				case <-tuple.Connected:
+					return sent, true, fmt.Errorf("client d/c during a load: %s", tuple.C.ID)
 				case tuple.Pipeline <- pushLeaseMessages[i]:
 					//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
 					sent++

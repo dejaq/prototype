@@ -33,16 +33,16 @@ import (
 var consumersBufferSize = int64(100)
 
 func main() {
-	msgsCountPerTopic := 33
+	topicCount := 3
 	batchSize := 15
-	bucketCount := uint16(100)
-	topicCount := 11
-	producersCount := 5
-	consumersCount := 7
-	timeoutSeconds := time.Duration(70)
+	bucketCount := uint16(1000)
+	msgsCountPerTopic := 33
+	producersPerTopic := 2
+	consumersPerTopic := 13
+	runTimeout := time.Duration(70)
 	//compared to now(), random TS of the produced messages
-	produceDeltaMin := time.Millisecond * 100
-	produceDeltaMax := time.Duration(0) //time.Millisecond * 500
+	produceDeltaMin := time.Second
+	produceDeltaMax := time.Second
 	overseerSeeds := "127.0.0.1:9000"
 	brokerListenAddr := "127.0.0.1:9000"
 
@@ -50,8 +50,8 @@ func main() {
 	viper.SetDefault("STORAGE", "miniredis")
 	logger := logrus.New()
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*timeoutSeconds))
-	err := startBroker(ctx, logger, timeoutSeconds, brokerListenAddr)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*runTimeout))
+	err := startBroker(ctx, logger, runTimeout, brokerListenAddr)
 	if err != nil {
 		logger.WithError(err).Fatal("failed startBroker")
 	}
@@ -101,8 +101,8 @@ func main() {
 			}
 
 			produceAndConsumeSync(ctx, client, logger, &deployConfig{
-				producerGroupsCount: producersCount,
-				consumersCount:      consumersCount,
+				producerGroupsCount: producersPerTopic,
+				consumersCount:      consumersPerTopic,
 				topic:               topic,
 				msgsCount:           msgsCountPerTopic,
 				batchSize:           batchSize,
