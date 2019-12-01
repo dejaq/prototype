@@ -139,7 +139,7 @@ func (c *Consumer) preload(ctx context.Context) error {
 			break
 		}
 
-		if err != nil && err != context.Canceled {
+		if err != nil && err != context.Canceled && err != io.EOF {
 			c.logger.WithError(err).Error("preload error")
 		}
 		err = nil

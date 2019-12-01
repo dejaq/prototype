@@ -193,14 +193,15 @@ func (s *Greeter) GetProducerSessionData(sessionID string) (*Producer, error) {
 	return nil, ErrNotFound
 }
 
-func (s *Greeter) GetAllConsumersWithHydrateStatus(topicID string, hydrateStatus protocol.HydrationStatus) []*ConsumerPipelineTuple {
+func (s *Greeter) GetAllConnectedConsumersWithHydrateStatus(topicID string, hydrateStatus protocol.HydrationStatus) []*ConsumerPipelineTuple {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
 	result := make([]*ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		consumer := s.consumerSessionsIDs[sessionID]
-		if consumer.HydrateStatus != hydrateStatus || consumer.Topic != topicID {
+		if consumer.HydrateStatus != hydrateStatus || consumer.Topic != topicID ||
+			pipe.Connected == nil {
 			continue
 		}
 		result = append(result, pipe)
