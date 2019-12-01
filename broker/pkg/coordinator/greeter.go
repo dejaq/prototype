@@ -6,8 +6,6 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/bgadrian/dejaq-broker/common/protocol"
 
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -200,28 +198,14 @@ func (s *Greeter) GetProducerSessionData(sessionID string) (*Producer, error) {
 	return nil, ErrNotFound
 }
 
-func (s *Greeter) GetAllActiveConsumers() []ConsumerPipelineTuple {
-	s.opMutex.RLock()
-	defer s.opMutex.RUnlock()
-
-	result := make([]ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
-	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
-		result = append(result, ConsumerPipelineTuple{
-			C:        s.consumerSessionsIDs[sessionID],
-			Pipeline: pipe,
-		})
-	}
-	return result
-}
-
-func (s *Greeter) GetAllConsumersWithHydrateStatus(hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
+func (s *Greeter) GetAllConsumersWithHydrateStatus(topicID string, hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
 	result := make([]ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		consumer := s.consumerSessionsIDs[sessionID]
-		if consumer.HydrateStatus != hydrateStatus {
+		if consumer.HydrateStatus != hydrateStatus || consumer.Topic != topicID {
 			continue
 		}
 		result = append(result, ConsumerPipelineTuple{
@@ -233,6 +217,6 @@ func (s *Greeter) GetAllConsumersWithHydrateStatus(hydrateStatus protocol.Hydrat
 }
 
 func (s *Greeter) LeasesSent(c *Consumer, count int) {
-	logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.ID, c.Topic)
+	//logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.ID, c.Topic)
 	//TODO increment leases
 }

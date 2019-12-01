@@ -96,8 +96,8 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	allFinished := true
 	allFinishedMutex := sync.Mutex{}
 
-	hydratingConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(protocol.Hydration_Requested)
-	activeConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(protocol.Hydration_Done)
+	hydratingConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Requested)
+	activeConsumersAndPipelines := c.greeter.GetAllConsumersWithHydrateStatus(c.conf.Topic.ID, protocol.Hydration_Done)
 
 	newHydrateCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	for _, tuple := range hydratingConsumersAndPipelines {
