@@ -3,6 +3,7 @@ package sync_produce
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
@@ -14,9 +15,10 @@ import (
 )
 
 type SyncProduceConfig struct {
-	Count     int
-	BatchSize int
-	Producer  *producer.Producer
+	Count                            int
+	BatchSize                        int
+	Producer                         *producer.Producer
+	ProduceDeltaMin, ProduceDeltaMax time.Duration
 }
 
 func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceConfig) error {
@@ -45,11 +47,14 @@ func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceC
 	for left > 0 {
 		left--
 		msgID := config.Count - left
+		minT := dtime.TimeToMS(t.Add(-config.ProduceDeltaMin))
+		maxT := dtime.TimeToMS(t.Add(config.ProduceDeltaMax))
+
 		batch = append(batch, timeline.Message{
 			ID:   []byte(fmt.Sprintf("ID %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
 			Body: []byte(fmt.Sprintf("BODY %s|msg_%d", config.Producer.GetProducerGroupID(), msgID)),
 			//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),
-			TimestampMS: dtime.TimeToMS(t),
+			TimestampMS: minT + uint64(rand.Intn(int(maxT-minT))),
 		})
 		if len(batch) >= config.BatchSize {
 			if err := flush(); err != nil {

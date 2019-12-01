@@ -36,6 +36,9 @@ func main() {
 	bucketCount := uint16(100)
 	topicCount := 2
 	timeoutSeconds := time.Duration(7)
+	//compared to now(), random TS of the produced messages
+	produceDeltaMin := time.Millisecond * 100
+	produceDeltaMax := time.Duration(0) //time.Millisecond * 500
 
 	viper.BindEnv("STORAGE")
 	logger := logrus.New()
@@ -146,7 +149,15 @@ func main() {
 				return
 			}
 
-			deployTopicTest(ctx, client, producerGroupIDs, consumerIDs, topic, msgsCountPerTopic, batchSize)
+			deployTopicTest(ctx, client, &deployConfig{
+				producerGroupIDs: producerGroupIDs,
+				consumerIDs:      consumerIDs,
+				topic:            topic,
+				msgsCount:        msgsCountPerTopic,
+				batchSize:        batchSize,
+				produceDeltaMin:  produceDeltaMin,
+				produceDeltaMax:  produceDeltaMax,
+			})
 		}(topicID)
 	}
 
@@ -156,22 +167,31 @@ func main() {
 	ser.GracefulStop()
 }
 
-func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGroupIDs, consumerIDs []string, topic string, msgsCount, batchSize int) {
+type deployConfig struct {
+	producerGroupIDs, consumerIDs    []string
+	topic                            string
+	msgsCount, batchSize             int
+	produceDeltaMin, produceDeltaMax time.Duration
+}
+
+func deployTopicTest(ctx context.Context, client brokerClient.Client, config *deployConfig) {
 
 	wgProducers := sync.WaitGroup{}
 	msgCounter := new(atomic.Int32)
 	consumersCtx, closeConsumers := context.WithCancel(ctx)
 
-	for _, producerGroupID := range producerGroupIDs {
+	for _, producerGroupID := range config.producerGroupIDs {
 		wgProducers.Add(1)
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
 			defer wgProducers.Done()
 			pc := sync_produce.SyncProduceConfig{
-				Count:     msgsCount / len(producerGroupIDs),
-				BatchSize: batchSize,
+				Count:           config.msgsCount / len(config.producerGroupIDs),
+				BatchSize:       config.batchSize,
+				ProduceDeltaMin: config.produceDeltaMin,
+				ProduceDeltaMax: config.produceDeltaMax,
 				Producer: client.NewProducer(&producer.Config{
 					Cluster:         "",
-					Topic:           topic,
+					Topic:           config.topic,
 					ProducerGroupID: producerGroupID,
 					ProducerID:      fmt.Sprintf("%s:%d", producerGroupID, rand.Int()),
 				}),
@@ -184,12 +204,12 @@ func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGr
 		}(producerGroupID, msgCounter)
 	}
 
-	for _, consumerID := range consumerIDs {
+	for _, consumerID := range config.consumerIDs {
 		go func(consumerID string, counter *atomic.Int32) {
 			cc := sync_consume.SyncConsumeConfig{
 				Consumer: client.NewConsumer(&consumer.Config{
 					ConsumerID:    consumerID,
-					Topic:         topic,
+					Topic:         config.topic,
 					Cluster:       "",
 					MaxBufferSize: consumersBufferSize,
 					LeaseDuration: time.Millisecond * 1000,
@@ -211,11 +231,11 @@ func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGr
 		case <-checker.C:
 			if msgCounter.Load() == 0 {
 				closeConsumers()
-				logrus.Infof("Successfully produced and consumed %d messages on topic=%s", msgsCount, topic)
+				logrus.Infof("Successfully produced and consumed %d messages on topic=%s", config.msgsCount, config.topic)
 				return
 			}
 		case <-ctx.Done():
-			logrus.Panicf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
+			logrus.Panicf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), config.topic)
 			return
 		}
 	}
