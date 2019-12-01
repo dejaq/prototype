@@ -103,15 +103,23 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	for _, tuple := range hydratingConsumersAndPipelines {
 		wg.Add(1)
 		go func(cons *Consumer, p chan timeline.Lease) {
+			defer func() {
+				wg.Done()
+				cons.HydrateStatus = protocol.Hydration_Done
+			}()
+
 			cons.HydrateStatus = protocol.Hydration_InProgress
 			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, cons, p)
 			if err != nil {
-				log.Println(err)
+				logrus.Error(err)
+				return
+			}
+
+			if msgsSent == 0 {
+				return
 			}
 
 			c.greeter.LeasesSent(cons, msgsSent)
-			cons.HydrateStatus = protocol.Hydration_Done
-			wg.Done()
 		}(tuple.C, tuple.Pipeline)
 	}
 
@@ -130,9 +138,16 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 		for _, tuple := range activeConsumersAndPipelines {
 			wg.Add(1)
 			go func(cons *Consumer, p chan timeline.Lease) {
-				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, cons, 10, p)
+				defer wg.Done()
+
+				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, cons, 100, p)
 				if err != nil {
 					log.Println(err)
+					return
+				}
+
+				if msgsSent == 0 {
+					return
 				}
 
 				allFinishedMutex.Lock()
@@ -143,7 +158,6 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 
 				c.greeter.LeasesSent(cons, msgsSent)
 
-				wg.Done()
 			}(tuple.C, tuple.Pipeline)
 		}
 	}
@@ -170,17 +184,15 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 			}
 
 			for i := range pushLeaseMessages {
+				if pushLeaseMessages[i].Message.GetID() == "" {
+					logrus.Fatalf("storage returned empty msgID")
+				}
 				select {
 				case <-ctx.Done():
+					logrus.Infof("loadOneConsumer timed out for consumer: %s on topic: %s", consumer.ID, consumer.Topic)
 					return sent, false, context.DeadlineExceeded
-				default:
-					if pushLeaseMessages[i].Message.GetID() == "" {
-						logrus.Fatalf("storage returned empty msgID")
-					}
-					//TODO this will panic if the consumer disconnects during loading
-					//find a way to correlate between ConsumerDisconnected and this action
-					consumerPipeline <- pushLeaseMessages[i]
-					logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
+				case consumerPipeline <- pushLeaseMessages[i]:
+					//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
 					sent++
 				}
 			}

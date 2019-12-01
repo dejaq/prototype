@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/bgadrian/dejaq-broker/common/protocol"
 
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -231,5 +233,6 @@ func (s *Greeter) GetAllConsumersWithHydrateStatus(hydrateStatus protocol.Hydrat
 }
 
 func (s *Greeter) LeasesSent(c *Consumer, count int) {
+	logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.ID, c.Topic)
 	//TODO increment leases
 }

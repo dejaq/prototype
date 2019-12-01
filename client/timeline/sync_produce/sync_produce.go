@@ -46,9 +46,10 @@ func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceC
 		left--
 		msgID := config.Count - left
 		batch = append(batch, timeline.Message{
-			ID:          []byte(fmt.Sprintf("ID %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
-			Body:        []byte(fmt.Sprintf("BODY %s|msg_%d", config.Producer.GetProducerGroupID(), msgID)),
-			TimestampMS: dtime.TimeToMS(t.Add(-time.Millisecond - time.Duration(msgID))),
+			ID:   []byte(fmt.Sprintf("ID %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
+			Body: []byte(fmt.Sprintf("BODY %s|msg_%d", config.Producer.GetProducerGroupID(), msgID)),
+			//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),
+			TimestampMS: dtime.TimeToMS(t),
 		})
 		if len(batch) >= config.BatchSize {
 			if err := flush(); err != nil {
