@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"context"
 	"errors"
 	"log"
 	"math/rand"
@@ -51,24 +52,28 @@ func NewGreeter() *Greeter {
 		consumerIDsAndSessionIDs:       newIDsPerTopic(),
 		consumerSessionIDAndID:         make(map[string]string, 128),
 		consumerSessionsIDs:            make(map[string]*Consumer, 128),
-		consumerSessionIDsAndPipelines: make(map[string]chan timeline.Lease), //not buffered!!!
+		consumerSessionIDsAndPipelines: make(map[string]*ConsumerPipelineTuple),
 		producerSessionIDs:             make(map[string]*Producer),
 		producerIDsAndSessionIDs:       newIDsPerTopic(),
 	}
 }
 
 type ConsumerPipelineTuple struct {
-	C        *Consumer
+	C *Consumer
+	// Pipeline can be used to push messages, while ConsumerConnected is open
 	Pipeline chan timeline.Lease
+	// Connected will be closed to signal when the consumer disconnects
+	Connected chan struct{}
 }
 
 // Greeter is in charge of keeping the local state of all Clients
 type Greeter struct {
+	baseCtx                        context.Context
 	opMutex                        sync.RWMutex
 	consumerIDsAndSessionIDs       *idsPerTopic
 	consumerSessionIDAndID         map[string]string
 	consumerSessionsIDs            map[string]*Consumer
-	consumerSessionIDsAndPipelines map[string]chan timeline.Lease
+	consumerSessionIDsAndPipelines map[string]*ConsumerPipelineTuple
 
 	producerSessionIDs       map[string]*Producer
 	producerIDsAndSessionIDs *idsPerTopic
@@ -98,7 +103,11 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.Topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = c
-	s.consumerSessionIDsAndPipelines[sessionID] = nil
+	s.consumerSessionIDsAndPipelines[sessionID] = &ConsumerPipelineTuple{
+		C:         c,
+		Pipeline:  nil,
+		Connected: nil,
+	}
 
 	return sessionID, nil
 }
@@ -126,39 +135,25 @@ func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.Lease, erro
 	if !hadHandshake {
 		return nil, errors.New("session was not found")
 	}
-	if pipe, alreadyHasAPipeline := s.consumerSessionIDsAndPipelines[sessionID]; alreadyHasAPipeline && pipe != nil {
+	if s.consumerSessionIDsAndPipelines[sessionID].Pipeline != nil {
 		return nil, errors.New("there is already an active connection for this consumerID")
 	}
 
-	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
-		c.HydrateStatus = protocol.Hydration_Requested
-	}
-	s.consumerSessionIDsAndPipelines[sessionID] = make(chan timeline.Lease) //not buffered!!!
-	return s.consumerSessionIDsAndPipelines[sessionID], nil
+	s.consumerSessionsIDs[sessionID].HydrateStatus = protocol.Hydration_Requested
+	s.consumerSessionIDsAndPipelines[sessionID].Pipeline = make(chan timeline.Lease) //not buffered!!!
+	s.consumerSessionIDsAndPipelines[sessionID].Connected = make(chan struct{})
+	return s.consumerSessionIDsAndPipelines[sessionID].Pipeline, nil
 }
 
 func (s *Greeter) ConsumerDisconnected(sessionID string) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	close(s.consumerSessionIDsAndPipelines[sessionID])
-	s.consumerSessionIDsAndPipelines[sessionID] = nil
-}
-
-func (s *Greeter) GetPipelineFor(c *Consumer) (chan timeline.Lease, error) {
-	s.opMutex.RLock()
-	defer s.opMutex.RUnlock()
-
-	sessionID, hasSession := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.Topic)
-	if !hasSession {
-		return nil, ErrConsumerNotSubscribed
-	}
-
-	pipeline, isConnectedNow := s.consumerSessionIDsAndPipelines[sessionID]
-	if !isConnectedNow || pipeline == nil {
-		return nil, ErrConsumerIsNotConnected
-	}
-	return pipeline, nil
+	//this should trigger the Loader to stop pushing, if is currently doing so
+	close(s.consumerSessionIDsAndPipelines[sessionID].Connected)
+	close(s.consumerSessionIDsAndPipelines[sessionID].Pipeline)
+	s.consumerSessionIDsAndPipelines[sessionID].Pipeline = nil
+	s.consumerSessionIDsAndPipelines[sessionID].Connected = nil
 }
 
 func (s *Greeter) GetConsumer(sessionID string) (*Consumer, error) {
@@ -198,20 +193,17 @@ func (s *Greeter) GetProducerSessionData(sessionID string) (*Producer, error) {
 	return nil, ErrNotFound
 }
 
-func (s *Greeter) GetAllConsumersWithHydrateStatus(topicID string, hydrateStatus protocol.HydrationStatus) []ConsumerPipelineTuple {
+func (s *Greeter) GetAllConsumersWithHydrateStatus(topicID string, hydrateStatus protocol.HydrationStatus) []*ConsumerPipelineTuple {
 	s.opMutex.RLock()
 	defer s.opMutex.RUnlock()
 
-	result := make([]ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
+	result := make([]*ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		consumer := s.consumerSessionsIDs[sessionID]
 		if consumer.HydrateStatus != hydrateStatus || consumer.Topic != topicID {
 			continue
 		}
-		result = append(result, ConsumerPipelineTuple{
-			C:        consumer,
-			Pipeline: pipe,
-		})
+		result = append(result, pipe)
 	}
 	return result
 }

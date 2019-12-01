@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -102,14 +103,14 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	newHydrateCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	for _, tuple := range hydratingConsumersAndPipelines {
 		wg.Add(1)
-		go func(cons *Consumer, p chan timeline.Lease) {
+		go func(tuple *ConsumerPipelineTuple) {
 			defer func() {
 				wg.Done()
-				cons.HydrateStatus = protocol.Hydration_Done
+				tuple.C.HydrateStatus = protocol.Hydration_Done
 			}()
 
-			cons.HydrateStatus = protocol.Hydration_InProgress
-			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, cons, p)
+			tuple.C.HydrateStatus = protocol.Hydration_InProgress
+			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, tuple)
 			if err != nil {
 				logrus.Error(err)
 				return
@@ -119,8 +120,8 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 				return
 			}
 
-			c.greeter.LeasesSent(cons, msgsSent)
-		}(tuple.C, tuple.Pipeline)
+			c.greeter.LeasesSent(tuple.C, msgsSent)
+		}(tuple)
 	}
 
 	activeConsumers := make([]*Consumer, 0, len(activeConsumersAndPipelines))
@@ -137,10 +138,10 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 		newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 		for _, tuple := range activeConsumersAndPipelines {
 			wg.Add(1)
-			go func(cons *Consumer, p chan timeline.Lease) {
+			go func(tuple *ConsumerPipelineTuple) {
 				defer wg.Done()
 
-				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, cons, 100, p)
+				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, 100, tuple)
 				if err != nil {
 					log.Println(err)
 					return
@@ -156,9 +157,9 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 				}
 				allFinishedMutex.Unlock()
 
-				c.greeter.LeasesSent(cons, msgsSent)
+				c.greeter.LeasesSent(tuple.C, msgsSent)
 
-			}(tuple.C, tuple.Pipeline)
+			}(tuple)
 		}
 	}
 	wg.Wait()
@@ -166,19 +167,19 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	return !allFinished
 }
 
-func (c *Loader) hydrateOneConsumer(ctx context.Context, consumer *Consumer, consumerPipeline chan<- timeline.Lease) (int, error) {
+func (c *Loader) hydrateOneConsumer(ctx context.Context, tuple *ConsumerPipelineTuple) (int, error) {
 	return 0, nil
 }
 
 //returns number of sent messages, if it sent all of them, and an error
-func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit int, consumerPipeline chan<- timeline.Lease) (int, bool, error) {
+func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *ConsumerPipelineTuple) (int, bool, error) {
 	sent := 0
 	var hasMoreForThisBucket bool
 	var pushLeaseMessages []timeline.Lease
-	for bi := range consumer.AssignedBuckets {
+	for bi := range tuple.C.AssignedBuckets {
 		hasMoreForThisBucket = true // we presume it has
 		for hasMoreForThisBucket {
-			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, consumer.GetTopic(), consumer.AssignedBuckets[bi], consumer.GetID(), consumer.LeaseMs, limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
+			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, tuple.C.GetTopic(), tuple.C.AssignedBuckets[bi], tuple.C.GetID(), tuple.C.LeaseMs, limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
@@ -189,9 +190,14 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 				}
 				select {
 				case <-ctx.Done():
-					logrus.Infof("loadOneConsumer timed out for consumer: %s on topic: %s", consumer.ID, consumer.Topic)
+					logrus.Infof("loadOneConsumer timed out for consumer: %s on topic: %s", tuple.C.ID, tuple.C.Topic)
 					return sent, false, context.DeadlineExceeded
-				case consumerPipeline <- pushLeaseMessages[i]:
+				case _, open := <-tuple.Connected:
+					if !open {
+						logrus.Infof("client d/c during a load: %s", tuple.C.ID)
+						return sent, true, errors.New("consumer d/c")
+					}
+				case tuple.Pipeline <- pushLeaseMessages[i]:
 					//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
 					sent++
 				}

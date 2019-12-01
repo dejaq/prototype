@@ -2,11 +2,14 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -31,14 +34,16 @@ type Consumer struct {
 	sessionID      string
 	msgBuffer      chan timeline.Lease
 	handshakeMutex sync.RWMutex
+	logger         logrus.FieldLogger
 }
 
-func NewConsumer(overseer dejaq.BrokerClient, carrier *grpc.ClientConn, conf *Config) *Consumer {
+func NewConsumer(overseer dejaq.BrokerClient, logger logrus.FieldLogger, carrier *grpc.ClientConn, conf *Config) *Consumer {
 	result := &Consumer{
 		conf:      conf,
 		overseer:  overseer,
 		carrier:   dejaq.NewBrokerClient(carrier),
 		msgBuffer: make(chan timeline.Lease, conf.MaxBufferSize),
+		logger:    logger,
 	}
 
 	return result
@@ -92,7 +97,7 @@ func (c *Consumer) Handshake(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) preload(ctx context.Context) {
+func (c *Consumer) preload(ctx context.Context) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
 
@@ -107,7 +112,8 @@ func (c *Consumer) preload(ctx context.Context) {
 
 	stream, err := c.carrier.TimelineConsume(ctx, builder)
 	if err != nil {
-		log.Fatalf("subscribe: %v", err)
+		nerr := fmt.Errorf("subscribe: %w", err)
+		return nerr
 	}
 
 	var response *dejaq.TimelinePushLeaseResponse
@@ -129,11 +135,14 @@ func (c *Consumer) preload(ctx context.Context) {
 		}
 	}()
 	for {
-		err = nil
-
 		if ctx.Err() != nil {
 			break
 		}
+
+		if err != nil && err != context.Canceled {
+			c.logger.WithError(err).Error("preload error")
+		}
+		err = nil
 		for err == nil {
 			//Recv is blocking
 			response, err = stream.Recv()
@@ -143,8 +152,9 @@ func (c *Consumer) preload(ctx context.Context) {
 			if err != nil {
 				//TODO find out why errors.Is is not working
 				if !strings.Contains(err.Error(), context.Canceled.Error()) {
-					log.Printf("consumer preload client failed err=%s", err.Error())
+					err = fmt.Errorf("consumer preload client failed err: %w", err)
 				}
+				continue
 				//TODO if err is invalid/expired sessionID do a handshake automatically
 			}
 			if response == nil { //empty msg ?!?!?! TODO log this as a warning
@@ -166,7 +176,9 @@ func (c *Consumer) preload(ctx context.Context) {
 				},
 			}
 		}
+
 	}
+	return nil
 }
 
 func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
@@ -175,7 +187,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 
 	stream, err := c.carrier.TimelineDelete(ctx)
 	if err != nil {
-		log.Fatalf("Delete err: %s", err.Error())
+		return fmt.Errorf("delete err: %w", err)
 	}
 
 	var builder *flatbuffers.Builder
@@ -195,13 +207,13 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
 		if err != nil {
-			log.Fatalf("Delete2 err: %s", err.Error())
+			return fmt.Errorf("delete2 err: %w", err)
 		}
 	}
 
 	_, err = stream.CloseAndRecv()
-	if err != nil && err != io.EOF {
-		log.Fatalf("Delete3 err: %s", err.Error())
+	if err != nil && err != io.EOF && !strings.Contains(err.Error(), context.Canceled.Error()) {
+		return fmt.Errorf("delete3 err: %w", err)
 	}
 	//if response != nil && response.MessagesErrorsLength() > 0 {
 	//	var errorTuple dejaq.TimelineMessageIDErrorTuple
