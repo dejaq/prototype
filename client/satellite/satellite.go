@@ -70,7 +70,7 @@ func (s *Satellite) NewConsumer(conf *consumer.Config) *consumer.Consumer {
 	//TODO to find the carrier we have to call the overseer
 	//with the topic, and get a list of overseers and send them
 	//to the consumer
-	return consumer.NewConsumer(s.overseers[0], s.conns[0], conf)
+	return consumer.NewConsumer(s.overseers[0], s.logger, s.conns[0], conf)
 }
 
 func (s *Satellite) NewProducer(conf *producer.Config) *producer.Producer {
