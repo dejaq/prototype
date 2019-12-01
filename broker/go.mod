@@ -6,10 +6,10 @@ require (
 	github.com/bgadrian/dejaq-broker/client v0.0.0-00010101000000-000000000000
 	github.com/bgadrian/dejaq-broker/common v0.0.0
 	github.com/bgadrian/dejaq-broker/grpc v0.0.0
+	github.com/cockroachdb/cockroach-go v0.0.0-20190925194419-606b3d062051 // indirect
 	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/etcd v3.3.15+incompatible // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
-	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/go-redis/redis v6.15.6+incompatible
 	github.com/gocql/gocql v0.0.0-20190915153252-16cf9ea1b3e2
 	github.com/gogo/protobuf v1.3.0 // indirect
@@ -20,6 +20,8 @@ require (
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.11.2 // indirect
+	github.com/jackc/pgconn v1.1.0 // indirect
+	github.com/lib/pq v1.2.0
 	github.com/onsi/ginkgo v1.10.3 // indirect
 	github.com/onsi/gomega v1.7.1 // indirect
 	github.com/pelletier/go-toml v1.6.0 // indirect
@@ -36,7 +38,6 @@ require (
 	go.etcd.io/etcd v3.3.15+incompatible
 	go.uber.org/atomic v1.5.1
 	golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e // indirect
-	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0 // indirect
 	google.golang.org/grpc v1.24.0
 	gopkg.in/yaml.v2 v2.2.7 // indirect

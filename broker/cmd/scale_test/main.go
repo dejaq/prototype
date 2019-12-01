@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bgadrian/dejaq-broker/broker/pkg/coordinator"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/overseer"
+	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/cockroach"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/storage/redis"
 	storageTimeline "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	brokerClient "github.com/bgadrian/dejaq-broker/client"
@@ -28,12 +30,14 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+
+	_ "github.com/lib/pq"
 )
 
 var consumersBufferSize = int64(100)
 
 func main() {
-	topicCount := 3
+	topicCount := 12
 	batchSize := 15
 	bucketCount := uint16(1000)
 	msgsCountPerTopic := 33
@@ -139,6 +143,19 @@ func startBroker(ctx context.Context, logger *logrus.Logger, timeoutSeconds time
 		if err != nil {
 			return fmt.Errorf("failed to connect to redis server: %w", err)
 		}
+	case "cockroach":
+		// Connect to the "bank" database.
+		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable")
+		if err != nil {
+			return fmt.Errorf("error connecting to the database: %w", err)
+		}
+		storageClient = cockroach.New(db, logger)
+		go func() {
+			select {
+			case <-ctx.Done():
+				db.Close()
+			}
+		}()
 	default:
 		return errors.New("unknown storage")
 	}
