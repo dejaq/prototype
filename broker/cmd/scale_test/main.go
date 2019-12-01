@@ -18,7 +18,6 @@ import (
 	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
 	"github.com/bgadrian/dejaq-broker/client/timeline/sync_consume"
 	"github.com/bgadrian/dejaq-broker/client/timeline/sync_produce"
-	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
 	"github.com/bgadrian/dejaq-broker/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -29,9 +28,13 @@ import (
 	"google.golang.org/grpc"
 )
 
+var consumersBufferSize = int64(100)
+
 func main() {
-	msgsCount := 123
+	msgsCountPerTopic := 123
 	batchSize := 15
+	bucketCount := uint16(100)
+	topicCount := 2
 
 	viper.BindEnv("STORAGE")
 	logger := logrus.New()
@@ -78,17 +81,12 @@ func main() {
 
 	grpServer := coordinator.NewGRPCServer(nil)
 
-	coordinatorConfig := coordinator.Config{
-		NoBuckets: 89,
-		TopicType: common.TopicType_Timeline,
-	}
+	coordinatorConfig := coordinator.Config{}
 
 	dealer := coordinator.NewExclusiveDealer()
-	synchronization := overseer.NewCatalog()
+	catalog := overseer.NewCatalog()
 
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, synchronization, greeter,
-		coordinator.NewLoader(&coordinator.LConfig{TopicDefaultNoOfBuckets: coordinatorConfig.NoBuckets},
-			storageClient, dealer, greeter), dealer)
+	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 
 	go func() {
@@ -116,14 +114,17 @@ func main() {
 	defer logger.Println("closing CLIENT goroutine")
 	chief := client.NewOverseerClient()
 
-	topics := []string{"topic_1", "topic_2", "topic_3"}
-
 	producerGroupIDs := []string{"producer_group_1", "producer_group_1", "producer_group_2"}
 	consumerIDs := []string{"consumer_id_1", "consumer_id_2", "consumer_id_3", "consumer_id_4"}
 
 	wg := sync.WaitGroup{}
+	start := time.Now()
+	defer func() {
+		logger.Infof("finished in %dms", time.Now().Sub(start).Milliseconds())
+	}()
 
-	for _, topic := range topics {
+	for topicIndex := 0; topicIndex < topicCount; topicIndex++ {
+		topicID := fmt.Sprintf("topic_%d", topicIndex)
 		wg.Add(1)
 		go func(topic string) {
 			defer wg.Done()
@@ -137,17 +138,15 @@ func main() {
 				RQSLimitPerClient:       100000,
 				MinimumProtocolVersion:  0,
 				MinimumDriverVersion:    0,
-				BucketCount:             100,
+				BucketCount:             bucketCount,
 			})
 			if err != nil {
 				logrus.WithError(err).Fatal("failed creating topic")
 				return
 			}
 
-			time.Sleep(time.Millisecond * 300)
-
-			deployTopicTest(ctx, client, producerGroupIDs, consumerIDs, topic, msgsCount, batchSize)
-		}(topic)
+			deployTopicTest(ctx, client, producerGroupIDs, consumerIDs, topic, msgsCountPerTopic, batchSize)
+		}(topicID)
 	}
 
 	wg.Wait()
@@ -158,13 +157,14 @@ func main() {
 
 func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGroupIDs, consumerIDs []string, topic string, msgsCount, batchSize int) {
 
-	wg := sync.WaitGroup{}
+	wgProducers := sync.WaitGroup{}
 	msgCounter := new(atomic.Int32)
+	consumersCtx, closeConsumers := context.WithCancel(ctx)
 
 	for _, producerGroupID := range producerGroupIDs {
-		wg.Add(1)
+		wgProducers.Add(1)
 		go func(producerGroupID string, msgCounter *atomic.Int32) {
-			defer wg.Done()
+			defer wgProducers.Done()
 			pc := sync_produce.SyncProduceConfig{
 				Count:     msgsCount / len(producerGroupIDs),
 				BatchSize: batchSize,
@@ -184,30 +184,38 @@ func deployTopicTest(ctx context.Context, client brokerClient.Client, producerGr
 	}
 
 	for _, consumerID := range consumerIDs {
-		wg.Add(1)
 		go func(consumerID string, counter *atomic.Int32) {
-			defer wg.Done()
 			cc := sync_consume.SyncConsumeConfig{
 				Consumer: client.NewConsumer(&consumer.Config{
 					ConsumerID:    consumerID,
 					Topic:         topic,
 					Cluster:       "",
-					MaxBufferSize: 100,
+					MaxBufferSize: consumersBufferSize,
 					LeaseDuration: time.Millisecond * 1000,
 				}),
 			}
-			err := sync_consume.Consume(ctx, counter, &cc)
+			err := sync_consume.Consume(consumersCtx, counter, &cc)
 			if err != nil {
 				log.Error(err)
 			}
 		}(consumerID, msgCounter)
 	}
 
-	wg.Wait() //wait for consumers and producers
+	wgProducers.Wait()
+	checker := time.NewTicker(time.Millisecond * 10)
+	defer checker.Stop()
 
-	if msgCounter.Load() == 0 {
-		logrus.Infof("Successfully produced and consumed %d messages on topic=%s", msgsCount, topic)
-	} else {
-		logrus.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
+	for {
+		select {
+		case <-checker.C:
+			if msgCounter.Load() == 0 {
+				closeConsumers()
+				logrus.Infof("Successfully produced and consumed %d messages on topic=%s", msgsCount, topic)
+				return
+			}
+		case <-ctx.Done():
+			logrus.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), topic)
+			return
+		}
 	}
 }

@@ -2,6 +2,7 @@ package synchronization
 
 import (
 	"context"
+
 	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
 	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -28,7 +29,7 @@ type Producer struct {
 	CarrierBrokerID  string
 }
 
-type Repository interface {
+type Catalog interface {
 	AddTopic(ctx context.Context, topic Topic) error
 	UpdateTopic(ctx context.Context, topic Topic) error
 	GetTopic(ctx context.Context, topicID string) (Topic, error)

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	"github.com/bgadrian/dejaq-broker/common/protocol"
 	dtime "github.com/bgadrian/dejaq-broker/common/time"
@@ -13,9 +15,9 @@ import (
 )
 
 type LConfig struct {
-	TopicDefaultNoOfBuckets uint16
 	PrefetchMaxNoMsgs       uint16
 	PrefetchMaxMilliseconds uint64
+	Topic                   *timeline.Topic
 }
 
 type Loader struct {
@@ -122,7 +124,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 			activeConsumers = append(activeConsumers, activeConsumersAndPipelines[i].C)
 		}
 
-		c.dealer.Shuffle(activeConsumers, c.conf.TopicDefaultNoOfBuckets)
+		c.dealer.Shuffle(activeConsumers, c.conf.Topic.Settings.BucketCount)
 
 		newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
 		for _, tuple := range activeConsumersAndPipelines {
@@ -172,9 +174,13 @@ func (c *Loader) loadOneConsumer(ctx context.Context, consumer *Consumer, limit 
 				case <-ctx.Done():
 					return sent, false, context.DeadlineExceeded
 				default:
+					if pushLeaseMessages[i].Message.GetID() == "" {
+						logrus.Fatalf("storage returned empty msgID")
+					}
 					//TODO this will panic if the consumer disconnects during loading
-					//find a way to corelate between ConsumerDisconnected and this action
+					//find a way to correlate between ConsumerDisconnected and this action
 					consumerPipeline <- pushLeaseMessages[i]
+					logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
 					sent++
 				}
 			}

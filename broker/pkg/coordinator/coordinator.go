@@ -3,15 +3,17 @@ package coordinator
 import (
 	"context"
 	"math/rand"
+	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/bgadrian/dejaq-broker/common/protocol"
 
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
 	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
-	"github.com/bgadrian/dejaq-broker/common"
 	"github.com/bgadrian/dejaq-broker/common/errors"
 	dtime "github.com/bgadrian/dejaq-broker/common/time"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -58,40 +60,38 @@ type Producer struct {
 }
 
 type Coordinator struct {
-	conf            *Config
-	dealer          Dealer
-	storage         storage.Repository
-	synchronization synchronization.Repository
-	greeter         *Greeter
-	loader          *Loader
+	baseCtx      context.Context
+	conf         *Config
+	dealer       Dealer
+	storage      storage.Repository
+	catalog      synchronization.Catalog
+	greeter      *Greeter
+	loadersMutex sync.Mutex
+	loaders      map[string]*Loader
 }
 
 type Config struct {
-	TopicType common.TopicType
-	NoBuckets uint16
 }
 
-func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, synchronization synchronization.Repository, greeter *Greeter, loader *Loader, dealer Dealer) *Coordinator {
+func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, catalog synchronization.Catalog, greeter *Greeter, dealer Dealer) *Coordinator {
 	c := Coordinator{
-		conf:            config,
-		storage:         timelineStorage,
-		synchronization: synchronization,
-		greeter:         greeter,
-		loader:          loader,
-		dealer:          dealer,
+		baseCtx:      ctx,
+		conf:         config,
+		storage:      timelineStorage,
+		catalog:      catalog,
+		greeter:      greeter,
+		loadersMutex: sync.Mutex{},
+		loaders:      make(map[string]*Loader, 10),
+		dealer:       dealer,
 	}
-
-	c.loader.Start(ctx)
 
 	return &c
 }
 
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&TimelineListeners{
-		ConsumerHandshake: c.consumerHandshake,
-		ConsumerConnected: func(ctx context.Context, sessionID string) (chan timeline.Lease, error) {
-			return c.greeter.ConsumerConnected(sessionID)
-		},
+		ConsumerHandshake:    c.consumerHandshake,
+		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
 		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
@@ -109,7 +109,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			if err != nil {
 				return "", err
 			}
-			_, err = c.synchronization.GetTopic(ctx, topic)
+			_, err = c.catalog.GetTopic(ctx, topic)
 			if err != nil {
 				return "", err
 			}
@@ -119,7 +119,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 }
 
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
-	_, err := c.synchronization.GetTopic(ctx, consumer.Topic)
+	_, err := c.catalog.GetTopic(ctx, consumer.Topic)
 	if err != nil {
 		return "", err
 	}
@@ -138,7 +138,7 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 	consumerSync.Topic = string(consumer.GetTopic())
 	// TODO add the rest of the params
 
-	err = c.synchronization.AddConsumer(ctx, consumerSync)
+	err = c.catalog.AddConsumer(ctx, consumerSync)
 	if err != nil {
 		log.Error(err)
 		return sessionID, err
@@ -147,6 +147,30 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 	return sessionID, err
 }
 
+func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (chan timeline.Lease, error) {
+	//create the loader for it
+	consumer, err := c.greeter.GetConsumer(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	c.loadersMutex.Lock()
+	defer c.loadersMutex.Unlock()
+
+	if _, loaderExists := c.loaders[consumer.Topic]; !loaderExists {
+		topic, err := c.catalog.GetTopic(ctx, consumer.Topic)
+		if err != nil {
+			return nil, err
+		}
+		c.loaders[consumer.Topic] = NewLoader(&LConfig{
+			PrefetchMaxNoMsgs:       1000,
+			PrefetchMaxMilliseconds: 0,
+			Topic:                   &topic.Topic,
+		}, c.storage, c.dealer, c.greeter)
+		c.loaders[consumer.Topic].Start(c.baseCtx)
+		logrus.Infof("started consumer loader for topic: %s", consumer.Topic)
+	}
+	return c.greeter.ConsumerConnected(sessionID)
+}
 func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string) error {
 	consumer, err := c.greeter.GetConsumer(sessionID)
 	if err != nil {
@@ -154,8 +178,9 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 		return err
 	}
 
+	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.Topic]
 	c.greeter.ConsumerDisconnected(sessionID)
-	return c.synchronization.RemoveConsumer(ctx, consumer.Topic, string(consumer.ID))
+	return c.catalog.RemoveConsumer(ctx, consumer.Topic, string(consumer.ID))
 }
 
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {
@@ -173,7 +198,7 @@ func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer)
 	producerSync.Cluster = producer.Cluster
 	producerSync.Topic = producer.Topic
 
-	err = c.synchronization.AddProducer(ctx, producerSync)
+	err = c.catalog.AddProducer(ctx, producerSync)
 	if err != nil {
 		log.Error(err)
 		return sessionID, err
@@ -193,16 +218,20 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 	syncTopic.ProvisionStatus = protocol.TopicProvisioningStatus_Live
 	syncTopic.Settings = settings
 
-	err = c.synchronization.AddTopic(ctx, syncTopic)
+	err = c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
 		log.Error(err)
 	}
 }
 
-func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topic string, msgs []timeline.Message) []errors.MessageIDTuple {
+func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
+	topic, _ := c.catalog.GetTopic(ctx, topicID)
 	for i := range msgs {
-		msgs[i].BucketID = uint16(rand.Intn(int(c.conf.NoBuckets)))
+		msgs[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
+		if msgs[i].GetID() == "" {
+			logrus.Fatalf("coordinator received empty messageID")
+		}
 	}
-	return c.storage.Insert(ctx, []byte(topic), msgs)
+	return c.storage.Insert(ctx, []byte(topicID), msgs)
 }

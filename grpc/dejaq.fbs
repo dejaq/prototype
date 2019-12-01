@@ -40,7 +40,7 @@ table TimelineCreateRequest {
     rqsLimitPerClient:ulong;
     minimumProtocolVersion:ushort;
     minimumDriverVersion:ushort;
-    bucketCount:uint;
+    bucketCount:ushort;
 }
 
 table TimelineCreateMessageRequest {

@@ -158,16 +158,16 @@ func (rcv *TimelineCreateRequest) MutateMinimumDriverVersion(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(26, n)
 }
 
-func (rcv *TimelineCreateRequest) BucketCount() uint32 {
+func (rcv *TimelineCreateRequest) BucketCount() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(28))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *TimelineCreateRequest) MutateBucketCount(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(28, n)
+func (rcv *TimelineCreateRequest) MutateBucketCount(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(28, n)
 }
 
 func TimelineCreateRequestStart(builder *flatbuffers.Builder) {
@@ -209,8 +209,8 @@ func TimelineCreateRequestAddMinimumProtocolVersion(builder *flatbuffers.Builder
 func TimelineCreateRequestAddMinimumDriverVersion(builder *flatbuffers.Builder, minimumDriverVersion uint16) {
 	builder.PrependUint16Slot(11, minimumDriverVersion, 0)
 }
-func TimelineCreateRequestAddBucketCount(builder *flatbuffers.Builder, bucketCount uint32) {
-	builder.PrependUint32Slot(12, bucketCount, 0)
+func TimelineCreateRequestAddBucketCount(builder *flatbuffers.Builder, bucketCount uint16) {
+	builder.PrependUint16Slot(12, bucketCount, 0)
 }
 func TimelineCreateRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
