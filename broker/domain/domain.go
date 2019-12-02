@@ -12,7 +12,7 @@ type Client struct {
 //and used by Storage.
 type BucketRange struct {
 	Start uint16
-	End uint16
+	End   uint16
 }
 
 func (b BucketRange) ASC() BucketRange {
@@ -41,4 +41,8 @@ func (b BucketRange) Max() uint16 {
 		return b.End
 	}
 	return b.Start
+}
+
+func (b BucketRange) Size() int {
+	return int(b.Max() - b.Min())
 }

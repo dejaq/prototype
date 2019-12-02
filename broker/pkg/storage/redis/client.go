@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/bgadrian/dejaq-broker/broker/domain"
 	derrors "github.com/bgadrian/dejaq-broker/common/errors"
 	"github.com/bgadrian/dejaq-broker/common/timeline"
@@ -162,12 +164,11 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, []derrors.MessageIDTuple) {
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
 	var results []timeline.Lease
-	var getErrors []derrors.MessageIDTuple
 
 	keys := []string{
 		// timelineKey
@@ -196,8 +197,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 		derror.Message = err.Error()
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
-		getErrors = append(getErrors, derrors.MessageIDTuple{Error: derror})
-		return nil, false, getErrors
+		return nil, false, derror
 	}
 
 	// TODO not the best practice, find a better solution here to remove interface mess
@@ -206,7 +206,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 		v := val.([]interface{})
 
 		// get data
-		msgID := v[0].(string)
+		//msgID := v[0].(string)
 		code := v[1].(string)
 		endLeaseMS := uint64(v[2].(int64))
 		message := v[3].([]interface{})
@@ -232,8 +232,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 				derror.WrappedErr = ErrUnknown
 			}
 
-			getErrors = append(getErrors, derrors.MessageIDTuple{Error: derror})
-
+			logrus.WithError(derror).Errorf("redis error")
 			continue
 		}
 
@@ -246,7 +245,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 			derror.Message = err.Error()
 			derror.ShouldRetry = true
 			derror.WrappedErr = err
-			getErrors = append(getErrors, derrors.MessageIDTuple{MessageID: []byte(msgID), Error: derror})
+			logrus.WithError(derror).Errorf("redis error")
 			continue
 		}
 
@@ -257,7 +256,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 		})
 	}
 
-	return results, false, getErrors
+	return results, false, nil
 }
 
 func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
