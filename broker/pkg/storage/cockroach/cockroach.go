@@ -18,31 +18,29 @@ import (
 
 var (
 	stmtTopic = `
-DROP TABLE IF EXISTS $TABLE;
-CREATE TABLE $TABLE (
+DROP TABLE IF EXISTS $TOPIC CASCADE;
+CREATE TABLE $TOPIC (
 	id BYTES NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
 	ts INT NOT NULL,
 	producer_group_id BYTES NOT NULL,
 	consumer_id BYTES,
-	body_id BYTES NOT NULL UNIQUE,
+	body_id BYTES NOT NULL,
 	version INT NOT NULL,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC),
-	INDEX $TABLE_index_ts (ts ASC),
-	INDEX $TABLE_index_bucket (bucket_id ASC),
-	INDEX $TABLE_index_consumerID (consumer_id ASC),    
+	INDEX $TOPIC_index_ts (ts ASC),
+	INDEX $TOPIC_index_bucket (bucket_id ASC),
+	INDEX $TOPIC_index_consumerID (consumer_id ASC),    
 	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
  	FAMILY mutable (timeline, consumer_id, version)
 		);
-DROP TABLE IF EXISTS $TABLEBODIES;
-CREATE TABLE $TABLEBODIES (
+DROP TABLE IF EXISTS $BODY CASCADE;
+CREATE TABLE $BODY (
 	id BYTES NOT NULL,
 	body BYTES,
-	CONSTRAINT "primary" PRIMARY KEY (id ASC),
-	CONSTRAINT $TABLEBODIES_fk FOREIGN KEY (id) REFERENCES $TABLE (body_id) ON DELETE CASCADE
+	CONSTRAINT "primary" PRIMARY KEY (id ASC)
 );
-
 `
 ) //https://www.cockroachlabs.com/docs/stable/foreign-key.html
 
@@ -56,16 +54,16 @@ func New(db *sql.DB, logger logrus.FieldLogger) *CRClient {
 }
 
 func table(topicID string) string {
-	return fmt.Sprintf("timeline_%s", topicID)
+	return fmt.Sprintf("dejaq_timeline_%s", topicID)
 }
 func tableBodies(topicID string) string {
-	return fmt.Sprintf("timeline_%s_bodies", topicID)
+	return fmt.Sprintf("dejaq_timeline_%s_bodies", topicID)
 }
 
 func (c *CRClient) CreateTopic(ctx context.Context, timelineID string) error {
 	//table and column names cannot be prepared
-	replaced := strings.Replace(stmtTopic, "$TABLE", table(timelineID), -1)
-	replaced = strings.Replace(replaced, "$TABLEBODIES", tableBodies(timelineID), -1)
+	replaced := strings.Replace(stmtTopic, "$TOPIC", table(timelineID), -1)
+	replaced = strings.Replace(replaced, "$BODY", tableBodies(timelineID), -1)
 	_, err := c.db.ExecContext(ctx, replaced)
 	if err != nil {
 		return fmt.Errorf("create failed: %w", err)
@@ -110,12 +108,12 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		batch = messages[:max]
 		messages = messages[max:]
 
-		//https://godoc.org/github.com/lib/pq#hdr-Bulk_imports
 		txn, err := c.db.Begin()
 		if err != nil {
 			log.Fatal(err)
 		}
 
+		//https://godoc.org/github.com/lib/pq#hdr-Bulk_imports
 		stmt, err := txn.Prepare(pq.CopyIn(table(string(timelineID)),
 			"id",
 			"bucket_id",
@@ -126,14 +124,10 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 			"version"))
 		if err != nil {
 			addFailedBatch(err)
+			txn.Rollback()
 			continue
 		}
 
-		stmtBodies, err := txn.Prepare(pq.CopyIn(tableBodies(string(timelineID)), "id", "body"))
-		if err != nil {
-			addFailedBatch(err)
-			continue
-		}
 		var failedSt bool
 		for i := range batch {
 			_, err = stmt.Exec(
@@ -148,7 +142,30 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 				failedSt = true
 				break
 			}
-			_, err = stmtBodies.Exec(batch[i].ID,
+		}
+
+		if failedSt {
+			addFailedBatch(err)
+			txn.Rollback()
+			continue
+		}
+		err = stmt.Close()
+		if err != nil {
+			addFailedBatch(err)
+			txn.Rollback()
+			continue
+		}
+
+		stmtBodies, err := txn.Prepare(pq.CopyIn(tableBodies(string(timelineID)), "id", "body"))
+		if err != nil {
+			addFailedBatch(err)
+			txn.Rollback()
+			continue
+		}
+		for i := range batch {
+			_, err = stmtBodies.Exec(
+				batch[i].ID,
+				//TODO check if we can use RawBytes to remove memory allocations on the driver side
 				batch[i].Body)
 			if err != nil {
 				failedSt = true
@@ -158,23 +175,21 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 
 		if failedSt {
 			addFailedBatch(err)
-			continue
-		}
-		_, err = stmt.Exec()
-		if err != nil {
-			addFailedBatch(err)
+			txn.Rollback()
 			continue
 		}
 
-		err = stmt.Close()
+		err = stmtBodies.Close()
 		if err != nil {
 			addFailedBatch(err)
+			txn.Rollback()
 			continue
 		}
 
 		err = txn.Commit()
 		if err != nil {
 			addFailedBatch(err)
+			txn.Rollback()
 			continue
 		}
 	}
@@ -183,56 +198,72 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 
 func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 
-	//bs := make([]int, 0, buckets.Size())
-	//if buckets.Start < buckets.End {
-	//	for b := buckets.Start; b < buckets.End; b++ {
-	//		bs = append(bs, int(b))
-	//	}
-	//} else {
-	//	for b := buckets.End; b < buckets.Start; b++ {
-	//		bs = append(bs, int(b))
-	//	}
-	//}
-	//bucketIDsHolders := strings.Split(strings.Repeat("?", buckets.Size()), "")
-
 	//https://www.cockroachlabs.com/docs/v19.2/update.html#update-and-return-values
-	query := fmt.Sprintf(`UPDATE %s SET timeline = MAX(:now, timeline) + :lease, consumer_id = :consumerid WHERE 
-		( timeline <= :now OR (timeline > :now AND timeline <= :maxts AND consumer_id = NUL )) 
-		AND bucket_id >= :bmin AND bucket_id <= :bmax
-		LIMIT :limit
-		RETURNING 'id';
-	`, table(string(timelineID)))
-	rows, err := c.db.QueryContext(ctx, query,
-		sql.Named("now", dtime.TimeToMS(time.Now())),
-		sql.Named("lease", leaseMs),
-		sql.Named("consumerid", []byte(consumerId)),
-		sql.Named("maxts", maxTimestamp),
-		sql.Named("bmin", buckets.Min()),
-		sql.Named("bmax", buckets.Max()),
-		sql.Named("limit", limit),
+	query := strings.Replace(`UPDATE $TOPIC SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
+		( timeline <= $1 OR (timeline > $1 AND timeline <= $4 AND consumer_id = NULL )) 
+		AND bucket_id >= $5 AND bucket_id <= $6
+		LIMIT $7
+		RETURNING id;
+	`, "$TOPIC", table(string(timelineID)), -1)
+
+	st, err := c.db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, false, err
+	}
+	rows, err := st.Query(
+		dtime.TimeToMS(time.Now()), leaseMs, []byte(consumerId), maxTimestamp, buckets.Min(), buckets.Max(), limit,
+		//TODO make the named parameter work :/ or file a bug report
+		//sql.Named("now", dtime.TimeToMS(time.Now())),
+		//sql.Named("lease", leaseMs),
+		//sql.Named("consumerid", []byte(consumerId)),
+		//sql.Named("maxts", maxTimestamp),
+		//sql.Named("bmin", buckets.Min()),
+		//sql.Named("bmax", buckets.Max()),
+		//sql.Named("limit", limit),
 	)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed preparing stmt %w", err)
 	}
 
 	// Print out the returned value.
-	defer rows.Close()
-	msgIDs := [][]byte{}
+	msgIDs := []string{}
 	for rows.Next() {
 		var id []byte
 		if err := rows.Scan(&id); err != nil {
 			log.Fatal(err)
 		}
-		msgIDs = append(msgIDs, id)
+		msgIDs = append(msgIDs, fmt.Sprintf("%s", id))
+	}
+	rows.Close()
+
+	if len(msgIDs) == 0 {
+		return nil, false, nil
 	}
 
+	query = fmt.Sprintf(`SELECT 
+		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id,
+		topic.consumer_id, topic.version, bodies.body
+		FROM %s AS topic INNER JOIN %s AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
+		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(msgIDs, ","))
+
+	rows, err = c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, false, err
+	}
 	result := make([]timeline.Lease, 0, len(msgIDs))
-
-	query = fmt.Sprintf(`SELECT * FROM %s AS topic INNER JOIN %s ON id = topic.body_id WHERE topic.ID IN ();`,
-		table(string(timelineID)), tableBodies(string(timelineID)))
-
-	c.db.QueryContext(ctx, query)
-
+	for rows.Next() {
+		lease := timeline.Lease{}
+		//TODO add here RawBytes and read the body without a copy! optimization, then copy the slice to the lease.message.body
+		if err := rows.Scan(
+			&lease.Message.ID, &lease.ExpirationTimestampMS, &lease.Message.BucketID, &lease.Message.TimestampMS, &lease.Message.ProducerGroupID,
+			&lease.ConsumerID, &lease.Message.Version, &lease.Message.Body,
+		); err != nil {
+			log.Fatal(err)
+		}
+		result = append(result, lease)
+	}
+	rows.Close()
+	//we do not know if there are more rows, just assume
 	return result, len(result) == limit, nil
 }
 
@@ -249,37 +280,62 @@ func (c *CRClient) Delete(ctx context.Context, timelineID []byte, messageIDs []t
 		ids[i] = messageIDs[i].ID
 	}
 
+	failBatch := func(err error) {
+		for i := range batch {
+			result = append(result, errors.MessageIDTuple{
+				MessageID: batch[i],
+				Error: errors.Dejaror{
+					Severity:         errors.SeverityError,
+					Message:          "failed",
+					Module:           errors.ModuleStorage,
+					Operation:        "Delete",
+					Kind:             0,
+					Details:          nil,
+					WrappedErr:       err,
+					ShouldRetry:      true,
+					ClientShouldSync: false,
+				},
+			})
+		}
+	}
+
 	for len(ids) > 0 {
 		max := min(len(ids), batchSize)
 		batch = ids[:max]
 		ids = ids[max:]
 
 		holders := strings.Split(strings.Repeat("?", max), "")
-		query := fmt.Sprintf(`DELETE * FROM %s WHERE id IN (%s);`,
-			table(string(timelineID)), strings.Join(holders, ","))
+		//the same queries works for bodies as well
+		query := fmt.Sprintf(`DELETE * FROM $TABLE WHERE id IN (%s);`, strings.Join(holders, ","))
 
 		args := make([]interface{}, len(batch))
 		for i := range batch {
 			args[i] = batch[i]
 		}
-		_, err := c.db.ExecContext(ctx, query, args...)
+
+		txn, err := c.db.Begin()
 		if err != nil {
-			for i := range batch {
-				result = append(result, errors.MessageIDTuple{
-					MessageID: batch[i],
-					Error: errors.Dejaror{
-						Severity:         errors.SeverityError,
-						Message:          "failed",
-						Module:           errors.ModuleStorage,
-						Operation:        "Delete",
-						Kind:             0,
-						Details:          nil,
-						WrappedErr:       err,
-						ShouldRetry:      true,
-						ClientShouldSync: false,
-					},
-				})
-			}
+			failBatch(err)
+			continue
+		}
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(string(timelineID)), -1), args...)
+		if err != nil {
+			failBatch(err)
+			txn.Rollback()
+			continue
+		}
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(string(timelineID)), -1), args...)
+		if err != nil {
+			failBatch(err)
+			txn.Rollback()
+			continue
+		}
+
+		err = txn.Commit()
+		if err != nil {
+			failBatch(err)
+			txn.Rollback()
+			continue
 		}
 	}
 
