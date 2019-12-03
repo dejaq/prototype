@@ -64,7 +64,7 @@ func (c *Loader) Start(ctx context.Context) {
 				c.myCtx = nil
 				return
 			case <-time.After(c.timer.GetNextDuration()):
-				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*5)
+				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*15)
 				allConsumersGotAllMessages := c.loadMessages(thisIntervalCtx)
 				if allConsumersGotAllMessages {
 					c.timer.Increase() //we can wait for more time next time
