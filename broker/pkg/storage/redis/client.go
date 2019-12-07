@@ -164,7 +164,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
+func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
 	// TODO use unsafe for a better conversion
 	// TODO use transaction select, get message, lease
 
@@ -180,7 +180,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 		// max number of messages to get
 		strconv.Itoa(limit),
 		// consumerId
-		consumerId,
+		string(consumerId),
 	}
 
 	// slice of buckets ids
@@ -265,6 +265,7 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 	var message timeline.Message
 	// TODO they are not came on same order (on container order was respected)
 	var key string
+	var hadID bool
 	for i, v := range rawMessage {
 		// get key
 		if i%2 == 0 {
@@ -278,6 +279,7 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 		}
 		switch key {
 		case "ID":
+			hadID = true
 			message.ID = *(*[]byte)(unsafe.Pointer(&vAsString))
 		case "TimestampMS":
 			timestamp, _ := strconv.ParseUint(vAsString, 10, 64)
@@ -300,6 +302,9 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 	}
 
 	if len(message.ID) == 0 {
+		if hadID {
+			return message, errors.New("the message had an ID but it was empty")
+		}
 		return message, errors.New("the message did not had the ID")
 	}
 

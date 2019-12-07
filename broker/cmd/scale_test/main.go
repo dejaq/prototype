@@ -39,7 +39,7 @@ var consumersBufferSize = int64(100)
 func main() {
 	topicCount := 12
 	batchSize := 15
-	bucketCount := uint16(1000)
+	bucketCount := uint16(52)
 	msgsCountPerTopic := 33
 	producersPerTopic := 2
 	consumersPerTopic := 13
@@ -145,7 +145,7 @@ func startBroker(ctx context.Context, logger *logrus.Logger, timeoutSeconds time
 		}
 	case "cockroach":
 		// Connect to the "bank" database.
-		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable")
+		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable&binary_parameters")
 		if err != nil {
 			return fmt.Errorf("error connecting to the database: %w", err)
 		}

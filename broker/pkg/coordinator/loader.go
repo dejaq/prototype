@@ -178,7 +178,7 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 	for bi := range tuple.C.AssignedBuckets {
 		hasMoreForThisBucket = true // we presume it has
 		for hasMoreForThisBucket {
-			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, tuple.C.GetTopic(), tuple.C.AssignedBuckets[bi], tuple.C.GetID(), tuple.C.LeaseMs, limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
+			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, tuple.C.GetTopic(), tuple.C.AssignedBuckets[bi], tuple.C.ID, tuple.C.LeaseMs, limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
