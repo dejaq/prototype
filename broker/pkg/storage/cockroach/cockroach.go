@@ -1,6 +1,7 @@
 package cockroach
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -196,22 +197,22 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 	return result
 }
 
-func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId string, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
+func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 
 	//https://www.cockroachlabs.com/docs/v19.2/update.html#update-and-return-values
-	query := strings.Replace(`UPDATE $TOPIC SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
+	queryUpdate := strings.Replace(`UPDATE $TOPIC SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
 		( timeline <= $1 OR (timeline > $1 AND timeline <= $4 AND consumer_id = NULL )) 
 		AND bucket_id >= $5 AND bucket_id <= $6
 		LIMIT $7
 		RETURNING id;
 	`, "$TOPIC", table(string(timelineID)), -1)
 
-	st, err := c.db.PrepareContext(ctx, query)
+	st, err := c.db.PrepareContext(ctx, queryUpdate)
 	if err != nil {
 		return nil, false, err
 	}
 	rows, err := st.Query(
-		dtime.TimeToMS(time.Now()), leaseMs, []byte(consumerId), maxTimestamp, buckets.Min(), buckets.Max(), limit,
+		dtime.TimeToMS(time.Now()), leaseMs, consumerId, maxTimestamp, buckets.Min(), buckets.Max(), limit,
 		//TODO make the named parameter work :/ or file a bug report
 		//sql.Named("now", dtime.TimeToMS(time.Now())),
 		//sql.Named("lease", leaseMs),
@@ -224,45 +225,72 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	if err != nil {
 		return nil, false, fmt.Errorf("failed preparing stmt %w", err)
 	}
+	defer rows.Close()
 
 	// Print out the returned value.
-	msgIDs := []string{}
+	msgIDs := []interface{}{}
+	params := []string{}
+	//var ids string
+	//var idb []byte
 	for rows.Next() {
-		var id []byte
+		var id sql.RawBytes
 		if err := rows.Scan(&id); err != nil {
 			log.Fatal(err)
 		}
-		msgIDs = append(msgIDs, fmt.Sprintf("%s", id))
+		//https://www.cockroachlabs.com/docs/v19.2/bytes.html#main-content
+		msgIDs = append(msgIDs, id)
+		//for SQL parameters $1, $2 ...
+		params = append(params, fmt.Sprintf("$%d", len(msgIDs)))
+		//ids = fmt.Sprintf("%x", id)
+		//idb = id
 	}
-	rows.Close()
+
+	//c.logger.Infof("%v %v", ids, idb)
 
 	if len(msgIDs) == 0 {
 		return nil, false, nil
 	}
 
-	query = fmt.Sprintf(`SELECT 
+	querySelect := fmt.Sprintf(`SELECT 
 		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id,
 		topic.consumer_id, topic.version, bodies.body
 		FROM %s AS topic INNER JOIN %s AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
-		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(msgIDs, ","))
+		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(params, ","))
 
-	rows, err = c.db.QueryContext(ctx, query)
+	sel, err := c.db.PrepareContext(ctx, querySelect)
 	if err != nil {
+		//TODO revert the leases
 		return nil, false, err
 	}
+	defer sel.Close()
+
+	rowsSelect, err := sel.Query(msgIDs...)
+	if err != nil {
+		//TODO revert the leases
+		return nil, false, err
+	}
+	defer rowsSelect.Close()
+
 	result := make([]timeline.Lease, 0, len(msgIDs))
-	for rows.Next() {
+	for rowsSelect.Next() {
 		lease := timeline.Lease{}
 		//TODO add here RawBytes and read the body without a copy! optimization, then copy the slice to the lease.message.body
-		if err := rows.Scan(
+		if err := rowsSelect.Scan(
 			&lease.Message.ID, &lease.ExpirationTimestampMS, &lease.Message.BucketID, &lease.Message.TimestampMS, &lease.Message.ProducerGroupID,
 			&lease.ConsumerID, &lease.Message.Version, &lease.Message.Body,
 		); err != nil {
 			log.Fatal(err)
 		}
+		if bytes.Compare(lease.ConsumerID, consumerId) != 0 {
+			c.logger.Fatalf("consumerID is different  %v %v", lease.ConsumerID, consumerId)
+		}
 		result = append(result, lease)
 	}
-	rows.Close()
+
+	if len(result) != len(msgIDs) {
+		//TODO revert the leases
+		return result, true, errors.NewDejaror("missing leased IDs (BUG)", "fetch")
+	}
 	//we do not know if there are more rows, just assume
 	return result, len(result) == limit, nil
 }
