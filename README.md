@@ -3,7 +3,7 @@
 DejaQ is a distributed messaging queue built for high-throughput persistent messages that have an arbitrary or time-based order. It allows a point-to-point scheduled message-oriented async communication for loosely coupled systems in time and space (reference). Its main use case is to allow consumers to process messages that are produced out of order (the messages are consumed in a different order than they were produced).
 
 # This repository 
-The current project is meant to be a working demo, an MVP of what DejaQ will become. We only implemented the minimal amount of commands and a single storage (redis). There is only one broker but there can be multiple topics, producers and consumers. 
+The current project is meant to be a working demo, a prototype, an MVP of what DejaQ will become. We only implemented the minimal amount of commands and features. There can be only one broker but there can be multiple topics, producers and consumers.
 
 
 Introduction and topics
