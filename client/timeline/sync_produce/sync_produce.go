@@ -6,9 +6,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/client/timeline/producer"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
 	"go.uber.org/atomic"

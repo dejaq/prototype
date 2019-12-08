@@ -3,11 +3,11 @@ package timeline
 import (
 	"context"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
+	"github.com/dejaq/prototype/broker/domain"
 
-	"github.com/bgadrian/dejaq-broker/common/errors"
+	"github.com/dejaq/prototype/common/errors"
 
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/common/timeline"
 )
 
 type MsgTime struct {

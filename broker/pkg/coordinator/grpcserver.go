@@ -7,9 +7,9 @@ import (
 	"io"
 	"log"
 
-	derrors "github.com/bgadrian/dejaq-broker/common/errors"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
-	grpc "github.com/bgadrian/dejaq-broker/grpc/DejaQ"
+	derrors "github.com/dejaq/prototype/common/errors"
+	"github.com/dejaq/prototype/common/timeline"
+	grpc "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 

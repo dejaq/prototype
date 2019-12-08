@@ -8,9 +8,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
-	derrors "github.com/bgadrian/dejaq-broker/common/errors"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/broker/domain"
+	derrors "github.com/dejaq/prototype/common/errors"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/go-redis/redis"
 )
 

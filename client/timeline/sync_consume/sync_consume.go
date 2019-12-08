@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/client/timeline/consumer"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/prometheus/common/log"
 	"go.uber.org/atomic"
 )

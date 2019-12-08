@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/bgadrian/dejaq-broker/common/protocol"
+	"github.com/dejaq/prototype/common/protocol"
 
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/common/timeline"
 )
 
 var (

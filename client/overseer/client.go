@@ -3,9 +3,9 @@ package overseer
 import (
 	"context"
 
-	"github.com/bgadrian/dejaq-broker/client"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
-	dejaq "github.com/bgadrian/dejaq-broker/grpc/DejaQ"
+	"github.com/dejaq/prototype/client"
+	"github.com/dejaq/prototype/common/timeline"
+	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 

@@ -3,7 +3,7 @@ package timeline
 import (
 	"unsafe"
 
-	"github.com/bgadrian/dejaq-broker/common/protocol"
+	"github.com/dejaq/prototype/common/protocol"
 )
 
 // Message is a timeline full representation. Not all the fields are populated all the time

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
+	"github.com/dejaq/prototype/broker/pkg/synchronization"
 )
 
 type Catalog struct {

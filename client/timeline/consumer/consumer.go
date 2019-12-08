@@ -11,9 +11,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
-	dejaq "github.com/bgadrian/dejaq-broker/grpc/DejaQ"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/dejaq/prototype/common/timeline"
+	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"google.golang.org/grpc"
 )

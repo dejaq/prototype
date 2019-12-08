@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
-	"github.com/bgadrian/dejaq-broker/common/errors"
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/broker/domain"
+	"github.com/dejaq/prototype/common/errors"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )

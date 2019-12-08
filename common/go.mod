@@ -1,4 +1,4 @@
-module github.com/bgadrian/dejaq-broker/common
+module github.com/dejaq/prototype/common
 
 go 1.13
 

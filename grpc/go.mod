@@ -1,4 +1,4 @@
-module github.com/bgadrian/dejaq-broker/grpc
+module github.com/dejaq/prototype/grpc
 
 go 1.13
 

@@ -1,15 +1,15 @@
-module github.com/bgadrian/dejaq-broker/broker
+module github.com/dejaq/prototype/broker
 
 require (
 	github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6 // indirect
 	github.com/alicebob/miniredis v2.5.0+incompatible
-	github.com/bgadrian/dejaq-broker/client v0.0.0-00010101000000-000000000000
-	github.com/bgadrian/dejaq-broker/common v0.0.0
-	github.com/bgadrian/dejaq-broker/grpc v0.0.0
 	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/etcd v3.3.15+incompatible // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
+	github.com/dejaq/prototype/client v0.0.0-00010101000000-000000000000
+	github.com/dejaq/prototype/common v0.0.0
+	github.com/dejaq/prototype/grpc v0.0.0
 	github.com/go-redis/redis v6.15.6+incompatible
 	github.com/gocql/gocql v0.0.0-20190915153252-16cf9ea1b3e2
 	github.com/gogo/protobuf v1.3.0 // indirect
@@ -47,10 +47,10 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-replace github.com/bgadrian/dejaq-broker/common => ../common/
+replace github.com/dejaq/prototype/common => ../common/
 
-replace github.com/bgadrian/dejaq-broker/grpc => ../grpc/
+replace github.com/dejaq/prototype/grpc => ../grpc/
 
-replace github.com/bgadrian/dejaq-broker/client => ../client/
+replace github.com/dejaq/prototype/client => ../client/
 
 go 1.13

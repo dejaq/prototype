@@ -9,14 +9,14 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/bgadrian/dejaq-broker/common/protocol"
+	"github.com/dejaq/prototype/common/protocol"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
-	"github.com/bgadrian/dejaq-broker/common/errors"
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/broker/domain"
+	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
+	"github.com/dejaq/prototype/broker/pkg/synchronization"
+	"github.com/dejaq/prototype/common/errors"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/prometheus/common/log"
 	"github.com/rcrowley/go-metrics"
 )

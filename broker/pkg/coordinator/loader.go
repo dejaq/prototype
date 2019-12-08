@@ -8,10 +8,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
-	"github.com/bgadrian/dejaq-broker/common/protocol"
-	dtime "github.com/bgadrian/dejaq-broker/common/time"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
+	"github.com/dejaq/prototype/common/protocol"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/dejaq/prototype/common/timeline"
 )
 
 type LConfig struct {

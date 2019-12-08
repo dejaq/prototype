@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
+	"github.com/dejaq/prototype/broker/domain"
 
-	storage "github.com/bgadrian/dejaq-broker/broker/pkg/storage/timeline"
-	derrors "github.com/bgadrian/dejaq-broker/common/errors"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
+	derrors "github.com/dejaq/prototype/common/errors"
+	"github.com/dejaq/prototype/common/timeline"
 	"github.com/gocql/gocql"
 )
 

@@ -1,10 +1,10 @@
-module github.com/bgadrian/dejaq-broker/client
+module github.com/dejaq/prototype/client
 
 go 1.13
 
 require (
-	github.com/bgadrian/dejaq-broker/common v0.0.0-00010101000000-000000000000
-	github.com/bgadrian/dejaq-broker/grpc v0.0.0-00010101000000-000000000000
+	github.com/dejaq/prototype/common v0.0.0-00010101000000-000000000000
+	github.com/dejaq/prototype/grpc v0.0.0-00010101000000-000000000000
 	github.com/google/flatbuffers v1.11.0
 	github.com/pkg/errors v0.8.0
 	github.com/prometheus/common v0.6.0
@@ -13,6 +13,6 @@ require (
 	google.golang.org/grpc v1.24.0
 )
 
-replace github.com/bgadrian/dejaq-broker/common => ../common
+replace github.com/dejaq/prototype/common => ../common
 
-replace github.com/bgadrian/dejaq-broker/grpc => ../grpc
+replace github.com/dejaq/prototype/grpc => ../grpc

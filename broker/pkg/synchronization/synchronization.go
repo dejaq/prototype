@@ -3,9 +3,9 @@ package synchronization
 import (
 	"context"
 
-	"github.com/bgadrian/dejaq-broker/client/timeline/consumer"
-	"github.com/bgadrian/dejaq-broker/client/timeline/producer"
-	"github.com/bgadrian/dejaq-broker/common/timeline"
+	"github.com/dejaq/prototype/client/timeline/consumer"
+	"github.com/dejaq/prototype/client/timeline/producer"
+	"github.com/dejaq/prototype/common/timeline"
 )
 
 type Topic struct {

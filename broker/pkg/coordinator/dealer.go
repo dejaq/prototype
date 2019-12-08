@@ -3,7 +3,7 @@ package coordinator
 import (
 	"math"
 
-	"github.com/bgadrian/dejaq-broker/broker/domain"
+	"github.com/dejaq/prototype/broker/domain"
 )
 
 // Dealer assigns buckets to consumer (mutates the input !) in a deterministic way
@@ -25,7 +25,7 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 	if consumersCount == 1 || noOfBuckets == 1 {
 		result = append(result, domain.BucketRange{
 			Start: 0,
-			End: noOfBuckets - 1,
+			End:   noOfBuckets - 1,
 		})
 		return result
 	}
@@ -37,7 +37,7 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 		for ; i < consumersCount; i++ {
 			result = append(result, domain.BucketRange{
 				Start: i,
-				End: i,
+				End:   i,
 			})
 		}
 		return result
@@ -108,8 +108,8 @@ func (d GladiatorDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 		}
 	}
 
-	for i := 0; i < int(noOfConsumers) * int(noOfRanges-1); i++ {
-		consumerIndex := (i + int(noOfRanges))%int(noOfConsumers)
+	for i := 0; i < int(noOfConsumers)*int(noOfRanges-1); i++ {
+		consumerIndex := (i + int(noOfRanges)) % int(noOfConsumers)
 		consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
 	}
 }

@@ -2,7 +2,8 @@ package etcd
 
 import (
 	"context"
-	"github.com/bgadrian/dejaq-broker/broker/pkg/synchronization"
+
+	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	"go.etcd.io/etcd/clientv3"
 )
 
