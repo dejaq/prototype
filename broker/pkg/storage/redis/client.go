@@ -201,23 +201,19 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 	}
 
 	// TODO not the best practice, find a better solution here to remove interface mess
-	d := data.([]interface{})
-	for _, val := range d {
-		v := val.([]interface{})
+	dataCollection := data.([]interface{})
+	for _, val := range dataCollection {
+		data := val.([]interface{})
 
-		// get data
-		//msgID := v[0].(string)
-		code := v[1].(string)
-		endLeaseMS := uint64(v[2].(int64))
-		message := v[3].([]interface{})
+		exitCode := data[0].(string)
 
 		// no success
-		if code != "0" {
+		if exitCode != "0" {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "getAndLease"
 
-			switch code {
+			switch exitCode {
 			case "2":
 				derror.Message = ErrOperationFailRollbackSuccess.Error()
 				derror.ShouldRetry = true
@@ -236,8 +232,20 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 			continue
 		}
 
-		timelineMessage, err := convertRawMsgToTimelineMsg(message)
+		timelineMessage, err := convertRawMsgToTimelineMsg(data)
 
+		if err != nil {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "getAndLease"
+			derror.Message = err.Error()
+			derror.ShouldRetry = true
+			derror.WrappedErr = err
+			logrus.WithError(derror).Errorf("redis error")
+			continue
+		}
+
+		endLeaseMS, err := strconv.ParseUint(data[1].(string), 10, 64)
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
@@ -260,53 +268,44 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 }
 
 func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, error) {
-	// TODO implement errors
-
 	var message timeline.Message
-	// TODO they are not came on same order (on container order was respected)
-	var key string
-	var hadID bool
-	for i, v := range rawMessage {
-		// get key
-		if i%2 == 0 {
-			key = v.(string)
-			continue
-		}
+	var tmp []string
 
-		vAsString, ok := v.(string)
+	for i := 2; i <= 9; i++ {
+		v, ok := rawMessage[i].(string)
 		if !ok {
 			return timeline.Message{}, errors.New("malformed message")
 		}
-		switch key {
-		case "ID":
-			hadID = true
-			message.ID = *(*[]byte)(unsafe.Pointer(&vAsString))
-		case "TimestampMS":
-			timestamp, _ := strconv.ParseUint(vAsString, 10, 64)
-			message.TimestampMS = timestamp
-		case "BodyID":
-			message.BodyID = *(*[]byte)(unsafe.Pointer(&vAsString))
-		case "Body":
-			message.Body = *(*[]byte)(unsafe.Pointer(&vAsString))
-		case "ProducerGroupID":
-			message.ProducerGroupID = *(*[]byte)(unsafe.Pointer(&vAsString))
-		case "LockConsumerID":
-			message.LockConsumerID = *(*[]byte)(unsafe.Pointer(&vAsString))
-		case "BucketID":
-			bucketIdUint16, _ := strconv.ParseUint(vAsString, 10, 16)
-			message.BucketID = uint16(bucketIdUint16)
-		case "Version":
-			version, _ := strconv.ParseUint(vAsString, 10, 16)
-			message.Version = uint16(version)
-		}
+		tmp = append(tmp, v)
 	}
 
-	if len(message.ID) == 0 {
-		if hadID {
-			return message, errors.New("the message had an ID but it was empty")
-		}
-		return message, errors.New("the message did not had the ID")
+	if len(tmp) != 8 {
+		return timeline.Message{}, errors.New("malformed message")
 	}
+
+	message.ID = *(*[]byte)(unsafe.Pointer(&tmp[0]))
+
+	timestamp, err := strconv.ParseUint(tmp[1], 10, 64)
+	if err != nil {
+		return timeline.Message{}, err
+	}
+	message.TimestampMS = timestamp
+	message.BodyID = *(*[]byte)(unsafe.Pointer(&tmp[2]))
+	message.Body = *(*[]byte)(unsafe.Pointer(&tmp[3]))
+	message.ProducerGroupID = *(*[]byte)(unsafe.Pointer(&tmp[4]))
+	message.LockConsumerID = *(*[]byte)(unsafe.Pointer(&tmp[5]))
+
+	bucketIdUint16, err := strconv.ParseUint(tmp[6], 10, 16)
+	if err != nil {
+		return timeline.Message{}, err
+	}
+	message.BucketID = uint16(bucketIdUint16)
+
+	version, err := strconv.ParseUint(tmp[7], 10, 16)
+	if err != nil {
+		return timeline.Message{}, err
+	}
+	message.Version = uint16(version)
 
 	return message, nil
 }
