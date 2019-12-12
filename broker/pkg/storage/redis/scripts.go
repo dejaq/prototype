@@ -25,7 +25,7 @@ var scripts = struct {
 		local okhmap = redis.call("HMSET", message_key, unpack(ARGV))
 		
 		-- check if is ok, rollback transaction if not
-		if okhmap ~= "OK" then  --TODO fix here, problem between versions (need.ok)
+		if okhmap.ok ~= "OK" then  --TODO miniredis wants without .ok (not sure where is the issue)
 	        local removeOk = redis.call("ZREM", timeline_key, message_id)
 	        if removeOk ~= 1 then return "3" end
 	        return "4"
@@ -74,7 +74,7 @@ var scripts = struct {
 	
 	            -- get message details
 	            local message_key = bucket_key .. "::" .. m.id
-	            local message = redis.call("HGETALL", message_key)
+	            local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
 	
 	            -- process only available messages (EndLeaseMS(score) <= now() || (EndLeaseMS(score) > now() && empty ConsumerId) 
 	            if (m.score <= time_reference_MS or (m.score > time_reference_MS and message[12] == '')) then
@@ -83,7 +83,6 @@ var scripts = struct {
 	
 	                local has_error = false 
 	                local tmp = {}
-					table.insert(tmp, m.id)
 	
 	                -- update lease on timeline
 					local ok = redis.call("ZADD", bucket_key, end_lease_MS, m.id)
@@ -95,7 +94,7 @@ var scripts = struct {
 	                -- update consumerId and lease on message
 					if has_error == false then 
 						ok = redis.call("HMSET", message_key, "LockConsumerID", consumer_id)
-						if ok ~= "OK" then  --TODO fix here, problem between versions (need.ok)
+						if ok.ok ~= "OK" then  --TODO miniredis wants without .ok (not sure where is the issue)
 							-- Rollback if need, return 2 if success rollback
 							ok = redis.call("ZADD", bucket_key, m.score, m.id)
 	                        -- code 3: fail rollback
@@ -109,8 +108,15 @@ var scripts = struct {
 	                
 	                -- code 0: no errors
 	                if has_error == false then table.insert(tmp, "0") end 
-	                table.insert(tmp, end_lease_MS)
-	                table.insert(tmp, message)
+	                table.insert(tmp, tostring(end_lease_MS))
+	                table.insert(tmp, message[1])
+	                table.insert(tmp, message[2])
+	                table.insert(tmp, message[3])
+	                table.insert(tmp, message[4])
+	                table.insert(tmp, message[5])
+	                table.insert(tmp, consumer_id)
+	                table.insert(tmp, message[7])
+	                table.insert(tmp, message[8])
 	                table.insert(data, tmp)
 	            end
 	        end

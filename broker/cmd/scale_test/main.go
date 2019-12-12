@@ -49,13 +49,16 @@ func main() {
 	produceDeltaMax := time.Second
 	overseerSeeds := "127.0.0.1:9000"
 	brokerListenAddr := "127.0.0.1:9000"
+	redisHost := "127.0.0.1:6379"
 
 	viper.BindEnv("STORAGE")
-	viper.SetDefault("STORAGE", "miniredis")
+	// STORAGE options: "miniredis", "redis"
+	// "redis" is tested with version 5.0.6
+	viper.SetDefault("STORAGE", "redis")
 	logger := logrus.New()
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*runTimeout))
-	err := startBroker(ctx, logger, runTimeout, brokerListenAddr)
+	err := startBroker(ctx, logger, runTimeout, brokerListenAddr, redisHost)
 	if err != nil {
 		logger.WithError(err).Fatal("failed startBroker")
 	}
@@ -121,11 +124,15 @@ func main() {
 	cancel() //propagate trough the context
 }
 
-func startBroker(ctx context.Context, logger *logrus.Logger, timeoutSeconds time.Duration, brokerListenAddr string) error {
+func startBroker(ctx context.Context, logger *logrus.Logger, timeoutSeconds time.Duration, brokerListenAddr string, redisHost string) error {
 	var storageClient storageTimeline.Repository
 	switch viper.GetString("STORAGE") {
 	case "redis":
-		return errors.New("storage not implemented")
+		var err error
+		storageClient, err = redis.New(redisHost)
+		if err != nil {
+			return fmt.Errorf("failed to connect to redis server: %w", err)
+		}
 	case "miniredis":
 		// start in memory redis server
 		redisServer, err := redis.NewServer()
