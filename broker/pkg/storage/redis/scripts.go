@@ -2,23 +2,24 @@ package redis
 
 // scripts hold scripts that need to be loaded into redis
 var scripts = struct {
-	insert      string
-	getAndLease string
-	delete      string
+	insert          string
+	getAndLease     string
+	delete          string
+	getByConsumerId string
 }{
 	insert: `
-	    local timeline_key = KEYS[1]
+	    local bucket_key = KEYS[1]
 		local message_key = KEYS[2]
 	    local message_id = KEYS[3]
 	    local end_lease_MS = KEYS[4]
 	
 	    -- check if messageId already exists and return error
-		if redis.call("ZRANK", timeline_key, message_id) ~= false then
+		if redis.call("ZRANK", bucket_key, message_id) ~= false then
 			return "1"
 		end
 		
 		-- inset on timeline
-		local ok = redis.call("ZADD", timeline_key, end_lease_MS, message_id)
+		local ok = redis.call("ZADD", bucket_key, end_lease_MS, message_id)
 		if ok ~= 1 then return "2" end
 		
 		-- inset on hashMap
@@ -26,7 +27,7 @@ var scripts = struct {
 		
 		-- check if is ok, rollback transaction if not
 		if okhmap.ok ~= "OK" then  --TODO miniredis wants without .ok (not sure where is the issue)
-	        local removeOk = redis.call("ZREM", timeline_key, message_id)
+	        local removeOk = redis.call("ZREM", bucket_key, message_id)
 	        if removeOk ~= 1 then return "3" end
 	        return "4"
 		 end
@@ -105,7 +106,11 @@ var scripts = struct {
 	                        has_error = true
 						end
 					end
-	                
+	
+	                -- add messageId to consumerId sortedSet used in getByConsumerId
+	                -- returns 1 => added, 0 => score updated (both can be considered success)
+	                redis.call("ZADD",  timeline_key .. "::" .. consumer_id, end_lease_MS,  bucket_key .. "::" .. m.id)
+	               
 	                -- code 0: no errors
 	                if has_error == false then table.insert(tmp, "0") end 
 	                table.insert(tmp, tostring(end_lease_MS))
@@ -124,5 +129,28 @@ var scripts = struct {
 	
 	    return data
 	`,
-	delete: `return 100`,
+	delete:          `return 100`,
+	getByConsumerId: `
+	    local consumer_key = KEYS[1]
+	    local time_reference_MS = KEYS[2]
+	
+	    local data = {}
+	
+	    local message_ids = redis.call("ZRANGEBYSCORE", consumer_key, time_reference_MS, "+inf")
+	    for idx, message_key in pairs(message_ids) do
+	        local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
+	        local tmp = {}
+			table.insert(tmp, message[1])
+			table.insert(tmp, message[2])
+			table.insert(tmp, message[3])
+			table.insert(tmp, message[4])
+			table.insert(tmp, message[5])
+			table.insert(tmp, message[6])
+			table.insert(tmp, message[7])
+			table.insert(tmp, message[8])
+			table.insert(data, tmp)
+	    end
+	
+	    return data
+	`,
 }

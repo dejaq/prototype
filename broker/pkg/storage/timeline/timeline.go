@@ -34,7 +34,7 @@ type Repository interface {
 	// COUNT messages BY TimelineID, RANGE and LockConsumerID is not empty (count waiting status)
 	CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64
 	// SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte) []timeline.Message
+	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, maxTimestamp uint64) []timeline.Message
 	// SELECT messages by TimelineID, ProducerOwnerID (ownership control)
 	SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message
 }

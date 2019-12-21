@@ -31,9 +31,10 @@ var (
 )
 
 var operationToScript = map[string]string{
-	"insert":      scripts.insert,
-	"getAndLease": scripts.getAndLease,
-	"delete":      scripts.delete,
+	"insert":          scripts.insert,
+	"getAndLease":     scripts.getAndLease,
+	"delete":          scripts.delete,
+	"getByConsumerId": scripts.getByConsumerId,
 }
 
 // New ...
@@ -232,7 +233,8 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 			continue
 		}
 
-		timelineMessage, err := convertRawMsgToTimelineMsg(data)
+		// till 1 indexes of data represents metadata
+		timelineMessage, err := convertRawMsgToTimelineMsg(data[2:])
 
 		if err != nil {
 			var derror derrors.Dejaror
@@ -271,7 +273,7 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 	var message timeline.Message
 	var tmp []string
 
-	for i := 2; i <= 9; i++ {
+	for i := 0; i <= 7; i++ {
 		v, ok := rawMessage[i].(string)
 		if !ok {
 			return timeline.Message{}, errors.New("malformed message")
@@ -318,6 +320,7 @@ func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 // Delete ...
 func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO use transaction here MULTI and EXEC
+	// TODO delete them also from timeline::bucket::consumerId::messageId
 
 	var deleteErrors []derrors.MessageIDTuple
 
@@ -377,8 +380,48 @@ func (c *Client) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, 
 }
 
 // SelectByConsumer - not used at this time
-func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte) []timeline.Message {
-	return nil
+func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, timeReferenceMS uint64) []timeline.Message {
+	var messages []timeline.Message
+
+	keys := []string{
+		// timelineKey
+		c.createTimelineKey("cluster_name", timelineID) + "::" + string(consumerID),
+		// time reference in MS
+		strconv.FormatUint(timeReferenceMS, 10),
+	}
+
+	data, err := c.client.EvalSha(c.operationToScriptHash["getByConsumerId"], keys).Result()
+	if err != nil {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "getByConsumerId"
+		derror.Message = err.Error()
+		derror.ShouldRetry = true
+		derror.WrappedErr = ErrStorageInternalError
+		logrus.WithError(derror).Errorf("redis error")
+		return []timeline.Message{}
+	}
+
+	dataCollection := data.([]interface{})
+	for _, val := range dataCollection {
+		data := val.([]interface{})
+		timelineMessage, err := convertRawMsgToTimelineMsg(data)
+
+		if err != nil {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "getByConsumerId"
+			derror.Message = err.Error()
+			derror.ShouldRetry = true
+			derror.WrappedErr = err
+			logrus.WithError(derror).Errorf("redis error")
+			continue
+		}
+
+		messages = append(messages, timelineMessage)
+	}
+
+	return messages
 }
 
 // SelectByProducer - not used at this time
