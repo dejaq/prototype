@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
+
+	"github.com/dejaq/prototype/common/protocol"
 
 	derrors "github.com/dejaq/prototype/common/errors"
 	"github.com/dejaq/prototype/common/timeline"
@@ -23,6 +26,7 @@ type TimelineListeners struct {
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
+	ConsumerStatus       func(context.Context, protocol.ConsumerStatus) error
 	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
 	ConsumerDisconnected func(context.Context, string) error
 
@@ -88,15 +92,56 @@ func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.Ti
 	return builder, err
 }
 
-func (s *GRPCServer) TimelineConsume(req *grpc.TimelineConsumeRequest, stream grpc.Broker_TimelineConsumeServer) error {
-	pipeline, err := s.listeners.ConsumerConnected(stream.Context(), string(req.SessionID()))
+func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) error {
+	var sessionID []byte
+	var sessionLock sync.RWMutex
+	sessionLock.Lock()
+	go func() {
+		var err error
+		var request *grpc.TimelineConsumerStatus
+		for err == nil {
+			select {
+			case <-stream.Context().Done():
+				return
+			default:
+				request, err = stream.Recv()
+				if request == nil { //empty status ?!?!?! TODO log this as a warning
+					continue
+				}
+				if err == io.EOF { //it means the stream batch is over
+					break
+				}
+				if err != nil {
+					_ = fmt.Errorf("grpc server TimelineCreateMessages client failed err=%s", err.Error())
+					break
+				}
+				if sessionID == nil {
+					sessionID = request.SessionID()
+					sessionLock.Unlock()
+				}
+
+				consumerStatus := protocol.NewConsumerStatus(sessionID)
+				consumerStatus.AvailableBufferSize = request.AvailableBufferSize()
+				consumerStatus.MaxBufferSize = request.MaxBufferSize()
+				s.listeners.ConsumerStatus(stream.Context(), consumerStatus)
+
+				if err != nil {
+					log.Fatalf("Update Consumer status failed, err=%s", err)
+				}
+			}
+		}
+	}()
+
+	sessionLock.Lock()
+	pipeline, err := s.listeners.ConsumerConnected(stream.Context(), string(sessionID))
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		s.listeners.ConsumerDisconnected(stream.Context(), string(req.SessionID()))
+		s.listeners.ConsumerDisconnected(stream.Context(), string(sessionID))
 	}()
+	sessionLock.Unlock()
 
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)

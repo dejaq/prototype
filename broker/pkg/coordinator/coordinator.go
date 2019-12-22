@@ -73,6 +73,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerHandshake:    c.consumerHandshake,
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
+		ConsumerStatus:       c.consumerStatus,
 		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
@@ -151,6 +152,7 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 	}
 	return c.greeter.ConsumerConnected(sessionID)
 }
+
 func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string) error {
 	consumer, err := c.greeter.GetConsumer(sessionID)
 	if err != nil {
@@ -161,6 +163,15 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.topic]
 	c.greeter.ConsumerDisconnected(sessionID)
 	return c.catalog.RemoveConsumer(ctx, consumer.GetTopic(), consumer.GetID())
+}
+
+func (c *Coordinator) consumerStatus(ctx context.Context, status protocol.ConsumerStatus) error {
+	consumer, err := c.greeter.GetConsumer(string(status.SessionID))
+	if err != nil {
+		return err
+	}
+	consumer.SetStatus(status)
+	return nil
 }
 
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {

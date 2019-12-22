@@ -13,6 +13,7 @@ type Consumer struct {
 
 	mu              sync.RWMutex
 	assignedBuckets []domain.BucketRange
+	status          protocol.ConsumerStatus
 	hydrateStatus   protocol.HydrationStatus
 
 	topic   string
@@ -71,4 +72,22 @@ func (c *Consumer) GetCluster() string {
 
 func (c *Consumer) GetLeaseMs() uint64 {
 	return c.leaseMs
+}
+
+func (c *Consumer) SetStatus(status protocol.ConsumerStatus) {
+	c.mu.Lock()
+	c.status = status
+	c.mu.Unlock()
+}
+
+func (c *Consumer) LoadAvailableBufferSize() uint32 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.status.AvailableBufferSize
+}
+
+func (c *Consumer) AddAvailableBufferSize(delta uint32) {
+	c.mu.Lock()
+	c.status.AvailableBufferSize += delta
+	c.mu.Unlock()
 }

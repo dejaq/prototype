@@ -97,11 +97,20 @@ table TimelineConsumerHandshakeResponse {
     err:Error;
 }
 
-
 table TimelineConsumeRequest {
     traceID:string;
     timeoutMS:ulong;
     sessionID:string;
+}
+
+table TimelineConsumerStatus {
+    traceID:string;
+    timeoutMS:ulong;
+    sessionID:string;
+    maxBufferSize:uint;
+    availableBufferSize:uint;
+    lagMS:uint;
+    lagNOMessages:uint;
 }
 
 table TimelineExtendLeaseRequest {
@@ -154,7 +163,7 @@ rpc_service Broker {
     //carrier
 
     //the broker will push messages
-    TimelineConsume(TimelineConsumeRequest):TimelinePushLeaseResponse (streaming: "server");
+    TimelineConsume(TimelineConsumerStatus):TimelinePushLeaseResponse (streaming: "bidi");
 
     //client pushes data, expect one bulk response
     TimelineCreateMessages(TimelineCreateMessageRequest):TimelineResponse (streaming: "client");
