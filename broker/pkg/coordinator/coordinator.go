@@ -93,11 +93,23 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerHandshake:    c.consumerHandshake,
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
-		GetConsumer:          c.getConsumer,
-		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
-			//TODO add here a way to identify the consumer or producer
-			//only specific clients can delete specific messages
-			return c.storage.Delete(ctx, []byte(timelineID), msgs)
+		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
+			consumer, err := c.greeter.GetConsumer(sessionID)
+			if err == nil {
+				for i := range msgs {
+					msgs[i].LockConsumerID = consumer.ID
+				}
+				return c.storage.Delete(ctx, []byte(timelineID), msgs)
+			}
+			producer, err := c.greeter.GetProducerSessionData(sessionID)
+			if err == nil {
+				for i := range msgs {
+					msgs[i].ProducerGroupID = producer.GroupID
+				}
+				return c.storage.Delete(ctx, []byte(timelineID), msgs)
+			}
+			log.Error("Failed to find producerGroup or consumer for sessionID %s", sessionID)
+			return nil
 		},
 		ProducerHandshake: c.producerHandshake,
 		CreateTimeline:    c.createTopic,

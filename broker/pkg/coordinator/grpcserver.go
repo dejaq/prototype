@@ -22,13 +22,12 @@ type TimelineListeners struct {
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
-	GetConsumer          func(ctx context.Context, session string) (*Consumer, error)
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
 	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
-	DeleteMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
+	DeleteMessagesListener func(context.Context, string, string, []timeline.Message) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -233,6 +232,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var err error
 	var topicErr error
 	var timelineID string
+	var sessionID string
 
 	var req *grpc.TimelineDeleteRequest
 
@@ -245,14 +245,9 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			}
 			return err
 		}
-		consumer, err := s.listeners.GetConsumer(stream.Context(), string(req.SessionID()))
-		if err != nil {
-			return err
-		}
 
 		batch = append(batch, timeline.Message{
 			ID:              req.MessageIDBytes(),
-			LockConsumerID:  consumer.ID,
 			BucketID:        req.BucketID(),
 			Version:         req.Version(),
 		})
@@ -264,14 +259,17 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 				return errors.New("producer missing session")
 			}
 		}
+		if sessionID == "" {
+			sessionID = string(req.SessionID())
+		}
 	}
 
 	builder := flatbuffers.NewBuilder(128)
 	var responseErrors []derrors.MessageIDTuple
 
 	//timelineID can be nil when no messages arrived
-	if timelineID != "" {
-		responseErrors = s.listeners.DeleteMessagesListener(stream.Context(), timelineID, batch)
+	if timelineID != "" && sessionID != "" {
+		responseErrors = s.listeners.DeleteMessagesListener(stream.Context(), sessionID, timelineID, batch)
 	}
 	rootPosition := writeTimelineResponse(responseErrors, builder)
 	builder.Finish(rootPosition)
