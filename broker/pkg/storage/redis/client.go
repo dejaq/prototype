@@ -320,44 +320,27 @@ func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 // Delete ...
 func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	// TODO use transaction here MULTI and EXEC
-	// TODO delete them also from timeline::bucket::consumerId::messageId
-
+	// TODO talk with @Adrian redundant return error and log it ???
 	var deleteErrors []derrors.MessageIDTuple
 
 	for _, msg := range messages {
-		// deleted from sorted set
-		bucketKey := c.createBucketKey("cluster_name", timelineID, msg.BucketID)
-		ok, err := c.client.ZRem(bucketKey, msg.GetID()).Result()
+		keys := []string{
+			c.createBucketKey("cluster_name", timelineID, msg.BucketID),
+			msg.GetID(),
+			// timeline to consumer (all consumer leased messages
+			c.createTimelineKey("cluster_name", timelineID, ) + "::" + msg.GetLockConsumerID(),
+		}
 
+		err := c.client.EvalSha(c.operationToScriptHash["delete"], keys).Err()
 		if err != nil {
 			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
 			derror.Message = err.Error()
-			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		}
-
-		if ok != 1 {
-			var derror derrors.Dejaror
-			derror.Message = "MessageId was not deleted from redis"
-			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		}
-
-		// delete message data from hashMap
-		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
-		ok, err = c.client.HDel(
-			messageKey,
-			"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version",
-		).Result()
-
-		if err != nil {
-			var derror derrors.Dejaror
-			derror.Message = err.Error()
-			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
-		}
-
-		if ok != 8 {
-			var derror derrors.Dejaror
-			derror.Message = "Message data was not deleted from redis"
-			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			derror.ShouldRetry = true
+			derror.WrappedErr = ErrStorageInternalError
+			logrus.WithError(derror).Errorf("redis error")
+			continue
 		}
 	}
 
@@ -406,7 +389,6 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 	for _, val := range dataCollection {
 		data := val.([]interface{})
 		timelineMessage, err := convertRawMsgToTimelineMsg(data)
-
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
@@ -417,7 +399,6 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 			logrus.WithError(derror).Errorf("redis error")
 			continue
 		}
-
 		messages = append(messages, timelineMessage)
 	}
 

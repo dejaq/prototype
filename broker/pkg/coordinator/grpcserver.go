@@ -22,6 +22,7 @@ type TimelineListeners struct {
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
+	GetConsumer          func(ctx context.Context, session string) (*Consumer, error)
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
 	ConsumerDisconnected func(context.Context, string) error
@@ -244,11 +245,14 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			}
 			return err
 		}
+		consumer, err := s.listeners.GetConsumer(stream.Context(), string(req.SessionID()))
+		if err != nil {
+			return err
+		}
 
 		batch = append(batch, timeline.Message{
 			ID:              req.MessageIDBytes(),
-			ProducerGroupID: nil,
-			LockConsumerID:  nil,
+			LockConsumerID:  consumer.ID,
 			BucketID:        req.BucketID(),
 			Version:         req.Version(),
 		})

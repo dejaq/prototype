@@ -129,7 +129,25 @@ var scripts = struct {
 	
 	    return data
 	`,
-	delete:          `return 100`,
+	delete:          `
+	    local bucket_key = KEYS[1]
+	    local message_id = KEYS[2]
+	    local timeline_consumer_key = KEYS[3]
+	
+	    -- remove from sorted set
+	    -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	    redis.call("ZREM", bucket_key, message_id)
+	
+	    -- delete form hashMap
+        -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	    redis.call("DEL", bucket_key .. "::" .. message_id)
+	    
+	    -- remove from sorted set
+	    -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	    redis.call("ZREM", timeline_consumer_key, bucket_key .. "::" .. message_id)
+	
+	    return timeline_consumer_key
+	`,
 	getByConsumerId: `
 	    local consumer_key = KEYS[1]
 	    local time_reference_MS = KEYS[2]

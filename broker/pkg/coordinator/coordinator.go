@@ -93,6 +93,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerHandshake:    c.consumerHandshake,
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
+		GetConsumer:          c.getConsumer,
 		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
 			//TODO add here a way to identify the consumer or producer
 			//only specific clients can delete specific messages
@@ -116,6 +117,10 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			return topic, nil
 		},
 	})
+}
+
+func (c *Coordinator) getConsumer(ctx context.Context, sessionID string) (*Consumer, error) {
+	return c.greeter.GetConsumer(sessionID)
 }
 
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
