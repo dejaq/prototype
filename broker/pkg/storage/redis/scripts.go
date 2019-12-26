@@ -4,8 +4,9 @@ package redis
 var scripts = struct {
 	insert          string
 	getAndLease     string
-	delete          string
 	getByConsumerId string
+	consumerDelete  string
+	producerDelete  string
 }{
 	insert: `
 	    local bucket_key = KEYS[1]
@@ -129,25 +130,6 @@ var scripts = struct {
 	
 	    return data
 	`,
-	delete:          `
-	    local bucket_key = KEYS[1]
-	    local message_id = KEYS[2]
-	    local timeline_consumer_key = KEYS[3]
-	
-	    -- remove from sorted set
-	    -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
-	    redis.call("ZREM", bucket_key, message_id)
-	
-	    -- delete form hashMap
-        -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
-	    redis.call("DEL", bucket_key .. "::" .. message_id)
-	    
-	    -- remove from sorted set
-	    -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
-	    redis.call("ZREM", timeline_consumer_key, bucket_key .. "::" .. message_id)
-	
-	    return timeline_consumer_key
-	`,
 	getByConsumerId: `
 	    local consumer_key = KEYS[1]
 	    local time_reference_MS = KEYS[2]
@@ -171,4 +153,46 @@ var scripts = struct {
 	
 	    return data
 	`,
+	consumerDelete: `
+	    local timeline_key = KEYS[1]
+	    local consumer_id = KEYS[2]
+	    local time_reference_MS = KEYS[3]
+	    local messages = {}
+	    local errors = {}
+	
+	    local function deleteMessage(bucket_id, message_id, version)
+	        local bucket_key = timeline_key .. "::" .. bucket_id
+	
+	        -- check if it have lease and lease is valid
+	        local score = redis.call("ZSCORE", timeline_key .. "::" .. consumer_id, bucket_key .. "::" .. message_id)
+	        if not score or score < time_reference_MS then
+	            table.insert(errors, {message_id, "1", score})
+	        else
+	            -- remove from sorted set
+	            -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("ZREM", bucket_key, message_id)
+	
+	            -- delete details from hashMap
+                -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("DEL", bucket_key .. "::" .. message_id)
+	    
+	            -- remove from sorted set
+	            -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("ZREM", timeline_key .. "::" .. consumer_id, bucket_key .. "::" .. message_id)
+	        end
+	    end
+	
+	    local max = (#ARGV)
+	    local i = 1
+	    while (i <= max) do
+	       local message_id = ARGV[i]
+	       local bucket_id = ARGV[i+1]
+	       local version = ARGV[i+2]
+	       i = i+3
+	       deleteMessage(bucket_id, message_id, version)
+	    end
+	
+	    return errors
+	`,
+	producerDelete: `return "TODO"`,
 }

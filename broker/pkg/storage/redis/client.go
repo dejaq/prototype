@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"unsafe"
 
@@ -21,20 +22,25 @@ type Client struct {
 	operationToScriptHash map[string]string
 }
 
+// TODO for demo purpose, to keep it in only one place, should be received as param by methods that use it
+const clusterName = "demo"
+
 // Errors
 var (
 	ErrMessageAlreadyExists         = errors.New("messageId already exists, you can not set it again")
 	ErrOperationFailRollbackSuccess = errors.New("fail operation, rollback with success")
 	ErrOperationFailRollbackFail    = errors.New("fail operation, rollback fail")
 	ErrStorageInternalError         = errors.New("internal error on storage")
+	ErrNotAllowedToPerformOperation = errors.New("not allowed to perform this operation")
+	ErrUnknownWhoWantsToAction      = errors.New("could not identify hwo wants to do taht action")
 	ErrUnknown                      = errors.New("no errors on storage level, no expected answer")
 )
 
 var operationToScript = map[string]string{
 	"insert":          scripts.insert,
 	"getAndLease":     scripts.getAndLease,
-	"delete":          scripts.delete,
 	"getByConsumerId": scripts.getByConsumerId,
+	"consumerDelete":  scripts.consumerDelete,
 }
 
 // New ...
@@ -99,8 +105,8 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 	var insertErrors []derrors.MessageIDTuple
 
 	for _, msg := range messages {
-		bucketKey := c.createBucketKey("cluster_name", timelineID, msg.BucketID)
-		messageKey := c.createMessageKey("cluster_name", timelineID, msg.BucketID, msg.ID)
+		bucketKey := c.createBucketKey(clusterName, timelineID, msg.BucketID)
+		messageKey := c.createMessageKey(clusterName, timelineID, msg.BucketID, msg.ID)
 
 		data := []string{
 			"ID", msg.GetID(),
@@ -173,7 +179,7 @@ func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets dom
 
 	keys := []string{
 		// timelineKey
-		c.createTimelineKey("cluster_name", timelineID),
+		c.createTimelineKey(clusterName, timelineID),
 		// time reference in MS
 		strconv.FormatUint(timeReferenceMS, 10),
 		// lease duration on MS
@@ -319,31 +325,96 @@ func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 
 // Delete ...
 func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
-	// TODO use transaction here MULTI and EXEC
 	// TODO talk with @Adrian redundant return error and log it ???
 
 	var deleteErrors []derrors.MessageIDTuple
 
-	//for _, msg := range messages {
-	//	keys := []string{
-	//		c.createBucketKey("cluster_name", timelineID, msg.BucketID),
-	//		msg.GetID(),
-	//		// timeline to consumer (all consumer leased messages
-	//		c.createTimelineKey("cluster_name", timelineID) + "::" + msg.GetLockConsumerID(),
-	//	}
-	//
-	//	err := c.client.EvalSha(c.operationToScriptHash["delete"], keys).Err()
-	//	if err != nil {
-	//		var derror derrors.Dejaror
-	//		derror.Module = derrors.ModuleStorage
-	//		derror.Operation = "delete"
-	//		derror.Message = err.Error()
-	//		derror.ShouldRetry = true
-	//		derror.WrappedErr = ErrStorageInternalError
-	//		logrus.WithError(derror).Errorf("redis error")
-	//		continue
-	//	}
-	//}
+	keys := []string{
+		c.createTimelineKey(clusterName, deleteMessages.TimelineID),
+		string(deleteMessages.DeleterID),
+		strconv.FormatUint(deleteMessages.Timestamp, 10),
+	}
+
+	switch string(deleteMessages.DeleterType) {
+	case "CONSUMER":
+		var argv []string
+		for _, msg := range deleteMessages.Messages {
+			argv = append(argv, string(msg.MessageID))
+			argv = append(argv, strconv.Itoa(int(msg.BucketID)))
+			argv = append(argv, strconv.Itoa(int(msg.Version)))
+		}
+		data, err := c.client.EvalSha(c.operationToScriptHash["consumerDelete"], keys, argv).Result()
+		if err != nil {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %s with id: %s from timeline: %s, err: %s",
+				deleteMessages.DeleterType,
+				deleteMessages.DeleterID,
+				deleteMessages.TimelineID,
+				err.Error(),
+			)
+			derror.ShouldRetry = true
+			derror.WrappedErr = ErrStorageInternalError
+			logrus.WithError(derror)
+			return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+		}
+		dataCollection := data.([]interface{})
+		for _, val := range dataCollection {
+			v := val.([]interface{})
+			code := v[1].(string)
+			if code == "1" {
+				messageId := v[0].(string)
+				endLeaseMS := v[2].(string)
+
+				var derror derrors.Dejaror
+				derror.Module = derrors.ModuleStorage
+				derror.Operation = "delete"
+				derror.Message = fmt.Sprintf("consumerID: %s does not have an active lease on messageID: %s at timeMS: %v on timelineID: %s his lease expired on: %s",
+					deleteMessages.DeleterID,
+					messageId,
+					deleteMessages.Timestamp,
+					deleteMessages.TimelineID,
+					endLeaseMS,
+				)
+				derror.ShouldRetry = false
+				derror.WrappedErr = ErrNotAllowedToPerformOperation
+				logrus.WithError(derror)
+
+				deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+			}
+		}
+	case "PRODUCER":
+		// TODO will be implemented
+		var argv []string
+		data, err := c.client.EvalSha(c.operationToScriptHash["producerDelete"], keys, argv).Result()
+		if err != nil {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %s with id: %s from timeline: %s, err: %s",
+				deleteMessages.DeleterType,
+				deleteMessages.DeleterID,
+				deleteMessages.TimelineID,
+				err.Error(),
+			)
+			derror.ShouldRetry = true
+			derror.WrappedErr = ErrStorageInternalError
+			logrus.WithError(derror)
+			return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+		}
+		_ = data
+	default:
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "delete"
+		derror.Message = fmt.Sprintf("could not identify hwo wants to delete messages")
+		derror.ShouldRetry = false
+		derror.WrappedErr = ErrUnknownWhoWantsToAction
+		logrus.WithError(derror)
+
+		return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+	}
 
 	return deleteErrors
 }
@@ -369,7 +440,7 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 
 	keys := []string{
 		// timelineKey
-		c.createTimelineKey("cluster_name", timelineID) + "::" + string(consumerID),
+		c.createTimelineKey(clusterName, timelineID) + "::" + string(consumerID),
 		// time reference in MS
 		strconv.FormatUint(timeReferenceMS, 10),
 	}
