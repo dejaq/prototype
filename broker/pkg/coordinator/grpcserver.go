@@ -27,7 +27,7 @@ type TimelineListeners struct {
 	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
-	DeleteMessagesListener func(context.Context, string, string, []timeline.Message) []derrors.MessageIDTuple
+	DeleteMessagesListener func(context.Context, string, string, []timeline.MessageRequestDetails) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -236,7 +236,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 
 	var req *grpc.TimelineDeleteRequest
 
-	var batch []timeline.Message
+	var batch []timeline.MessageRequestDetails
 	for {
 		req, err = stream.Recv()
 		if err != nil {
@@ -246,10 +246,10 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			return err
 		}
 
-		batch = append(batch, timeline.Message{
-			ID:              req.MessageIDBytes(),
-			BucketID:        req.BucketID(),
-			Version:         req.Version(),
+		batch = append(batch, timeline.MessageRequestDetails{
+			MessageID: req.MessageIDBytes(),
+			BucketID:  req.BucketID(),
+			Version:   req.Version(),
 		})
 
 		if timelineID == "" {

@@ -6,6 +6,24 @@ import (
 	"github.com/dejaq/prototype/common/protocol"
 )
 
+type DeleteMessages struct {
+	// Reference timestamp for calculate active leases
+	Timestamp uint64
+	// Hwo wants to delete messages
+	// "SYSTEM ???", "PRODUCER", "CONSUMER"
+	DeleterType []byte
+	//Identity of hwo wants to delete
+	DeleterID  []byte
+	TimelineID []byte
+	Messages   []MessageRequestDetails
+}
+
+type MessageRequestDetails struct {
+	MessageID []byte
+	BucketID  uint16
+	Version   uint16
+}
+
 // Message is a timeline full representation. Not all the fields are populated all the time
 type Message struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes

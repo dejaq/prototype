@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	"github.com/dejaq/prototype/common/errors"
+	derrors "github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/prometheus/common/log"
@@ -28,10 +30,11 @@ const (
 )
 
 var (
-	metricTopicsCounter     = metrics.NewRegisteredCounter(numberOfTopics, nil)
-	metricTimelinesCounter  = metrics.NewRegisteredCounter(numberOfTimelines, nil)
-	metricMessagesCounter   = metrics.NewRegisteredCounter(numberOfMessages, nil)
-	ErrConsumerNotConnected = errors.NewDejaror("consumer not connected", "load")
+	metricTopicsCounter       = metrics.NewRegisteredCounter(numberOfTopics, nil)
+	metricTimelinesCounter    = metrics.NewRegisteredCounter(numberOfTimelines, nil)
+	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
+	ErrConsumerNotConnected   = errors.NewDejaror("consumer not connected", "load")
+	ErrUnknownDeleteRequester = errors.NewDejaror("unknown hwo wants to delete messages", "delete")
 )
 
 type Consumer struct {
@@ -93,23 +96,36 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerHandshake:    c.consumerHandshake,
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
-		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
-			consumer, err := c.greeter.GetConsumer(sessionID)
-			if err == nil {
-				for i := range msgs {
-					msgs[i].LockConsumerID = consumer.ID
-				}
-				return c.storage.Delete(ctx, []byte(timelineID), msgs)
+		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []errors.MessageIDTuple {
+			// check hwo wants to delete message based on sessionID
+			var actor []byte
+			var ID []byte
+
+			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
+				actor = []byte("CONSUMER")
+				ID = consumer.ID
+			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
+				actor = []byte("PRODUCER")
+				ID = producer.GroupID
+			} else {
+				var derror derrors.Dejaror
+				derror.Module = derrors.ModuleBroker
+				derror.Operation = "deleteMessageListener"
+				derror.Message = fmt.Sprintf("coordinator not able to find delete requester with sessionID: %s", sessionID)
+				derror.ShouldRetry = false
+				derror.WrappedErr = ErrUnknownDeleteRequester
+				logrus.WithError(derror)
+
+				return []derrors.MessageIDTuple{derrors.MessageIDTuple{Error: derror}}
 			}
-			producer, err := c.greeter.GetProducerSessionData(sessionID)
-			if err == nil {
-				for i := range msgs {
-					msgs[i].ProducerGroupID = producer.GroupID
-				}
-				return c.storage.Delete(ctx, []byte(timelineID), msgs)
-			}
-			log.Error("Failed to find producerGroup or consumer for sessionID %s", sessionID)
-			return nil
+
+			return c.storage.Delete(ctx, timeline.DeleteMessages{
+				Timestamp:   dtime.TimeToMS(time.Now()),
+				DeleterType: actor,
+				DeleterID:   ID,
+				TimelineID:  []byte(timelineID),
+				Messages:    messageIDs,
+			})
 		},
 		ProducerHandshake: c.producerHandshake,
 		CreateTimeline:    c.createTopic,

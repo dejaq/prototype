@@ -299,13 +299,13 @@ func (c *CRClient) Lookup(ctx context.Context, timelineID []byte, messageIDs [][
 	panic("implement me")
 }
 
-func (c *CRClient) Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []errors.MessageIDTuple {
+func (c *CRClient) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []errors.MessageIDTuple {
 	batchSize := 25
 	var batch [][]byte
 	result := make([]errors.MessageIDTuple, 0)
-	ids := make([][]byte, len(messageIDs))
-	for i := range messageIDs {
-		ids[i] = messageIDs[i].ID
+	ids := make([][]byte, len(deleteMessages.Messages))
+	for i := range deleteMessages.Messages {
+		ids[i] = deleteMessages.Messages[i].MessageID
 	}
 
 	failBatch := func(err error) {
@@ -346,13 +346,13 @@ func (c *CRClient) Delete(ctx context.Context, timelineID []byte, messageIDs []t
 			failBatch(err)
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(string(timelineID)), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(string(deleteMessages.TimelineID)), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(string(timelineID)), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(string(deleteMessages.TimelineID)), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()
