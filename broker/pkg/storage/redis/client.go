@@ -318,31 +318,32 @@ func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 }
 
 // Delete ...
-func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
+func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	// TODO use transaction here MULTI and EXEC
 	// TODO talk with @Adrian redundant return error and log it ???
+
 	var deleteErrors []derrors.MessageIDTuple
 
-	for _, msg := range messages {
-		keys := []string{
-			c.createBucketKey("cluster_name", timelineID, msg.BucketID),
-			msg.GetID(),
-			// timeline to consumer (all consumer leased messages
-			c.createTimelineKey("cluster_name", timelineID, ) + "::" + msg.GetLockConsumerID(),
-		}
-
-		err := c.client.EvalSha(c.operationToScriptHash["delete"], keys).Err()
-		if err != nil {
-			var derror derrors.Dejaror
-			derror.Module = derrors.ModuleStorage
-			derror.Operation = "delete"
-			derror.Message = err.Error()
-			derror.ShouldRetry = true
-			derror.WrappedErr = ErrStorageInternalError
-			logrus.WithError(derror).Errorf("redis error")
-			continue
-		}
-	}
+	//for _, msg := range messages {
+	//	keys := []string{
+	//		c.createBucketKey("cluster_name", timelineID, msg.BucketID),
+	//		msg.GetID(),
+	//		// timeline to consumer (all consumer leased messages
+	//		c.createTimelineKey("cluster_name", timelineID) + "::" + msg.GetLockConsumerID(),
+	//	}
+	//
+	//	err := c.client.EvalSha(c.operationToScriptHash["delete"], keys).Err()
+	//	if err != nil {
+	//		var derror derrors.Dejaror
+	//		derror.Module = derrors.ModuleStorage
+	//		derror.Operation = "delete"
+	//		derror.Message = err.Error()
+	//		derror.ShouldRetry = true
+	//		derror.WrappedErr = ErrStorageInternalError
+	//		logrus.WithError(derror).Errorf("redis error")
+	//		continue
+	//	}
+	//}
 
 	return deleteErrors
 }
