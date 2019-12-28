@@ -74,7 +74,7 @@ var scripts = struct {
 	
 	            -- get message details
 	            local message_key = bucket_key .. "::" .. m.id
-	            local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
+	            local message = redis.call("HMGET", message_key, "id", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
 	
 	            -- process only available messages (EndLeaseMS(score) <= now() || (EndLeaseMS(score) > now() && empty ConsumerId) 
 	            if (m.score <= time_reference_MS or (m.score > time_reference_MS and message[12] == '')) then

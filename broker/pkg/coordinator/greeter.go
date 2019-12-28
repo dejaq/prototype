@@ -89,7 +89,7 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.Topic); exists {
+	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.topic); exists {
 		return "", errors.New("handshake already exists")
 	}
 
@@ -98,9 +98,9 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 		log.Fatal("duplicate random sessionID")
 	}
 	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
-		c.HydrateStatus = protocol.Hydration_None
+		c.SetHydrateStatus(protocol.Hydration_None)
 	}
-	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.Topic, sessionID)
+	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.topic, sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = c
 	s.consumerSessionIDsAndPipelines[sessionID] = &ConsumerPipelineTuple{
@@ -139,7 +139,7 @@ func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.Lease, erro
 		return nil, errors.New("there is already an active connection for this consumerID")
 	}
 
-	s.consumerSessionsIDs[sessionID].HydrateStatus = protocol.Hydration_Requested
+	s.consumerSessionsIDs[sessionID].SetHydrateStatus(protocol.Hydration_Requested)
 	s.consumerSessionIDsAndPipelines[sessionID].Pipeline = make(chan timeline.Lease) //not buffered!!!
 	s.consumerSessionIDsAndPipelines[sessionID].Connected = make(chan struct{})
 	return s.consumerSessionIDsAndPipelines[sessionID].Pipeline, nil
@@ -176,7 +176,7 @@ func (s *Greeter) GetTopicFor(sessionID string) (string, error) {
 	}
 
 	if sessionData, isConsumer := s.consumerSessionsIDs[sessionID]; isConsumer {
-		return sessionData.Topic, nil
+		return sessionData.topic, nil
 	}
 
 	return "", ErrNotFound
@@ -200,7 +200,7 @@ func (s *Greeter) GetAllConnectedConsumersWithHydrateStatus(topicID string, hydr
 	result := make([]*ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		consumer := s.consumerSessionsIDs[sessionID]
-		if consumer.HydrateStatus != hydrateStatus || consumer.Topic != topicID ||
+		if consumer.GetHydrateStatus() != hydrateStatus || consumer.topic != topicID ||
 			pipe.Connected == nil {
 			continue
 		}
@@ -210,6 +210,6 @@ func (s *Greeter) GetAllConnectedConsumersWithHydrateStatus(topicID string, hydr
 }
 
 func (s *Greeter) LeasesSent(c *Consumer, count int) {
-	//logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.ID, c.Topic)
+	//logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.id, c.topic)
 	//TODO increment leases
 }
