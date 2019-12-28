@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"sync"
+	"time"
 
 	"github.com/dejaq/prototype/common/protocol"
+	"github.com/sirupsen/logrus"
+
+	"io"
 
 	derrors "github.com/dejaq/prototype/common/errors"
 	"github.com/dejaq/prototype/common/timeline"
@@ -93,11 +94,10 @@ func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.Ti
 }
 
 func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) error {
-	var sessionID []byte
-	var sessionLock sync.RWMutex
-	sessionLock.Lock()
+	sessionChan := make(chan []byte)
 	go func() {
 		var err error
+		firstRun := true
 		var request *grpc.TimelineConsumerStatus
 		for err == nil {
 			select {
@@ -115,24 +115,32 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 					_ = fmt.Errorf("grpc server TimelineCreateMessages client failed err=%s", err.Error())
 					break
 				}
-				if sessionID == nil {
-					sessionID = request.SessionID()
-					sessionLock.Unlock()
+				if firstRun {
+					firstRun = false
+					sessionChan <- request.SessionID()
 				}
 
-				consumerStatus := protocol.NewConsumerStatus(sessionID)
+				consumerStatus := protocol.NewConsumerStatus(request.SessionID())
 				consumerStatus.AvailableBufferSize = request.AvailableBufferSize()
 				consumerStatus.MaxBufferSize = request.MaxBufferSize()
-				s.listeners.ConsumerStatus(stream.Context(), consumerStatus)
-
+				err = s.listeners.ConsumerStatus(stream.Context(), consumerStatus)
 				if err != nil {
-					log.Fatalf("Update Consumer status failed, err=%s", err)
+					logrus.Errorf("Update Consumer status failed, err=%s", err)
 				}
 			}
 		}
 	}()
 
-	sessionLock.Lock()
+	var sessionID []byte
+	select {
+	case sessionID = <-sessionChan:
+		close(sessionChan)
+	case <-time.After(time.Minute):
+		msg := "timeout exceeded waiting for consumer first status update"
+		logrus.Error(msg)
+		return errors.New(msg)
+	}
+
 	pipeline, err := s.listeners.ConsumerConnected(stream.Context(), string(sessionID))
 	if err != nil {
 		return err
@@ -141,7 +149,6 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 	defer func() {
 		s.listeners.ConsumerDisconnected(stream.Context(), string(sessionID))
 	}()
-	sessionLock.Unlock()
 
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
@@ -176,7 +183,7 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 
 			builder.Finish(rootPosition)
 			if err := stream.Send(builder); err != nil {
-				log.Fatalf("loader failed: %s", err.Error())
+				logrus.Errorf("loader failed: %s", err.Error())
 				return err
 			}
 		}
