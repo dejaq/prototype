@@ -98,15 +98,19 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerDisconnected: c.consumerDisconnected,
 		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []errors.MessageIDTuple {
 			// check hwo wants to delete message based on sessionID
-			var actor []byte
-			var ID []byte
+
+			data := timeline.DeleteMessages{
+				Timestamp:  dtime.TimeToMS(time.Now()),
+				TimelineID: []byte(timelineID),
+				Messages:   messageIDs,
+			}
 
 			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
-				actor = []byte("CONSUMER")
-				ID = consumer.ID
+				data.CallerType = timeline.DeleteCaller_Consumer
+				data.DeleterID = consumer.ID
 			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
-				actor = []byte("PRODUCER")
-				ID = producer.GroupID
+				data.CallerType = timeline.DeleteCaller_Producer
+				data.DeleterID = producer.GroupID
 			} else {
 				var derror derrors.Dejaror
 				derror.Module = derrors.ModuleBroker
@@ -119,13 +123,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 				return []derrors.MessageIDTuple{derrors.MessageIDTuple{Error: derror}}
 			}
 
-			return c.storage.Delete(ctx, timeline.DeleteMessages{
-				Timestamp:   dtime.TimeToMS(time.Now()),
-				DeleterType: actor,
-				DeleterID:   ID,
-				TimelineID:  []byte(timelineID),
-				Messages:    messageIDs,
-			})
+			return c.storage.Delete(ctx, data)
 		},
 		ProducerHandshake: c.producerHandshake,
 		CreateTimeline:    c.createTopic,

@@ -326,84 +326,22 @@ func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 // Delete ...
 func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	// TODO talk with @Adrian redundant return error and log it ???
-
 	var deleteErrors []derrors.MessageIDTuple
-
 	keys := []string{
 		c.createTimelineKey(clusterName, deleteMessages.TimelineID),
 		string(deleteMessages.DeleterID),
 		strconv.FormatUint(deleteMessages.Timestamp, 10),
 	}
 
-	switch string(deleteMessages.DeleterType) {
-	case "CONSUMER":
-		var argv []string
-		for _, msg := range deleteMessages.Messages {
-			argv = append(argv, string(msg.MessageID))
-			argv = append(argv, strconv.Itoa(int(msg.BucketID)))
-			argv = append(argv, strconv.Itoa(int(msg.Version)))
+	switch deleteMessages.CallerType {
+	case timeline.DeleteCaller_Consumer:
+		if delErr := deleteByConsumerId(c, deleteMessages, keys); delErr != nil {
+			deleteErrors = append(deleteErrors, delErr...)
 		}
-		data, err := c.client.EvalSha(c.operationToScriptHash["consumerDelete"], keys, argv).Result()
-		if err != nil {
-			var derror derrors.Dejaror
-			derror.Module = derrors.ModuleStorage
-			derror.Operation = "delete"
-			derror.Message = fmt.Sprintf("can not delete on behalf of: %s with id: %s from timeline: %s, err: %s",
-				deleteMessages.DeleterType,
-				deleteMessages.DeleterID,
-				deleteMessages.TimelineID,
-				err.Error(),
-			)
-			derror.ShouldRetry = true
-			derror.WrappedErr = ErrStorageInternalError
-			logrus.WithError(derror)
-			return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+	case timeline.DeleteCaller_Producer:
+		if delErr := deleteByProducerGroupId(c, deleteMessages, keys); delErr != nil {
+			deleteErrors = append(deleteErrors, delErr...)
 		}
-		dataCollection := data.([]interface{})
-		for _, val := range dataCollection {
-			v := val.([]interface{})
-			code := v[1].(string)
-			if code == "1" {
-				messageId := v[0].(string)
-				endLeaseMS := v[2].(string)
-
-				var derror derrors.Dejaror
-				derror.Module = derrors.ModuleStorage
-				derror.Operation = "delete"
-				derror.Message = fmt.Sprintf("consumerID: %s does not have an active lease on messageID: %s at timeMS: %v on timelineID: %s his lease expired on: %s",
-					deleteMessages.DeleterID,
-					messageId,
-					deleteMessages.Timestamp,
-					deleteMessages.TimelineID,
-					endLeaseMS,
-				)
-				derror.ShouldRetry = false
-				derror.WrappedErr = ErrNotAllowedToPerformOperation
-				logrus.WithError(derror)
-
-				deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
-			}
-		}
-	case "PRODUCER":
-		// TODO will be implemented
-		var argv []string
-		data, err := c.client.EvalSha(c.operationToScriptHash["producerDelete"], keys, argv).Result()
-		if err != nil {
-			var derror derrors.Dejaror
-			derror.Module = derrors.ModuleStorage
-			derror.Operation = "delete"
-			derror.Message = fmt.Sprintf("can not delete on behalf of: %s with id: %s from timeline: %s, err: %s",
-				deleteMessages.DeleterType,
-				deleteMessages.DeleterID,
-				deleteMessages.TimelineID,
-				err.Error(),
-			)
-			derror.ShouldRetry = true
-			derror.WrappedErr = ErrStorageInternalError
-			logrus.WithError(derror)
-			return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
-		}
-		_ = data
 	default:
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
@@ -413,9 +351,84 @@ func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 		derror.WrappedErr = ErrUnknownWhoWantsToAction
 		logrus.WithError(derror)
 
+		deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+	}
+	return deleteErrors
+}
+
+func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys []string) []derrors.MessageIDTuple {
+	var deleteErrors []derrors.MessageIDTuple
+	var argv []string
+	for _, msg := range deleteMessages.Messages {
+		argv = append(argv, string(msg.MessageID))
+		argv = append(argv, strconv.Itoa(int(msg.BucketID)))
+		argv = append(argv, strconv.Itoa(int(msg.Version)))
+	}
+	data, err := c.client.EvalSha(c.operationToScriptHash["consumerDelete"], keys, argv).Result()
+	if err != nil {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "delete"
+		derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+			deleteMessages.CallerType,
+			deleteMessages.DeleterID,
+			deleteMessages.TimelineID,
+			err.Error(),
+		)
+		derror.ShouldRetry = true
+		derror.WrappedErr = ErrStorageInternalError
+		logrus.WithError(derror)
 		return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
 	}
+	dataCollection := data.([]interface{})
+	for _, val := range dataCollection {
+		v := val.([]interface{})
+		code := v[1].(string)
+		if code == "1" {
+			messageId := v[0].(string)
+			endLeaseMS := v[2].(string)
 
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("consumerID: %s does not have an active lease on messageID: %s at timeMS: %v on timelineID: %s his lease expired on: %s",
+				deleteMessages.DeleterID,
+				messageId,
+				deleteMessages.Timestamp,
+				deleteMessages.TimelineID,
+				endLeaseMS,
+			)
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrNotAllowedToPerformOperation
+			logrus.WithError(derror)
+
+			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+		}
+	}
+	return deleteErrors
+}
+
+func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessages, keys []string) []derrors.MessageIDTuple {
+	// TODO will be implemented
+	var deleteErrors []derrors.MessageIDTuple
+	var argv []string
+	data, err := c.client.EvalSha(c.operationToScriptHash["producerDelete"], keys, argv).Result()
+	if err != nil {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "delete"
+		derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+			deleteMessages.CallerType,
+			deleteMessages.DeleterID,
+			deleteMessages.TimelineID,
+			err.Error(),
+		)
+		derror.ShouldRetry = true
+		derror.WrappedErr = ErrStorageInternalError
+		logrus.WithError(derror)
+		return []derrors.MessageIDTuple{{Error: derror}}
+	}
+	_ = data
 	return deleteErrors
 }
 

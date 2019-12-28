@@ -6,13 +6,19 @@ import (
 	"github.com/dejaq/prototype/common/protocol"
 )
 
+type DeleteCaller uint8
+
+const (
+	DeleteCaller_Consumer DeleteCaller = iota
+	DeleteCaller_Producer
+)
+
 type DeleteMessages struct {
 	// Reference timestamp for calculate active leases
 	Timestamp uint64
-	// Hwo wants to delete messages
-	// "SYSTEM ???", "PRODUCER", "CONSUMER"
-	DeleterType []byte
-	//Identity of hwo wants to delete
+	// Who wants to delete messages
+	CallerType DeleteCaller
+	//Identity of who wants to delete
 	DeleterID  []byte
 	TimelineID []byte
 	Messages   []MessageRequestDetails
