@@ -1,13 +1,13 @@
 package cockroach
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/dejaq/prototype/broker/domain"
 	"github.com/dejaq/prototype/common/errors"
@@ -21,13 +21,13 @@ var (
 	stmtTopic = `
 DROP TABLE IF EXISTS $TOPIC CASCADE;
 CREATE TABLE $TOPIC (
-	id BYTES NOT NULL,
+	id STRING NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
 	ts INT NOT NULL,
-	producer_group_id BYTES NOT NULL,
-	consumer_id BYTES,
-	body_id BYTES NOT NULL,
+	producer_group_id STRING NOT NULL,
+	consumer_id STRING,
+	body_id STRING NOT NULL,
 	version INT NOT NULL,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC),
 	INDEX $TOPIC_index_ts (ts ASC),
@@ -38,8 +38,8 @@ CREATE TABLE $TOPIC (
 		);
 DROP TABLE IF EXISTS $BODY CASCADE;
 CREATE TABLE $BODY (
-	id BYTES NOT NULL,
-	body BYTES,
+	id STRING NOT NULL,
+	body STRING,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC)
 );
 `
@@ -132,12 +132,12 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		var failedSt bool
 		for i := range batch {
 			_, err = stmt.Exec(
-				batch[i].ID,
+				batch[i].GetID(),
 				batch[i].BucketID,
 				batch[i].TimestampMS,
 				batch[i].TimestampMS,
-				batch[i].ProducerGroupID,
-				batch[i].ID, //body_id same as msg_id
+				batch[i].GetProducerGroupID(),
+				batch[i].GetID(), //body_id same as msg_id
 				batch[i].Version)
 			if err != nil {
 				failedSt = true
@@ -165,9 +165,9 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		}
 		for i := range batch {
 			_, err = stmtBodies.Exec(
-				batch[i].ID,
+				batch[i].GetID(),
 				//TODO check if we can use RawBytes to remove memory allocations on the driver side
-				batch[i].Body)
+				batch[i].GetBody())
 			if err != nil {
 				failedSt = true
 				break
@@ -211,8 +211,10 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	if err != nil {
 		return nil, false, err
 	}
+
+	consumerStr := *(*string)(unsafe.Pointer(&consumerId))
 	rows, err := st.Query(
-		dtime.TimeToMS(time.Now()), leaseMs, consumerId, maxTimestamp, buckets.Min(), buckets.Max(), limit,
+		dtime.TimeToMS(time.Now()), leaseMs, consumerStr, maxTimestamp, buckets.Min(), buckets.Max(), limit,
 		//TODO make the named parameter work :/ or file a bug report
 		//sql.Named("now", dtime.TimeToMS(time.Now())),
 		//sql.Named("lease", leaseMs),
@@ -233,12 +235,13 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	//var ids string
 	//var idb []byte
 	for rows.Next() {
-		var id sql.RawBytes
+		var id string
 		if err := rows.Scan(&id); err != nil {
 			log.Fatal(err)
 		}
 		//https://www.cockroachlabs.com/docs/v19.2/bytes.html#main-content
 		msgIDs = append(msgIDs, id)
+		//msgIDs = append(msgIDs, fmt.Sprintf("\\x%x", id))
 		//for SQL parameters $1, $2 ...
 		params = append(params, fmt.Sprintf("$%d", len(msgIDs)))
 		//ids = fmt.Sprintf("%x", id)
@@ -252,8 +255,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	}
 
 	querySelect := fmt.Sprintf(`SELECT 
-		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id,
-		topic.consumer_id, topic.version, bodies.body
+		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id, topic.version, bodies.body
 		FROM %s AS topic INNER JOIN %s AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
 		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(params, ","))
 
@@ -269,21 +271,25 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 		//TODO revert the leases
 		return nil, false, err
 	}
+
 	defer rowsSelect.Close()
 
 	result := make([]timeline.Lease, 0, len(msgIDs))
 	for rowsSelect.Next() {
 		lease := timeline.Lease{}
+		var id string
+		var producerID string
+		var body string
 		//TODO add here RawBytes and read the body without a copy! optimization, then copy the slice to the lease.message.body
 		if err := rowsSelect.Scan(
-			&lease.Message.ID, &lease.ExpirationTimestampMS, &lease.Message.BucketID, &lease.Message.TimestampMS, &lease.Message.ProducerGroupID,
-			&lease.ConsumerID, &lease.Message.Version, &lease.Message.Body,
+			&id, &lease.ExpirationTimestampMS, &lease.Message.BucketID, &lease.Message.TimestampMS, &producerID, &lease.Message.Version, &body,
 		); err != nil {
 			log.Fatal(err)
 		}
-		if bytes.Compare(lease.ConsumerID, consumerId) != 0 {
-			c.logger.Fatalf("consumerID is different  %v %v", lease.ConsumerID, consumerId)
-		}
+		lease.Message.ID = []byte(id)
+		lease.Message.ProducerGroupID = []byte(producerID)
+		lease.ConsumerID = consumerId
+		lease.Message.Body = []byte(body)
 		result = append(result, lease)
 	}
 

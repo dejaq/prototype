@@ -152,7 +152,7 @@ func startBroker(ctx context.Context, logger *logrus.Logger, timeoutSeconds time
 		}
 	case "cockroach":
 		// Connect to the "bank" database.
-		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable&binary_parameters")
+		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable") //&binary_parameters
 		if err != nil {
 			return fmt.Errorf("error connecting to the database: %w", err)
 		}

@@ -134,7 +134,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 
 		c.dealer.Shuffle(activeConsumers, c.conf.Topic.Settings.BucketCount)
 
-		newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second))
+		newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
 		for _, tuple := range activeConsumersAndPipelines {
 			wg.Add(1)
 			go func(tuple *ConsumerPipelineTuple) {

@@ -183,11 +183,17 @@ func (c *Consumer) preload(ctx context.Context) error {
 				//TODO if err is invalid/expired sessionID do a handshake automatically
 			}
 			if response == nil { //empty msg ?!?!?! TODO log this as a warning
+				c.logger.Error("empty response received from grpc in consumer")
 				continue
 			}
 
 			//TODO pass an object from a pool, to reuse it
 			msg := response.Message(nil)
+
+			if msg == nil {
+				c.logger.Error("empty message received from grpc in consumer")
+				continue
+			}
 			c.msgBuffer <- timeline.Lease{
 				ExpirationTimestampMS: response.ExpirationTSMSUTC(),
 				ConsumerID:            response.ConsumerIDBytes(),
