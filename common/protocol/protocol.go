@@ -3,7 +3,7 @@ package protocol
 type WriteConsistency uint8
 
 const (
-	WriteConsistency_Master     WriteConsistency = iota
+	WriteConsistency_Master WriteConsistency = iota
 	WriteConsistency_Quorum
 	WriteConsistency_AllReplicas
 	WriteConsistency_FireForget
@@ -25,3 +25,17 @@ const (
 	TopicProvisioningStatus_Live
 	TopicProvisioningStatus_Deleting
 )
+
+type ConsumerStatus struct {
+	SessionID           []byte
+	MaxBufferSize       uint32
+	AvailableBufferSize uint32
+	LagMS               uint32
+	LagNOMessages       uint32
+}
+
+func NewConsumerStatus(sessionID []byte) ConsumerStatus {
+	return ConsumerStatus{
+		SessionID: sessionID,
+	}
+}

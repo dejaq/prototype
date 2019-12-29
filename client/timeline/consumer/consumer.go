@@ -110,11 +110,36 @@ func (c *Consumer) preload(ctx context.Context) error {
 	requestPosition := dejaq.TimelineConsumeRequestEnd(builder)
 	builder.Finish(requestPosition)
 
-	stream, err := c.carrier.TimelineConsume(ctx, builder)
+	stream, err := c.carrier.TimelineConsume(ctx)
 	if err != nil {
 		nerr := fmt.Errorf("subscribe: %w", err)
 		return nerr
 	}
+
+	go func() {
+		var builder *flatbuffers.Builder
+		builder = flatbuffers.NewBuilder(128)
+
+		for {
+			ticker := time.NewTicker(time.Second)
+			select {
+			case <-ticker.C:
+				builder.Reset()
+
+				sessionIDPosition := builder.CreateString(c.sessionID)
+				dejaq.TimelineConsumerStatusStart(builder)
+				dejaq.TimelineConsumerStatusAddMaxBufferSize(builder, uint32(c.conf.MaxBufferSize))
+				dejaq.TimelineConsumerStatusAddAvailableBufferSize(builder, uint32(int(c.conf.MaxBufferSize)-len(c.msgBuffer)))
+				dejaq.TimelineConsumerStatusAddSessionID(builder, sessionIDPosition)
+				dejaq.TimelineConsumerStatusAddTimeoutMS(builder, dtime.DurationToMS(c.conf.LeaseDuration))
+				rootPosition := dejaq.TimelineConsumerStatusEnd(builder)
+				builder.Finish(rootPosition)
+				err = stream.Send(builder)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	var response *dejaq.TimelinePushLeaseResponse
 	go func() {

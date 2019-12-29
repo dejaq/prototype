@@ -179,7 +179,11 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 		hasMoreForThisBucket = true // we presume it has
 		for hasMoreForThisBucket {
 			assignedBuckets := tuple.C.GetAssignedBuckets()
-			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, tuple.C.GetTopicAsBytes(), assignedBuckets[bi], tuple.C.GetIDAsBytes(), tuple.C.GetLeaseMs(), limit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
+			consumerLimit := limit
+			if int(tuple.C.LoadAvailableBufferSize()) < limit {
+				consumerLimit = int(tuple.C.LoadAvailableBufferSize())
+			}
+			pushLeaseMessages, hasMoreForThisBucket, _ = c.storage.GetAndLease(ctx, tuple.C.GetTopicAsBytes(), assignedBuckets[bi], tuple.C.GetIDAsBytes(), tuple.C.GetLeaseMs(), consumerLimit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
@@ -198,6 +202,7 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 					sent++
 				}
 			}
+			tuple.C.AddAvailableBufferSize(-uint32(len(pushLeaseMessages)))
 		}
 	}
 	return sent, true, nil
