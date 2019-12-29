@@ -19,9 +19,13 @@ type DeleteMessages struct {
 	// Who wants to delete messages
 	CallerType DeleteCaller
 	//Identity of who wants to delete
-	DeleterID  []byte
+	CallerID   []byte
 	TimelineID []byte
 	Messages   []MessageRequestDetails
+}
+
+func (dm *DeleteMessages) GetTimelineID() string {
+	return *(*string)(unsafe.Pointer(&dm.TimelineID))
 }
 
 type MessageRequestDetails struct {

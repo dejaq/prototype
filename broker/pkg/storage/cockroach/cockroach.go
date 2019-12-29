@@ -346,13 +346,13 @@ func (c *CRClient) Delete(ctx context.Context, deleteMessages timeline.DeleteMes
 			failBatch(err)
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(string(deleteMessages.TimelineID)), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(deleteMessages.GetTimelineID()), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(string(deleteMessages.TimelineID)), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(deleteMessages.GetTimelineID()), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()

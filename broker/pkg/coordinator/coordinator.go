@@ -87,10 +87,10 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			// check hwo wants to delete message based on sessionID
 			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
 				data.CallerType = timeline.DeleteCaller_Consumer
-				data.DeleterID = consumer.GetIDAsBytes()
+				data.CallerID = consumer.GetIDAsBytes()
 			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
 				data.CallerType = timeline.DeleteCaller_Producer
-				data.DeleterID = producer.GroupID
+				data.CallerID = producer.GroupID
 			} else {
 				var derror derrors.Dejaror
 				derror.Module = derrors.ModuleBroker

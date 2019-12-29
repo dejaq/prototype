@@ -334,7 +334,7 @@ func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 	var deleteErrors []derrors.MessageIDTuple
 	keys := []string{
 		c.createTimelineKey(clusterName, deleteMessages.TimelineID),
-		string(deleteMessages.DeleterID),
+		string(deleteMessages.CallerID),
 		strconv.FormatUint(deleteMessages.Timestamp, 10),
 	}
 
@@ -376,7 +376,7 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 		derror.Operation = "delete"
 		derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
 			deleteMessages.CallerType,
-			deleteMessages.DeleterID,
+			deleteMessages.CallerID,
 			deleteMessages.TimelineID,
 			err.Error(),
 		)
@@ -397,7 +397,7 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "delete"
 			derror.Message = fmt.Sprintf("consumerID: %s does not have an active lease on messageID: %s at timeMS: %v on timelineID: %s his lease expired on: %s",
-				deleteMessages.DeleterID,
+				deleteMessages.CallerID,
 				messageId,
 				deleteMessages.Timestamp,
 				deleteMessages.TimelineID,
@@ -424,7 +424,7 @@ func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessages, 
 		derror.Operation = "delete"
 		derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
 			deleteMessages.CallerType,
-			deleteMessages.DeleterID,
+			deleteMessages.CallerID,
 			deleteMessages.TimelineID,
 			err.Error(),
 		)
