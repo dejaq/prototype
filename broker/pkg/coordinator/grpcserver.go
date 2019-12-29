@@ -32,7 +32,7 @@ type TimelineListeners struct {
 	ConsumerDisconnected func(context.Context, string) error
 
 	DeleteRequest          func(context.Context, string) (string, error)
-	DeleteMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
+	DeleteMessagesListener func(context.Context, string, string, []timeline.MessageRequestDetails) []derrors.MessageIDTuple
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -280,10 +280,11 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var err error
 	var topicErr error
 	var timelineID string
+	var sessionID string
 
 	var req *grpc.TimelineDeleteRequest
 
-	var batch []timeline.Message
+	var batch []timeline.MessageRequestDetails
 	for {
 		req, err = stream.Recv()
 		if err != nil {
@@ -293,12 +294,10 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			return err
 		}
 
-		batch = append(batch, timeline.Message{
-			ID:              req.MessageIDBytes(),
-			ProducerGroupID: nil,
-			LockConsumerID:  nil,
-			BucketID:        req.BucketID(),
-			Version:         req.Version(),
+		batch = append(batch, timeline.MessageRequestDetails{
+			MessageID: req.MessageIDBytes(),
+			BucketID:  req.BucketID(),
+			Version:   req.Version(),
 		})
 
 		if timelineID == "" {
@@ -308,14 +307,17 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 				return errors.New("producer missing session")
 			}
 		}
+		if sessionID == "" {
+			sessionID = string(req.SessionID())
+		}
 	}
 
 	builder := flatbuffers.NewBuilder(128)
 	var responseErrors []derrors.MessageIDTuple
 
 	//timelineID can be nil when no messages arrived
-	if timelineID != "" {
-		responseErrors = s.listeners.DeleteMessagesListener(stream.Context(), timelineID, batch)
+	if timelineID != "" && sessionID != "" {
+		responseErrors = s.listeners.DeleteMessagesListener(stream.Context(), sessionID, timelineID, batch)
 	}
 	rootPosition := writeTimelineResponse(responseErrors, builder)
 	builder.Finish(rootPosition)

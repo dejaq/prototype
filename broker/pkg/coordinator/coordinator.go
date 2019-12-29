@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	"github.com/dejaq/prototype/common/errors"
+	derrors "github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/prometheus/common/log"
@@ -26,10 +28,11 @@ const (
 )
 
 var (
-	metricTopicsCounter     = metrics.NewRegisteredCounter(numberOfTopics, nil)
-	metricTimelinesCounter  = metrics.NewRegisteredCounter(numberOfTimelines, nil)
-	metricMessagesCounter   = metrics.NewRegisteredCounter(numberOfMessages, nil)
-	ErrConsumerNotConnected = errors.NewDejaror("consumer not connected", "load")
+	metricTopicsCounter       = metrics.NewRegisteredCounter(numberOfTopics, nil)
+	metricTimelinesCounter    = metrics.NewRegisteredCounter(numberOfTimelines, nil)
+	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
+	ErrConsumerNotConnected   = errors.NewDejaror("consumer not connected", "load")
+	ErrUnknownDeleteRequester = errors.NewDejaror("unknown hwo wants to delete messages", "delete")
 )
 
 type Producer struct {
@@ -74,10 +77,33 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
 		ConsumerStatus:       c.consumerStatus,
-		DeleteMessagesListener: func(ctx context.Context, timelineID string, msgs []timeline.Message) []errors.MessageIDTuple {
-			//TODO add here a way to identify the consumer or producer
-			//only specific clients can delete specific messages
-			return c.storage.Delete(ctx, []byte(timelineID), msgs)
+		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []errors.MessageIDTuple {
+			data := timeline.DeleteMessages{
+				Timestamp:  dtime.TimeToMS(time.Now()),
+				TimelineID: []byte(timelineID),
+				Messages:   messageIDs,
+			}
+
+			// check hwo wants to delete message based on sessionID
+			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
+				data.CallerType = timeline.DeleteCaller_Consumer
+				data.CallerID = consumer.GetIDAsBytes()
+			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
+				data.CallerType = timeline.DeleteCaller_Producer
+				data.CallerID = producer.GroupID
+			} else {
+				var derror derrors.Dejaror
+				derror.Module = derrors.ModuleBroker
+				derror.Operation = "deleteMessageListener"
+				derror.Message = fmt.Sprintf("coordinator not able to find delete requester with sessionID: %s", sessionID)
+				derror.ShouldRetry = false
+				derror.WrappedErr = ErrUnknownDeleteRequester
+				logrus.WithError(derror)
+
+				return []derrors.MessageIDTuple{derrors.MessageIDTuple{Error: derror}}
+			}
+
+			return c.storage.Delete(ctx, data)
 		},
 		ProducerHandshake: c.producerHandshake,
 		CreateTimeline:    c.createTopic,
@@ -97,6 +123,10 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			return topic, nil
 		},
 	})
+}
+
+func (c *Coordinator) getConsumer(ctx context.Context, sessionID string) (*Consumer, error) {
+	return c.greeter.GetConsumer(sessionID)
 }
 
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {

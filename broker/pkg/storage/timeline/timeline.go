@@ -20,13 +20,26 @@ type Repository interface {
 	CreateTopic(ctx context.Context, timelineID string) error
 	// INSERT messages (timelineID, []messages) map[msgID]error
 	Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple
-	// GetAndLease message.id BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
 	// Get messages from storage and apply Lease on them
-	GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error)
+	// maxTimeMS -> maximum timestamp for prefetch messages
+	// TODO add structure here
+	GetAndLease(
+		ctx context.Context,
+		timelineID []byte,
+		buckets domain.BucketRange,
+		consumerId []byte,
+		leaseMs uint64,
+		limit int,
+		currentTimeMS uint64,
+		maxTimeMS uint64,
+	) ([]timeline.Lease, bool, error)
 	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
-	// DELETE messages by TimelineID, MessageID map[msgID]error
-	Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []errors.MessageIDTuple
+	// DELETE remove message(s) from storage
+	// Only CONSUMER that have an active lease can delete a message
+	// Only PRODUCER that own message, message is not leased by a CONSUMER can delete it
+	// Lease is implemented at storage level
+	Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []errors.MessageIDTuple
 	// COUNT messages BY TimelineID, RANGE (spike detection/consumer scaling and metrics)
 	CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64
 	// COUNT messages BY TimelineID, RANGE and LockConsumerID is empty (count processing status)
@@ -34,7 +47,7 @@ type Repository interface {
 	// COUNT messages BY TimelineID, RANGE and LockConsumerID is not empty (count waiting status)
 	CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64
 	// SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte) []timeline.Message
+	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, maxTimestamp uint64) []timeline.Message
 	// SELECT messages by TimelineID, ProducerOwnerID (ownership control)
-	SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message
+	SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message
 }

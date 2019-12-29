@@ -2,23 +2,25 @@ package redis
 
 // scripts hold scripts that need to be loaded into redis
 var scripts = struct {
-	insert      string
-	getAndLease string
-	delete      string
+	insert          string
+	getAndLease     string
+	getByConsumerId string
+	consumerDelete  string
+	producerDelete  string
 }{
 	insert: `
-	    local timeline_key = KEYS[1]
+	    local bucket_key = KEYS[1]
 		local message_key = KEYS[2]
 	    local message_id = KEYS[3]
 	    local end_lease_MS = KEYS[4]
 	
 	    -- check if messageId already exists and return error
-		if redis.call("ZRANK", timeline_key, message_id) ~= false then
+		if redis.call("ZRANK", bucket_key, message_id) ~= false then
 			return "1"
 		end
 		
 		-- inset on timeline
-		local ok = redis.call("ZADD", timeline_key, end_lease_MS, message_id)
+		local ok = redis.call("ZADD", bucket_key, end_lease_MS, message_id)
 		if ok ~= 1 then return "2" end
 		
 		-- inset on hashMap
@@ -26,7 +28,7 @@ var scripts = struct {
 		
 		-- check if is ok, rollback transaction if not
 		if okhmap.ok ~= "OK" then  --TODO miniredis wants without .ok (not sure where is the issue)
-	        local removeOk = redis.call("ZREM", timeline_key, message_id)
+	        local removeOk = redis.call("ZREM", bucket_key, message_id)
 	        if removeOk ~= 1 then return "3" end
 	        return "4"
 		 end
@@ -35,15 +37,16 @@ var scripts = struct {
 	`,
 	getAndLease: `
 	    local timeline_key = KEYS[1]
-	    local time_reference_MS = KEYS[2]
-	    local lease_duration_MS = KEYS[3]
-	    local limit = KEYS[4]
-	    local consumer_id = KEYS[5]
+		local current_time_MS = KEYS[2]
+	    local max_time_MS = KEYS[3]
+	    local lease_duration_MS = KEYS[4]
+	    local limit = KEYS[5]
+	    local consumer_id = KEYS[6]
 	    local buckets_ids = ARGV
 	
 	    local data = {}
 	
-	    -- group ids and score
+	    -- group ids and score, score represent position of message on timeline
 	    local function groupIdsScore(c)
 	        local r = {}
 	        local tmp = {}
@@ -64,10 +67,11 @@ var scripts = struct {
 	        local bucket_key = timeline_key .. "::" .. bucket_id
 	
 	        -- get message ids by bucket and iterate over them
-	        local raw_ids_and_scores = redis.call("ZRANGEBYSCORE", bucket_key, "-inf", time_reference_MS, "LIMIT", "0", limit, "WITHSCORES")
+	        local raw_ids_and_scores = redis.call("ZRANGEBYSCORE", bucket_key, "-inf", max_time_MS, "LIMIT", "0", limit, "WITHSCORES")
 	        local grouped_ids_and_score = groupIdsScore(raw_ids_and_scores)
 	
 	        for i, m in pairs(grouped_ids_and_score) do
+	            local message_timeline_position_MS = m.score
 	            -- return when reach limit
 	            limit = limit - 1
 				if limit < 0 then return data end
@@ -76,12 +80,19 @@ var scripts = struct {
 	            local message_key = bucket_key .. "::" .. m.id
 	            local message = redis.call("HMGET", message_key, "id", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
 	
-	            -- process only available messages (EndLeaseMS(score) <= now() || (EndLeaseMS(score) > now() && empty ConsumerId) 
-	            if (m.score <= time_reference_MS or (m.score > time_reference_MS and message[12] == '')) then
-	                -- calculate end_lease_message max(timeReference, score) + lease
-	                local end_lease_MS = math.max(tonumber(time_reference_MS), tonumber(m.score)) + tonumber(lease_duration_MS)
+	            -- delete expired leases if exists for timeline consumers
+	            if (message_timeline_position_MS <= current_time_MS and message[12] ~= '') then
+	                -- remove from timeline consumer associated key
+	            	-- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            	redis.call("ZREM", timeline_key .. "::" .. consumer_id, message_key)
+	            end
 	
-	                local has_error = false 
+	            -- process only available messages (EndLeaseMS(score) <= now() || (EndLeaseMS(score) > now() && empty ConsumerId) 
+	            if (message_timeline_position_MS <= current_time_MS or (message_timeline_position_MS > current_time_MS and message[12] == '')) then
+	                -- calculate end_lease_message max(timeReference, score) + lease
+	                local end_lease_MS = math.max(tonumber(current_time_MS), tonumber(message_timeline_position_MS)) + tonumber(lease_duration_MS)
+	
+	                local has_error = false
 	                local tmp = {}
 	
 	                -- update lease on timeline
@@ -105,7 +116,11 @@ var scripts = struct {
 	                        has_error = true
 						end
 					end
-	                
+	
+	                -- add messageId to consumerId sortedSet used in getByConsumerId
+	                -- returns 1 => added, 0 => score updated (both can be considered success)
+	                redis.call("ZADD",  timeline_key .. "::" .. consumer_id, end_lease_MS,  bucket_key .. "::" .. m.id)
+	               
 	                -- code 0: no errors
 	                if has_error == false then table.insert(tmp, "0") end 
 	                table.insert(tmp, tostring(end_lease_MS))
@@ -124,5 +139,61 @@ var scripts = struct {
 	
 	    return data
 	`,
-	delete: `return 100`,
+	getByConsumerId: `
+	    local consumer_key = KEYS[1]
+	    local time_reference_MS = KEYS[2]
+	
+	    local data = {}
+	
+	    local message_ids = redis.call("ZRANGEBYSCORE", consumer_key, time_reference_MS, "+inf")
+	    for idx, message_key in pairs(message_ids) do
+	        local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
+	        local tmp = {message[1], message[1], message[2], message[3], message[4], message[5], message[6], message[7], message[8]}
+			table.insert(data, tmp)
+	    end
+	
+	    return data
+	`,
+	consumerDelete: `
+	    local timeline_key = KEYS[1]
+	    local consumer_id = KEYS[2]
+	    local time_reference_MS = KEYS[3]
+	    local messages = {}
+	    local errors = {}
+	
+	    local function deleteMessage(bucket_id, message_id, version)
+	        local bucket_key = timeline_key .. "::" .. bucket_id
+	
+	        -- check if it have lease and lease is valid
+	        local score = redis.call("ZSCORE", timeline_key .. "::" .. consumer_id, bucket_key .. "::" .. message_id)
+	        if not score or score < time_reference_MS then
+	            table.insert(errors, {message_id, "1", score})
+	        else
+	            -- remove from sorted set
+	            -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("ZREM", bucket_key, message_id)
+	
+	            -- delete details from hashMap
+                -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("DEL", bucket_key .. "::" .. message_id)
+	    
+	            -- remove from timeline consumer associated key
+	            -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
+	            redis.call("ZREM", timeline_key .. "::" .. consumer_id, bucket_key .. "::" .. message_id)
+	        end
+	    end
+	
+	    local max = (#ARGV)
+	    local i = 1
+	    while (i <= max) do
+	       local message_id = ARGV[i]
+	       local bucket_id = ARGV[i+1]
+	       local version = ARGV[i+2]
+	       i = i+3
+	       deleteMessage(bucket_id, message_id, version)
+	    end
+	
+	    return errors
+	`,
+	producerDelete: `return "TODO"`,
 }

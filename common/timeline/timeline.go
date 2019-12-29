@@ -6,6 +6,34 @@ import (
 	"github.com/dejaq/prototype/common/protocol"
 )
 
+type DeleteCaller uint8
+
+const (
+	DeleteCaller_Consumer DeleteCaller = iota
+	DeleteCaller_Producer
+)
+
+type DeleteMessages struct {
+	// Reference timestamp for calculate active leases
+	Timestamp uint64
+	// Who wants to delete messages
+	CallerType DeleteCaller
+	//Identity of who wants to delete
+	CallerID   []byte
+	TimelineID []byte
+	Messages   []MessageRequestDetails
+}
+
+func (dm *DeleteMessages) GetTimelineID() string {
+	return *(*string)(unsafe.Pointer(&dm.TimelineID))
+}
+
+type MessageRequestDetails struct {
+	MessageID []byte
+	BucketID  uint16
+	Version   uint16
+}
+
 // Message is a timeline full representation. Not all the fields are populated all the time
 type Message struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes
