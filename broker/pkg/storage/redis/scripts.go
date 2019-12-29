@@ -176,7 +176,7 @@ var scripts = struct {
                 -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
 	            redis.call("DEL", bucket_key .. "::" .. message_id)
 	    
-	            -- remove from sorted set
+	            -- remove from timeline consumer associated key
 	            -- (returns 1 if removed, 0 if not exists, I do not know if I need to check now)
 	            redis.call("ZREM", timeline_key .. "::" .. consumer_id, bucket_key .. "::" .. message_id)
 	        end
