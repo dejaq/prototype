@@ -171,17 +171,22 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 }
 
 // GetAndLease ...
-func (c *Client) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
-	// TODO use unsafe for a better conversion
-	// TODO use transaction select, get message, lease
-
+func (c *Client) GetAndLease(
+	ctx context.Context,
+	timelineID []byte,
+	buckets domain.BucketRange,
+	consumerId []byte,
+	leaseMs uint64,
+	limit int,
+	currentTimeMS, maxTimeMS uint64,
+) ([]timeline.Lease, bool, error) {
 	var results []timeline.Lease
 
 	keys := []string{
 		// timelineKey
 		c.createTimelineKey(clusterName, timelineID),
-		// time reference in MS
-		strconv.FormatUint(timeReferenceMS, 10),
+		strconv.FormatUint(currentTimeMS, 10),
+		strconv.FormatUint(maxTimeMS, 10),
 		// lease duration on MS
 		strconv.FormatUint(leaseMs, 10),
 		// max number of messages to get

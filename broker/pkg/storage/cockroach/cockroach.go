@@ -197,7 +197,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 	return result
 }
 
-func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
+func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, currentTimeMS uint64, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 
 	//https://www.cockroachlabs.com/docs/v19.2/update.html#update-and-return-values
 	queryUpdate := strings.Replace(`UPDATE $TOPIC SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
