@@ -6,13 +6,11 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/dejaq/prototype/common/protocol"
 
-	"github.com/dejaq/prototype/broker/domain"
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	"github.com/dejaq/prototype/common/errors"
@@ -36,24 +34,6 @@ var (
 	ErrConsumerNotConnected   = errors.NewDejaror("consumer not connected", "load")
 	ErrUnknownDeleteRequester = errors.NewDejaror("unknown hwo wants to delete messages", "delete")
 )
-
-type Consumer struct {
-	ID              []byte
-	AssignedBuckets []domain.BucketRange
-	HydrateStatus   protocol.HydrationStatus
-	Topic           string
-	Cluster         string
-	LeaseMs         uint64
-}
-
-func (c Consumer) GetID() string {
-	return *(*string)(unsafe.Pointer(&c.ID))
-}
-
-// GetTopic ...
-func (c Consumer) GetTopic() []byte {
-	return []byte(c.Topic)
-}
 
 type Producer struct {
 	GroupID    []byte
@@ -96,18 +76,18 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerHandshake:    c.consumerHandshake,
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
+		ConsumerStatus:       c.consumerStatus,
 		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []errors.MessageIDTuple {
-			// check hwo wants to delete message based on sessionID
-
 			data := timeline.DeleteMessages{
 				Timestamp:  dtime.TimeToMS(time.Now()),
 				TimelineID: []byte(timelineID),
 				Messages:   messageIDs,
 			}
 
+			// check hwo wants to delete message based on sessionID
 			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
 				data.CallerType = timeline.DeleteCaller_Consumer
-				data.DeleterID = consumer.ID
+				data.DeleterID = consumer.GetIDAsBytes()
 			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
 				data.CallerType = timeline.DeleteCaller_Producer
 				data.DeleterID = producer.GroupID
@@ -150,7 +130,7 @@ func (c *Coordinator) getConsumer(ctx context.Context, sessionID string) (*Consu
 }
 
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
-	_, err := c.catalog.GetTopic(ctx, consumer.Topic)
+	_, err := c.catalog.GetTopic(ctx, consumer.GetTopic())
 	if err != nil {
 		return "", err
 	}
@@ -162,11 +142,11 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 
 	consumerSync := synchronization.Consumer{
 		SessionID:        sessionID,
-		OverseerBrokerID: consumer.Cluster,
-		CarrierBrokerID:  consumer.Cluster,
+		OverseerBrokerID: consumer.GetCluster(),
+		CarrierBrokerID:  consumer.GetCluster(),
 	}
 	consumerSync.ConsumerID = consumer.GetID()
-	consumerSync.Topic = string(consumer.GetTopic())
+	consumerSync.Topic = consumer.GetTopic()
 	// TODO add the rest of the params
 
 	err = c.catalog.AddConsumer(ctx, consumerSync)
@@ -187,21 +167,22 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 	c.loadersMutex.Lock()
 	defer c.loadersMutex.Unlock()
 
-	if _, loaderExists := c.loaders[consumer.Topic]; !loaderExists {
-		topic, err := c.catalog.GetTopic(ctx, consumer.Topic)
+	if _, loaderExists := c.loaders[consumer.GetTopic()]; !loaderExists {
+		topic, err := c.catalog.GetTopic(ctx, consumer.GetTopic())
 		if err != nil {
 			return nil, err
 		}
-		c.loaders[consumer.Topic] = NewLoader(&LConfig{
+		c.loaders[consumer.GetTopic()] = NewLoader(&LConfig{
 			PrefetchMaxNoMsgs:       1000,
 			PrefetchMaxMilliseconds: 0,
 			Topic:                   &topic.Topic,
 		}, c.storage, c.dealer, c.greeter)
-		c.loaders[consumer.Topic].Start(c.baseCtx)
-		logrus.Infof("started consumer loader for topic: %s", consumer.Topic)
+		c.loaders[consumer.GetTopic()].Start(c.baseCtx)
+		logrus.Infof("started consumer loader for topic: %s", consumer.GetTopic())
 	}
 	return c.greeter.ConsumerConnected(sessionID)
 }
+
 func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string) error {
 	consumer, err := c.greeter.GetConsumer(sessionID)
 	if err != nil {
@@ -209,9 +190,18 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 		return err
 	}
 
-	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.Topic]
+	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.topic]
 	c.greeter.ConsumerDisconnected(sessionID)
-	return c.catalog.RemoveConsumer(ctx, consumer.Topic, string(consumer.ID))
+	return c.catalog.RemoveConsumer(ctx, consumer.GetTopic(), consumer.GetID())
+}
+
+func (c *Coordinator) consumerStatus(ctx context.Context, status protocol.ConsumerStatus) error {
+	consumer, err := c.greeter.GetConsumer(string(status.SessionID))
+	if err != nil {
+		return err
+	}
+	consumer.SetStatus(status)
+	return nil
 }
 
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {

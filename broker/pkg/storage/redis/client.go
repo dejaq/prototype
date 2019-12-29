@@ -109,7 +109,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey(clusterName, timelineID, msg.BucketID, msg.ID)
 
 		data := []string{
-			"ID", msg.GetID(),
+			"id", msg.GetID(),
 			"TimestampMS", strconv.FormatUint(msg.TimestampMS, 10),
 			"BodyID", msg.GetBodyID(),
 			"Body", msg.GetBody(),

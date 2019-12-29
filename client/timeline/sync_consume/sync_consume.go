@@ -34,7 +34,7 @@ func Consume(ctx context.Context, msgsCounter *atomic.Int32, conf *SyncConsumeCo
 		if err != nil {
 			log.Errorf("delete failed", err)
 		}
-		//logrus.Printf("received message ID='%s' body='%s' from bucket=%d\n", lease.Message.ID, string(lease.Message.Body), lease.Message.BucketID)
+		//logrus.Printf("received message id='%s' body='%s' from bucket=%d\n", lease.Message.id, string(lease.Message.Body), lease.Message.BucketID)
 	})
 
 	//log.Info("consumer handshake success")

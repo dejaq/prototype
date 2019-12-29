@@ -98,7 +98,7 @@ func (w *Cassandra) Insert(ctx context.Context, timelineID []byte, messages []ti
 	return nil
 }
 
-// SELECT message.ID BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
+// SELECT message.id BY TimelineID, BucketIDs ([]bucketIDs, limit, maxTimestamp) ([]messages, hasMore, error)
 func (w *Cassandra) Select(ctx context.Context, timelineID []byte, buckets []domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, bool, error) {
 	return nil, false, nil
 }

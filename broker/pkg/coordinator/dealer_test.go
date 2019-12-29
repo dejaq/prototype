@@ -26,4 +26,3 @@ func TestGladiatorDealer_Shuffle(t *testing.T) {
 		t.Fail()
 	}
 }
-
