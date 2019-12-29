@@ -102,7 +102,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey("cluster_name", timelineID, msg.BucketID, msg.ID)
 
 		data := []string{
-			"ID", msg.GetID(),
+			"id", msg.GetID(),
 			"TimestampMS", strconv.FormatUint(msg.TimestampMS, 10),
 			"BodyID", msg.GetBodyID(),
 			"Body", msg.GetBody(),
@@ -342,7 +342,7 @@ func (c *Client) Delete(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey("cluster_name:", timelineID, msg.BucketID, msg.ID)
 		ok, err = c.client.HDel(
 			messageKey,
-			"ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version",
+			"id", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version",
 		).Result()
 
 		if err != nil {

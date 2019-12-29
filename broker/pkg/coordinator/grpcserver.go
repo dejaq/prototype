@@ -70,13 +70,9 @@ func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.Ti
 }
 
 func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error) {
-	var c Consumer
-	c.LeaseMs = req.LeaseTimeoutMS()
-	c.Topic = string(req.TopicID())
-	c.Cluster = string(req.Cluster())
-	c.ID = req.ConsumerID()
+	c := NewConsumer(req.ConsumerID(), string(req.TopicID()), string(req.Cluster()), req.LeaseTimeoutMS())
 
-	sessionID, err := s.listeners.ConsumerHandshake(ctx, &c)
+	sessionID, err := s.listeners.ConsumerHandshake(ctx, c)
 	if err != nil {
 		return nil, err
 	}

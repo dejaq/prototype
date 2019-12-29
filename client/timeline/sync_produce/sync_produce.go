@@ -68,7 +68,7 @@ func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceC
 		maxT := dtime.TimeToMS(t.Add(config.ProduceDeltaMax))
 
 		batch = append(batch, timeline.Message{
-			ID: []byte(fmt.Sprintf("ID %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
+			ID: []byte(fmt.Sprintf("id %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
 			Body: append([]byte(fmt.Sprintf("BODY %s|msg_%d", config.Producer.GetProducerGroupID(), msgID)),
 				twelveKBBody...),
 			//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),

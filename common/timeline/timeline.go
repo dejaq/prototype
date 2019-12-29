@@ -12,13 +12,13 @@ type Message struct {
 	ID []byte
 	// the Unix timestamp, in milliseconds, when the message should be processed
 	TimestampMS uint64
-	// the ID of the payload
+	// the id of the payload
 	BodyID []byte
 	// the payload
 	Body []byte
 	// Group of producers that has ownership, string
 	ProducerGroupID []byte
-	// Unique consumer client ID that has a lock on it. Only valid if TimestampMS >= Now()
+	// Unique consumer client id that has a lock on it. Only valid if TimestampMS >= Now()
 	LockConsumerID []byte
 	// Randomly chosen at creation, used by the Loader
 	BucketID uint16
@@ -47,7 +47,7 @@ func (m Message) GetLockConsumerID() string {
 }
 
 func (m Message) String() string {
-	return "{Message [ID:" + m.GetID() + "]"
+	return "{Message [id:" + m.GetID() + "]"
 }
 
 type Topic struct {
@@ -122,7 +122,7 @@ func (m LeaseMessage) GetProducerGroupID() string {
 }
 
 func (m LeaseMessage) String() string {
-	return "{Message [ID:" + m.GetID() + "]"
+	return "{Message [id:" + m.GetID() + "]"
 }
 
 func NewLeaseMessage(msg Message) LeaseMessage {

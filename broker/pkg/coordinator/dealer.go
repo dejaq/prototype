@@ -78,11 +78,11 @@ func (d ExclusiveDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 
 	for i := range consumers {
 		if i < len(allRanges) {
-			consumers[i].AssignedBuckets = []domain.BucketRange{allRanges[i]}
-		} else {
-			// if it does not have a range, just reset it
-			consumers[i].AssignedBuckets = nil
+			consumers[i].SetAssignedBuckets([]domain.BucketRange{allRanges[i]})
+			continue
 		}
+		// if it does not have a range, just reset it
+		consumers[i].SetAssignedBuckets(nil)
 	}
 }
 
@@ -101,15 +101,17 @@ func (d GladiatorDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 	// assign ranges to customers in ascending order
 	for i := range consumers {
 		if i < len(allRanges) {
-			consumers[i].AssignedBuckets = []domain.BucketRange{allRanges[i]}
-		} else {
-			// if it does not have a range, just reset it
-			consumers[i].AssignedBuckets = nil
+			consumers[i].SetAssignedBuckets([]domain.BucketRange{allRanges[i]})
+			continue
 		}
+		// if it does not have a range, just reset it
+		consumers[i].SetAssignedBuckets(nil)
 	}
 
 	for i := 0; i < int(noOfConsumers)*int(noOfRanges-1); i++ {
 		consumerIndex := (i + int(noOfRanges)) % int(noOfConsumers)
-		consumers[consumerIndex].AssignedBuckets = append(consumers[consumerIndex].AssignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
+		assignedBuckets := consumers[consumerIndex].GetAssignedBuckets()
+		assignedBuckets = append(assignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
+		consumers[consumerIndex].SetAssignedBuckets(assignedBuckets)
 	}
 }
