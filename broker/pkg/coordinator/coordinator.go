@@ -136,18 +136,18 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 	c.loadersMutex.Lock()
 	defer c.loadersMutex.Unlock()
 
-	if _, loaderExists := c.loaders[consumer.topic]; !loaderExists {
-		topic, err := c.catalog.GetTopic(ctx, consumer.topic)
+	if _, loaderExists := c.loaders[consumer.GetTopic()]; !loaderExists {
+		topic, err := c.catalog.GetTopic(ctx, consumer.GetTopic())
 		if err != nil {
 			return nil, err
 		}
-		c.loaders[consumer.topic] = NewLoader(&LConfig{
+		c.loaders[consumer.GetTopic()] = NewLoader(&LConfig{
 			PrefetchMaxNoMsgs:       1000,
 			PrefetchMaxMilliseconds: 0,
 			Topic:                   &topic.Topic,
 		}, c.storage, c.dealer, c.greeter)
-		c.loaders[consumer.topic].Start(c.baseCtx)
-		logrus.Infof("started consumer loader for topic: %s", consumer.topic)
+		c.loaders[consumer.GetTopic()].Start(c.baseCtx)
+		logrus.Infof("started consumer loader for topic: %s", consumer.GetTopic())
 	}
 	return c.greeter.ConsumerConnected(sessionID)
 }
@@ -160,7 +160,7 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 
 	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.topic]
 	c.greeter.ConsumerDisconnected(sessionID)
-	return c.catalog.RemoveConsumer(ctx, consumer.topic, consumer.GetID())
+	return c.catalog.RemoveConsumer(ctx, consumer.GetTopic(), consumer.GetID())
 }
 
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {

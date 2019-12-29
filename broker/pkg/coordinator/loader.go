@@ -190,7 +190,7 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 				}
 				select {
 				case <-ctx.Done():
-					return sent, true, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.topic, context.DeadlineExceeded)
+					return sent, true, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
 				case <-tuple.Connected:
 					return sent, true, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
 				case tuple.Pipeline <- pushLeaseMessages[i]:

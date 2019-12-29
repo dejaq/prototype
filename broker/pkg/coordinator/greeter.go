@@ -89,7 +89,7 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
-	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.topic); exists {
+	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.GetTopic()); exists {
 		return "", errors.New("handshake already exists")
 	}
 
@@ -100,7 +100,7 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
 		c.SetHydrateStatus(protocol.Hydration_None)
 	}
-	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.topic, sessionID)
+	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.GetTopic(), sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = c
 	s.consumerSessionIDsAndPipelines[sessionID] = &ConsumerPipelineTuple{
@@ -176,7 +176,7 @@ func (s *Greeter) GetTopicFor(sessionID string) (string, error) {
 	}
 
 	if sessionData, isConsumer := s.consumerSessionsIDs[sessionID]; isConsumer {
-		return sessionData.topic, nil
+		return sessionData.GetTopic(), nil
 	}
 
 	return "", ErrNotFound
@@ -200,7 +200,7 @@ func (s *Greeter) GetAllConnectedConsumersWithHydrateStatus(topicID string, hydr
 	result := make([]*ConsumerPipelineTuple, 0, len(s.consumerSessionIDsAndPipelines))
 	for sessionID, pipe := range s.consumerSessionIDsAndPipelines {
 		consumer := s.consumerSessionsIDs[sessionID]
-		if consumer.GetHydrateStatus() != hydrateStatus || consumer.topic != topicID ||
+		if consumer.GetHydrateStatus() != hydrateStatus || consumer.GetTopic() != topicID ||
 			pipe.Connected == nil {
 			continue
 		}
