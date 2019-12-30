@@ -58,9 +58,6 @@ type Message struct {
 	Body []byte
 }
 
-//force implementation of interface
-var _ = storage.Repository(&Cassandra{})
-
 type Cassandra struct {
 	clusterConfig *gocql.ClusterConfig
 	session       *gocql.Session
@@ -138,8 +135,8 @@ func (w *Cassandra) CountByRangeWaiting(ctx context.Context, timelineID []byte, 
 }
 
 // SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerID []byte, timeReferenceMS uint64) []timeline.Message {
-	return nil
+func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerID []byte, limit int, timeReferenceMS uint64) ([]timeline.Message, []derrors.MessageIDTuple) {
+	return nil, []derrors.MessageIDTuple{}
 }
 
 // SELECT messages by TimelineID, ProducerOwnerID (ownership control)

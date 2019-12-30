@@ -453,8 +453,9 @@ func (c *Client) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, 
 }
 
 // SelectByConsumer - not used at this time
-func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, timeReferenceMS uint64) []timeline.Message {
+func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Message, []derrors.MessageIDTuple) {
 	var messages []timeline.Message
+	var errors []derrors.MessageIDTuple
 
 	keys := []string{
 		// timelineKey
@@ -472,7 +473,7 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
 		logrus.WithError(derror).Errorf("redis error")
-		return []timeline.Message{}
+		return []timeline.Message{}, append(errors, derrors.MessageIDTuple{Error: derror})
 	}
 
 	dataCollection := data.([]interface{})
@@ -487,12 +488,13 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 			derror.ShouldRetry = true
 			derror.WrappedErr = err
 			logrus.WithError(derror).Errorf("redis error")
+			errors = append(errors, derrors.MessageIDTuple{Error: derror})
 			continue
 		}
 		messages = append(messages, timelineMessage)
 	}
 
-	return messages
+	return messages, errors
 }
 
 // SelectByProducer - not used at this time
