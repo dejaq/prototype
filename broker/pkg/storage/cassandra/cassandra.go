@@ -58,9 +58,29 @@ type Message struct {
 	Body []byte
 }
 
+//force implementation of interface
+var _ = storage.Repository(&Cassandra{})
+
 type Cassandra struct {
 	clusterConfig *gocql.ClusterConfig
 	session       *gocql.Session
+}
+
+func (w *Cassandra) CreateTopic(ctx context.Context, timelineID string) error {
+	panic("implement me")
+}
+
+func (w *Cassandra) GetAndLease(
+	ctx context.Context,
+	timelineID []byte,
+	buckets domain.BucketRange,
+	consumerId []byte,
+	leaseMs uint64,
+	limit int,
+	currentTimeMS uint64,
+	maxTimeMS uint64,
+) ([]timeline.Lease, bool, error) {
+	panic("implement me")
 }
 
 func NewCassandra(hosts []string) *Cassandra {
@@ -115,7 +135,7 @@ func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs []
 }
 
 // DELETE messages by TimelineID, MessageID map[msgID]error
-func (w *Cassandra) Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []derrors.MessageIDTuple {
+func (w *Cassandra) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	return nil
 }
 
@@ -135,7 +155,7 @@ func (w *Cassandra) CountByRangeWaiting(ctx context.Context, timelineID []byte, 
 }
 
 // SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerID []byte, limit int, timeReferenceMS uint64) ([]timeline.Message, []derrors.MessageIDTuple) {
+func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, []derrors.MessageIDTuple{}
 }
 
