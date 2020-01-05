@@ -78,7 +78,7 @@ var scripts = struct {
 	
 	            -- get message details
 	            local message_key = bucket_key .. "::" .. m.id
-	            local message = redis.call("HMGET", message_key, "id", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
+	            local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
 	
 	            -- delete expired leases if exists for timeline consumers
 	            if (message_timeline_position_MS <= current_time_MS and message[12] ~= '') then
@@ -141,14 +141,38 @@ var scripts = struct {
 	`,
 	getByConsumerId: `
 	    local consumer_key = KEYS[1]
-	    local time_reference_MS = KEYS[2]
+	    local limit = KEYS[2]
+	    local time_reference_MS = KEYS[3]
 	
 	    local data = {}
 	
-	    local message_ids = redis.call("ZRANGEBYSCORE", consumer_key, time_reference_MS, "+inf")
-	    for idx, message_key in pairs(message_ids) do
-	        local message = redis.call("HMGET", message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
-	        local tmp = {message[1], message[1], message[2], message[3], message[4], message[5], message[6], message[7], message[8]}
+		-- group ids and score, score represent position of message on timeline
+	    local function groupIdsScore(c)
+	        local r = {}
+	        local tmp = {}
+	        for i, v in pairs(c) do
+	            if i % 2 == 0 then
+	                tmp.score = v
+	                table.insert(r, tmp)
+	                tmp = {}
+	            else
+	                tmp.message_key = v 
+	            end
+	        end
+	        return r
+	    end
+	
+	    local raw_ids_and_scores  = redis.call("ZRANGEBYSCORE", consumer_key, time_reference_MS, "+inf",  "LIMIT", "0", limit, "WITHSCORES")
+	    local grouped_ids_and_score = groupIdsScore(raw_ids_and_scores)
+	   
+	    for i, m in pairs(grouped_ids_and_score) do
+			local message_timeline_position_MS = m.score
+	        -- return when reach limit
+	        limit = limit - 1
+			if limit < 0 then return data end
+	
+		    local message = redis.call("HMGET", m.message_key, "ID", "TimestampMS", "BodyID", "Body", "ProducerGroupID", "LockConsumerID", "BucketID", "Version")
+	    	local tmp = {message_timeline_position_MS, message[1], message[2], message[3], message[4], message[5], message[6], message[7], message[8]}
 			table.insert(data, tmp)
 	    end
 	

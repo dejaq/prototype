@@ -388,7 +388,7 @@ func (c *CRClient) CountByRangeWaiting(ctx context.Context, timelineID []byte, a
 	panic("implement me")
 }
 
-func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Message, []errors.MessageIDTuple) {
+func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
 	panic("implement me")
 }
 

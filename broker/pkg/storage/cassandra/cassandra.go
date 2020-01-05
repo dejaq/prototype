@@ -155,8 +155,8 @@ func (w *Cassandra) CountByRangeWaiting(ctx context.Context, timelineID []byte, 
 }
 
 // SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, []derrors.MessageIDTuple) {
-	return nil, []derrors.MessageIDTuple{}
+func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
+	return nil, false, nil
 }
 
 // SELECT messages by TimelineID, ProducerOwnerID (ownership control)

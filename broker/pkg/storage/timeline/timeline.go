@@ -46,8 +46,8 @@ type Repository interface {
 	CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64
 	// COUNT messages BY TimelineID, RANGE and LockConsumerID is not empty (count waiting status)
 	CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64
-	// SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Message, []errors.MessageIDTuple)
+	// SelectByConsumer return consumer associated messages already leased
+	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error)
 	// SELECT messages by TimelineID, ProducerOwnerID (ownership control)
 	SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message
 }

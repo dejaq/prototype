@@ -43,7 +43,7 @@ func main() {
 	msgsCountPerTopic := 33
 	producersPerTopic := 2
 	consumersPerTopic := 13
-	runTimeout := time.Duration(70)
+	runTimeout := time.Duration(700)
 	//compared to now(), random TS of the produced messages
 	produceDeltaMin := time.Second
 	produceDeltaMax := time.Second
