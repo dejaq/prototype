@@ -109,7 +109,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 		messageKey := c.createMessageKey(clusterName, timelineID, msg.BucketID, msg.ID)
 
 		data := []string{
-			"id", msg.GetID(),
+			"ID", msg.GetID(),
 			"TimestampMS", strconv.FormatUint(msg.TimestampMS, 10),
 			"BodyID", msg.GetBodyID(),
 			"Body", msg.GetBody(),
@@ -219,7 +219,8 @@ func (c *Client) GetAndLease(
 
 		exitCode := data[0].(string)
 
-		// no success
+		// no success, be more verbose, you should know what`s happen, affected data,
+		// how to repair in case of rollback failure
 		if exitCode != "0" {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
@@ -246,7 +247,6 @@ func (c *Client) GetAndLease(
 
 		// till 1 indexes of data represents metadata
 		timelineMessage, err := convertRawMsgToTimelineMsg(data[2:])
-
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
@@ -272,7 +272,7 @@ func (c *Client) GetAndLease(
 
 		results = append(results, timeline.Lease{
 			ExpirationTimestampMS: endLeaseMS,
-			ConsumerID:            []byte(consumerId),
+			ConsumerID:            consumerId,
 			Message:               timeline.NewLeaseMessage(timelineMessage),
 		})
 	}
@@ -452,14 +452,13 @@ func (c *Client) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, 
 	return 0
 }
 
-// SelectByConsumer - not used at this time
-func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, timeReferenceMS uint64) []timeline.Message {
-	var messages []timeline.Message
+// SelectByConsumer return consumer associated messages already leased
+func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
+	var results []timeline.Lease
 
 	keys := []string{
-		// timelineKey
 		c.createTimelineKey(clusterName, timelineID) + "::" + string(consumerID),
-		// time reference in MS
+		strconv.Itoa(limit),
 		strconv.FormatUint(timeReferenceMS, 10),
 	}
 
@@ -472,13 +471,15 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
 		logrus.WithError(derror).Errorf("redis error")
-		return []timeline.Message{}
+		return nil, false, derror
 	}
 
 	dataCollection := data.([]interface{})
 	for _, val := range dataCollection {
 		data := val.([]interface{})
-		timelineMessage, err := convertRawMsgToTimelineMsg(data)
+
+		// no success, be more verbose, you should know what`s happen, affected data, how to fix
+		timelineMessage, err := convertRawMsgToTimelineMsg(data[1:])
 		if err != nil {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
@@ -489,10 +490,27 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 			logrus.WithError(derror).Errorf("redis error")
 			continue
 		}
-		messages = append(messages, timelineMessage)
+
+		endLeaseMS, err := strconv.ParseUint(data[0].(string), 10, 64)
+		if err != nil {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "getByConsumerId"
+			derror.Message = err.Error()
+			derror.ShouldRetry = true
+			derror.WrappedErr = err
+			logrus.WithError(derror).Errorf("redis error")
+			continue
+		}
+
+		results = append(results, timeline.Lease{
+			ExpirationTimestampMS: endLeaseMS,
+			ConsumerID:            consumerID,
+			Message:               timeline.NewLeaseMessage(timelineMessage),
+		})
 	}
 
-	return messages
+	return results, false, nil
 }
 
 // SelectByProducer - not used at this time

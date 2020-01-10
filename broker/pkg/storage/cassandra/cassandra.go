@@ -66,6 +66,23 @@ type Cassandra struct {
 	session       *gocql.Session
 }
 
+func (w *Cassandra) CreateTopic(ctx context.Context, timelineID string) error {
+	panic("implement me")
+}
+
+func (w *Cassandra) GetAndLease(
+	ctx context.Context,
+	timelineID []byte,
+	buckets domain.BucketRange,
+	consumerId []byte,
+	leaseMs uint64,
+	limit int,
+	currentTimeMS uint64,
+	maxTimeMS uint64,
+) ([]timeline.Lease, bool, error) {
+	panic("implement me")
+}
+
 func NewCassandra(hosts []string) *Cassandra {
 	return &Cassandra{
 		clusterConfig: gocql.NewCluster(hosts...),
@@ -118,7 +135,7 @@ func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs []
 }
 
 // DELETE messages by TimelineID, MessageID map[msgID]error
-func (w *Cassandra) Delete(ctx context.Context, timelineID []byte, messageIDs []timeline.Message) []derrors.MessageIDTuple {
+func (w *Cassandra) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	return nil
 }
 
@@ -138,8 +155,8 @@ func (w *Cassandra) CountByRangeWaiting(ctx context.Context, timelineID []byte, 
 }
 
 // SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
-func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerID []byte, timeReferenceMS uint64) []timeline.Message {
-	return nil
+func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
+	return nil, false, nil
 }
 
 // SELECT messages by TimelineID, ProducerOwnerID (ownership control)
