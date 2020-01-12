@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"fmt"
+	"github.com/dejaq/prototype/broker/domain"
 	"sync"
 	"time"
 
@@ -109,7 +110,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 			}()
 
 			tuple.C.SetHydrateStatus(protocol.Hydration_InProgress)
-			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, tuple)
+			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, 100, tuple)
 			if err != nil {
 				logrus.Error(err)
 				return
@@ -166,13 +167,52 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 	return !allFinished
 }
 
-func (c *Loader) hydrateOneConsumer(ctx context.Context, tuple *ConsumerPipelineTuple) (int, error) {
-	return 0, nil
+func (c *Loader) hydrateOneConsumer(ctx context.Context, limit int, tuple *ConsumerPipelineTuple) (int, error) {
+	fullRange := domain.BucketRange{
+		Start: 0,
+		End:   c.conf.Topic.Settings.BucketCount - 1,
+	}
+
+	var sent int
+	var err error
+	var pushLeaseMessages []timeline.Lease
+
+	defer tuple.C.AddAvailableBufferSize(-uint32(sent))
+	consumerLimit := limit
+	if int(tuple.C.LoadAvailableBufferSize()) < limit {
+		consumerLimit = int(tuple.C.LoadAvailableBufferSize())
+	}
+	hasMoreForThisBucket := true // we presume it has
+	for hasMoreForThisBucket {
+		pushLeaseMessages, hasMoreForThisBucket, err = c.storage.SelectByConsumer(ctx, tuple.C.GetTopicAsBytes(), tuple.C.GetIDAsBytes(), fullRange, consumerLimit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
+		if err != nil {
+			return sent, err
+		}
+		if len(pushLeaseMessages) == 0 {
+			return sent, nil
+		}
+
+		for i := range pushLeaseMessages {
+			if pushLeaseMessages[i].Message.GetID() == "" {
+				logrus.Fatalf("storage returned empty msgID")
+			}
+			select {
+			case <-ctx.Done():
+				return sent, fmt.Errorf("hydrateOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
+			case <-tuple.Connected:
+				return sent, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
+			case tuple.Pipeline <- pushLeaseMessages[i]:
+				//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
+				sent++
+			}
+		}
+	}
+	return sent, nil
 }
 
 //returns number of sent messages, if it sent all of them, and an error
 func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *ConsumerPipelineTuple) (int, bool, error) {
-	sent := 0
+	var sent int
 	var hasMoreForThisBucket bool
 	var pushLeaseMessages []timeline.Lease
 	for bi := range tuple.C.GetAssignedBuckets() {
