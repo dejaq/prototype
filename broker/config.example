@@ -1,0 +1,18 @@
+# config file is mandatory, env vars will not be read
+# if they are not present in config file,
+topic_count: 12
+batch_size: 15
+bucket_Count: 52
+messages_per_topic: 33
+producers_per_topic: 2
+consumers_per_topic: 13
+consumers_buffer_size: 100
+produce_delta_min_ms: 1000
+produce_delta_max_ms: 1000
+overseer_seed_host: "127.0.0.1:9000"
+broker_host: "127.0.0.1:9000"
+# STORAGE options: "cockroach", "miniredis", "redis" -miniredis not works
+# "redis" is tested with version 5.0.6
+storage_type: "redis"
+redis_host: "127.0.0.1:6379"
+run_timeout_ms: 7200
