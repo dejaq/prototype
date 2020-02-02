@@ -193,9 +193,6 @@ func (c *Loader) hydrateOneConsumer(ctx context.Context, limit int, tuple *Consu
 		}
 
 		for i := range pushLeaseMessages {
-			if pushLeaseMessages[i].Message.GetID() == "" {
-				logrus.Fatalf("storage returned empty msgID")
-			}
 			select {
 			case <-ctx.Done():
 				return sent, fmt.Errorf("hydrateOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
@@ -231,9 +228,6 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 			}
 
 			for i := range pushLeaseMessages {
-				if pushLeaseMessages[i].Message.GetID() == "" {
-					logrus.Fatalf("storage returned empty msgID")
-				}
 				select {
 				case <-ctx.Done():
 					return sent, true, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
