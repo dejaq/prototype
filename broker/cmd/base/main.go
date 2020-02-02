@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,7 +147,38 @@ func loadConfig() (Config, error) {
 	}
 
 	err = v.Unmarshal(&cfg)
+	overrideConfigByCLIParams(&cfg)
+
 	return cfg, err
+}
+
+func overrideConfigByCLIParams(cfg *Config) {
+	s := reflect.ValueOf(cfg).Elem()
+	for i := 0; i < s.NumField(); i++ {
+		v := s.Field(i)
+		tagName, ok := s.Type().Field(i).Tag.Lookup("mapstructure")
+		if !ok && !s.Field(i).CanSet() {
+			continue
+		}
+		overrideField(tagName, v)
+	}
+}
+
+func overrideField(tagName string, v reflect.Value) {
+	for _, arg := range os.Args[1:] {
+		if !strings.HasPrefix(arg[2:], tagName) {
+			continue
+		}
+		val := strings.Split(arg, "=")[1]
+		switch v.Kind() {
+		case reflect.Int:
+			if int64val, err := strconv.ParseInt(val, 10, 64); err == nil {
+				v.SetInt(int64val)
+			}
+		case reflect.String:
+			v.SetString(val)
+		}
+	}
 }
 
 func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger) error {
