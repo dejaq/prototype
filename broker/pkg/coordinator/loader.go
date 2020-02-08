@@ -65,7 +65,7 @@ func (c *Loader) Start(ctx context.Context) {
 				c.myCtx = nil
 				return
 			case <-time.After(c.timer.GetNextDuration()):
-				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*15)
+				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*20)
 				allConsumersGotAllMessages := c.loadMessages(thisIntervalCtx)
 				if allConsumersGotAllMessages {
 					c.timer.Increase() //we can wait for more time next time
@@ -135,13 +135,12 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 
 		c.dealer.Shuffle(activeConsumers, c.conf.Topic.Settings.BucketCount)
 
-		newCtx, _ := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
 		for _, tuple := range activeConsumersAndPipelines {
 			wg.Add(1)
 			go func(tuple *ConsumerPipelineTuple) {
 				defer wg.Done()
 
-				msgsSent, sentAllMessages, err := c.loadOneConsumer(newCtx, 100, tuple)
+				msgsSent, sentAllMessages, err := c.loadOneConsumer(ctx, 100, tuple)
 				if err != nil {
 					logrus.WithError(err).Error("loadOneConsumer failed")
 					return
