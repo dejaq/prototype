@@ -390,8 +390,11 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 		v := val.([]interface{})
 		code := v[1].(string)
 		if code == "1" {
-			messageId := v[0].(string)
-			endLeaseMS := v[2].(string)
+			messageId, _ := v[0].(string)
+			endLeaseMS, ok := v[2].(string)
+			if !ok {
+				endLeaseMS = "-1"
+			}
 
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
