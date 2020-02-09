@@ -215,6 +215,10 @@ func overrideField(tagName string, v reflect.Value) {
 			}
 		case reflect.String:
 			v.SetString(val)
+		case reflect.Bool:
+			if boolValue, err := strconv.ParseBool(val); err == nil {
+				v.SetBool(boolValue)
+			}
 		}
 	}
 }
