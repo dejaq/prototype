@@ -11,7 +11,6 @@ import (
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
-	"go.uber.org/atomic"
 )
 
 type SyncProduceConfig struct {
@@ -38,7 +37,7 @@ func init() {
 	}
 }
 
-func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceConfig) error {
+func Produce(ctx context.Context, config *SyncProduceConfig) error {
 	t := time.Now().UTC()
 	left := config.Count
 	var batch []timeline.Message
@@ -56,7 +55,6 @@ func Produce(ctx context.Context, msgCounter *atomic.Int32, config *SyncProduceC
 		if err != nil {
 			return errors.Wrap(err, "InsertMessages ERROR")
 		}
-		msgCounter.Add(int32(len(batch)))
 		batch = batch[:0]
 		return nil
 	}

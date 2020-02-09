@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/connectivity"
+
 	brokerClient "github.com/dejaq/prototype/client"
 	chief "github.com/dejaq/prototype/client/overseer"
 	"github.com/dejaq/prototype/client/timeline/consumer"
@@ -85,4 +87,12 @@ func (s *Satellite) Close() {
 	for _, c := range s.conns {
 		c.Close()
 	}
+}
+
+// WaitForConnection is a blocking call, until at least one of the overseer connections
+// are Ready. It returns false if the context timed out.
+// Presumes that ctx has a timeout
+func (s *Satellite) WaitForConnection(ctx context.Context) bool {
+	//TODO wait for all connections and close when the first one finished
+	return s.conns[0].WaitForStateChange(ctx, connectivity.Ready)
 }

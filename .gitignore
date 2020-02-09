@@ -1,2 +1,3 @@
 **/cockroach-data/
 **/config.yaml
+/broker/cmd/base/config.yml
