@@ -219,7 +219,7 @@ func overrideField(tagName string, v reflect.Value, logger *logrus.Logger) {
 		case reflect.Bool:
 			boolValue, err := strconv.ParseBool(val)
 			if err != nil {
-				logger.WithError(err).Warn("Could not parse param")
+				logger.WithError(err).Warnf("Could not parse boolean value for param: %s", tagName)
 				break
 			}
 			v.SetBool(boolValue)
