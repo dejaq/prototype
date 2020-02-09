@@ -8,11 +8,15 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/signal"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dejaq/prototype/client/timeline/producer"
+	"github.com/dejaq/prototype/client/timeline/sync_produce"
 
 	"github.com/spf13/viper"
 
@@ -24,9 +28,7 @@ import (
 	brokerClient "github.com/dejaq/prototype/client"
 	"github.com/dejaq/prototype/client/satellite"
 	"github.com/dejaq/prototype/client/timeline/consumer"
-	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_consume"
-	"github.com/dejaq/prototype/client/timeline/sync_produce"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -53,22 +55,29 @@ type Config struct {
 	StorageType         string `mapstructure:"storage_type"`
 	RedisHost           string `mapstructure:"redis_host"`
 	RunTimeoutMS        int    `mapstructure:"run_timeout_ms"`
+	StartProducers      bool   `mapstructure:"start_producers"`
+	StartBroker         bool   `mapstructure:"start_broker"`
+	StartConsumers      bool   `mapstructure:"start_consumers"`
 }
 
 func main() {
 	// load configuration
 	cfg, err := loadConfig()
 	if err != nil {
-		panic("Can not read config file which is mandatory, provide a 'config.yaml' as first child of broker")
+		panic("Can not read config file which is mandatory, provide the path to a 'config.yaml' as the first argument")
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))
 	logger := logrus.New()
-	err = startBroker(ctx, cfg, logger)
-	if err != nil {
-		logger.WithError(err).Fatal("failed startBroker")
-	}
 
+	if cfg.StartBroker {
+		err = startBroker(ctx, cfg, logger, cancel)
+		if err != nil {
+			logger.WithError(err).Fatal("failed startBroker")
+		}
+	} else {
+		logger.Info("skipping broker")
+	}
 	start := time.Now()
 	defer func() {
 		logger.Infof("finished in %dms", time.Now().Sub(start).Milliseconds())
@@ -86,6 +95,10 @@ func main() {
 		if err != nil {
 			logger.WithError(err).Fatal("brokerClient")
 		}
+		if !client.WaitForConnection(ctx) {
+			logger.Error("The connection to the broker cannot be established in time.")
+			return
+		}
 		chief := client.NewOverseerClient()
 		defer func() {
 			client.Close()
@@ -97,23 +110,7 @@ func main() {
 		go func(topic string) {
 			defer wg.Done()
 
-			err := chief.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
-				ReplicaCount:            0,
-				MaxSecondsFutureAllowed: 10,
-				MaxSecondsLease:         10,
-				ChecksumBodies:          false,
-				MaxBodySizeBytes:        100000,
-				RQSLimitPerClient:       100000,
-				MinimumProtocolVersion:  0,
-				MinimumDriverVersion:    0,
-				BucketCount:             uint16(cfg.BucketCount),
-			})
-			if err != nil {
-				logger.WithError(err).Fatal("failed creating topic")
-				return
-			}
-
-			produceAndConsumeSync(ctx, client, logger, &deployConfig{
+			testingParams := &deployConfig{
 				producerGroupsCount: cfg.ProducersPerTopic,
 				consumersCount:      cfg.ConsumersPerTopic,
 				topic:               topic,
@@ -122,12 +119,53 @@ func main() {
 				consumersBufferSize: int64(cfg.ConsumersBufferSize),
 				produceDeltaMin:     time.Duration(cfg.ProduceDeltaMinMS) * time.Millisecond,
 				produceDeltaMax:     time.Duration(cfg.ProduceDeltaMaxMS) * time.Millisecond,
-			})
+			}
+
+			if cfg.StartBroker {
+				//even if we only start the broker, we create here the topics, this way
+				//producers and consumers can start in any order they want, as separate processes.
+				err := chief.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
+					ReplicaCount:            0,
+					MaxSecondsFutureAllowed: 10,
+					MaxSecondsLease:         10,
+					ChecksumBodies:          false,
+					MaxBodySizeBytes:        100000,
+					RQSLimitPerClient:       100000,
+					MinimumProtocolVersion:  0,
+					MinimumDriverVersion:    0,
+					BucketCount:             uint16(cfg.BucketCount),
+				})
+				if err != nil {
+					logger.WithError(err).Fatal("failed creating topic")
+					return
+				}
+			}
+
+			if cfg.StartProducers {
+				runProducers(ctx, client, logger, testingParams)
+			} else {
+				logger.Info("skipping producers")
+			}
+			if cfg.StartConsumers {
+				runConsumers(ctx, client, logger, testingParams)
+			} else {
+				logger.Info("skipping consumers")
+			}
 		}(topicID)
 	}
 
 	wg.Wait()
-	logger.Info("all topics finished, closing the clients")
+
+	//if this processes does not start all 3 components, we'll wait for a CTRL-C
+	if cfg.StartBroker && (!cfg.StartProducers || !cfg.StartConsumers) {
+		//we need to wait for kill signal
+		c := make(chan os.Signal, 1)
+		signal.Notify(c)
+		logger.Info("Press CTRL-C or kill the process to stop the broker")
+		// Block until any signal is received.
+		<-c
+	}
+	logger.Info("all topics finished, closing everything")
 	cancel() //propagate trough the context
 }
 
@@ -181,7 +219,7 @@ func overrideField(tagName string, v reflect.Value) {
 	}
 }
 
-func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger) error {
+func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEverything context.CancelFunc) error {
 	var storageClient storageTimeline.Repository
 	switch cfg.StorageType {
 	case "redis":
@@ -243,6 +281,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger) error {
 		if err := ser.Serve(lis); err != nil {
 			logger.Printf("Failed to serve: %v", err)
 		}
+		stopEverything() //this fix the case when the broker shutdowns by its own (not killed by the user or err)
 	}()
 
 	go func() {
@@ -262,18 +301,25 @@ type deployConfig struct {
 	produceDeltaMin, produceDeltaMax    time.Duration
 }
 
-func produceAndConsumeSync(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
+func runProducers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
 	wgProducers := sync.WaitGroup{}
-	msgCounter := new(atomic.Int32)
-	consumersCtx, closeConsumers := context.WithCancel(ctx)
+	leftToProduce := config.msgsCount
+	aproxCountPerGroup := leftToProduce / config.producerGroupsCount
 
 	for pi := 0; pi < config.producerGroupsCount; pi++ {
 		wgProducers.Add(1)
-		go func(producerGroupID string, msgCounter *atomic.Int32) {
+		thisGroupShare := aproxCountPerGroup
+		//if is the last one, get the rest of the messages
+		if pi == config.producerGroupsCount-1 {
+			thisGroupShare = leftToProduce
+		}
+		leftToProduce -= thisGroupShare
+
+		go func(producerGroupID string, toProduce int) {
 			defer wgProducers.Done()
 			//TODO add more producers per group
 			pc := sync_produce.SyncProduceConfig{
-				Count:           config.msgsCount / config.producerGroupsCount,
+				Count:           toProduce,
 				BatchSize:       config.batchSize,
 				ProduceDeltaMin: config.produceDeltaMin,
 				ProduceDeltaMax: config.produceDeltaMax,
@@ -285,15 +331,23 @@ func produceAndConsumeSync(ctx context.Context, client brokerClient.Client, logg
 				}),
 			}
 
-			err := sync_produce.Produce(ctx, msgCounter, &pc)
+			err := sync_produce.Produce(ctx, &pc)
 			if err != nil {
 				log.Error(err)
 			}
-		}(fmt.Sprintf("producer_group_%d", pi), msgCounter)
+		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}
+	wgProducers.Wait()
+	logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
+}
+
+func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
+	msgCounter := new(atomic.Int64)
+	msgCounter.Add(int64(config.msgsCount))
+	consumersCtx, closeConsumers := context.WithCancel(ctx)
 
 	for ci := 0; ci < config.consumersCount; ci++ {
-		go func(consumerID string, counter *atomic.Int32) {
+		go func(consumerID string, counter *atomic.Int64) {
 			cc := sync_consume.SyncConsumeConfig{
 				Consumer: client.NewConsumer(&consumer.Config{
 					ConsumerID:    consumerID,
@@ -310,7 +364,6 @@ func produceAndConsumeSync(ctx context.Context, client brokerClient.Client, logg
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
 	}
 
-	wgProducers.Wait()
 	checker := time.NewTicker(time.Millisecond * 10)
 	defer checker.Stop()
 

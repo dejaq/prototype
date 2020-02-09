@@ -14,7 +14,7 @@ type SyncConsumeConfig struct {
 	Consumer *consumer.Consumer
 }
 
-func Consume(ctx context.Context, msgsCounter *atomic.Int32, conf *SyncConsumeConfig) error {
+func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeConfig) error {
 	conf.Consumer.Start(ctx, func(lease timeline.Lease) {
 		if lease.GetConsumerID() != conf.Consumer.GetConsumerID() {
 			log.Fatalf("server sent message for another consumer me=%s sent=%s", conf.Consumer.GetConsumerID(), lease.GetConsumerID())

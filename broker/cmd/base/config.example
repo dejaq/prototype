@@ -16,3 +16,6 @@ broker_host: "127.0.0.1:9000"
 storage_type: "redis"
 redis_host: "127.0.0.1:6379"
 run_timeout_ms: 7200
+start_producers: true
+start_broker: true
+start_consumers: true
