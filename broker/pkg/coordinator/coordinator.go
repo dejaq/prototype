@@ -247,7 +247,12 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []errors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
-	topic, _ := c.catalog.GetTopic(ctx, topicID)
+	topic, err := c.catalog.GetTopic(ctx, topicID)
+	if err != nil {
+		return []errors.MessageIDTuple{
+			{Error: derrors.Dejaror{WrappedErr: err, Message: err.Error()}, MessageID: msgs[0].ID},
+		}
+	}
 	for i := range msgs {
 		msgs[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
 		if msgs[i].GetID() == "" {
