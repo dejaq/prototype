@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/dejaq/prototype/client/timeline/producer"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 )
 
 type SyncProduceConfig struct {
@@ -38,7 +38,7 @@ func init() {
 }
 
 func Produce(ctx context.Context, config *SyncProduceConfig) error {
-	t := time.Now().UTC()
+	var t time.Time
 	left := config.Count
 	var batch []timeline.Message
 
@@ -65,10 +65,13 @@ func Produce(ctx context.Context, config *SyncProduceConfig) error {
 		minT := dtime.TimeToMS(t.Add(-config.ProduceDeltaMin))
 		maxT := dtime.TimeToMS(t.Add(config.ProduceDeltaMax))
 
+		t = time.Now().UTC()
+		bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%d|", strconv.Itoa(int(dtime.TimeToMS(t))), config.Producer.GetProducerGroupID(), msgID)
+
 		batch = append(batch, timeline.Message{
-			ID: []byte(fmt.Sprintf("id %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
-			Body: append([]byte(fmt.Sprintf("BODY %s|msg_%d", config.Producer.GetProducerGroupID(), msgID)),
-				twelveKBBody...),
+			//first part must be the the ms timestamp, so consumers can calculate the latency
+			ID:   []byte(fmt.Sprintf("id %s|msg_%d | topic_%s", config.Producer.GetProducerGroupID(), msgID, config.Producer.GetTopic())),
+			Body: append([]byte(bodyHeader), twelveKBBody...),
 			//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),
 			TimestampMS: minT + uint64(rand.Intn(int(maxT-minT))),
 		})
@@ -81,6 +84,6 @@ func Produce(ctx context.Context, config *SyncProduceConfig) error {
 	if err := flush(); err != nil {
 		return err
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.Producer.GetProducerGroupID(), config.Producer.GetTopic())
+	//log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.Producer.GetProducerGroupID(), config.Producer.GetTopic())
 	return nil
 }

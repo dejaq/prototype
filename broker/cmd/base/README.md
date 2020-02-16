@@ -25,12 +25,11 @@ The default will read the config from `./config.yml`, where the timeouts, topics
 
 ```bash
 #start the broker, this will also create the topics, wait for 1hour then close
-RUN_TIMEOUT_MS=3600000 START_PRODUCERS=false START_CONSUMERS=false go run main.go
+SEED=singlerun RUN_TIMEOUT_MS=3600000 START_PRODUCERS=false START_CONSUMERS=false go run main.go
 
 #start the producers, they will stop after inserting messages_per_topic count of message, for all topics
-START_BROKER=false START_CONSUMERS=false go run main.go
+SEED=singlerun START_BROKER=false START_CONSUMERS=false go run main.go
 
 #start the consumers, they will stop after consuming the required messages from all topics
-START_BROKER=false START_PRODUCERS=false go run main.go
-
+SEED=singlerun START_BROKER=false START_PRODUCERS=false go run main.go
 ```

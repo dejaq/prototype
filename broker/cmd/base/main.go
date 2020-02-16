@@ -58,6 +58,7 @@ type Config struct {
 	StartProducers      bool   `mapstructure:"start_producers"`
 	StartBroker         bool   `mapstructure:"start_broker"`
 	StartConsumers      bool   `mapstructure:"start_consumers"`
+	Seed                string `mapstructure:"seed"`
 }
 
 func main() {
@@ -88,6 +89,10 @@ func main() {
 		OverseersSeeds: strings.Split(cfg.OverseerSeedHost, ","),
 	}
 
+	if cfg.Seed == "" {
+		cfg.Seed = time.Now().UTC().Format(time.RFC822)
+	}
+
 	wg := sync.WaitGroup{}
 	for topicIndex := 0; topicIndex < cfg.TopicCount; topicIndex++ {
 		//each topic has its own gRPC client, producers and consumers
@@ -105,7 +110,7 @@ func main() {
 			//logger.Println("closing gRPC CLIENT goroutine")
 		}()
 
-		topicID := fmt.Sprintf("topic_%d", topicIndex)
+		topicID := fmt.Sprintf("topic_%s_%d", cfg.Seed, topicIndex)
 		wg.Add(1)
 		go func(topic string) {
 			defer wg.Done()
@@ -357,10 +362,12 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 					LeaseDuration: time.Millisecond * 1000,
 				}),
 			}
-			err := sync_consume.Consume(consumersCtx, counter, &cc)
+			avgFullRoundTripMS, err := sync_consume.Consume(consumersCtx, counter, &cc)
 			if err != nil {
 				log.Error(err)
 			}
+			//duration, _ := time.ParseDuration(fmt.Sprintf("%dms", avgFullRoundTripMS))
+			logger.Infof("avg round trip was %dms", avgFullRoundTripMS)
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
 	}
 
@@ -376,7 +383,7 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 				return
 			}
 		case <-ctx.Done():
-			logger.Panicf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), config.topic)
+			logger.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), config.topic)
 			return
 		}
 	}
