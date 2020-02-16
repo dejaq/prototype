@@ -90,7 +90,7 @@ func main() {
 	}
 
 	if cfg.Seed == "" {
-		cfg.Seed = time.Now().UTC().Format(time.RFC822)
+		cfg.Seed = time.Now().UTC().Format("Jan_02_15_04_05")
 	}
 
 	wg := sync.WaitGroup{}
@@ -145,6 +145,8 @@ func main() {
 					return
 				}
 			}
+
+			time.Sleep(time.Second)
 
 			if cfg.StartProducers {
 				runProducers(ctx, client, logger, testingParams)
@@ -230,23 +232,6 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	case "redis":
 		var err error
 		storageClient, err = redis.New(cfg.RedisHost)
-		if err != nil {
-			return fmt.Errorf("failed to connect to redis server: %w", err)
-		}
-	case "miniredis":
-		// start in memory redis server
-		redisServer, err := redis.NewServer()
-		if err != nil {
-			return fmt.Errorf("failed to start redis service: %w", err)
-		}
-		go func() {
-			select {
-			case <-ctx.Done():
-				redisServer.Close()
-			}
-		}()
-		// redis client that implement timeline interface
-		storageClient, err = redis.New(redisServer.Addr())
 		if err != nil {
 			return fmt.Errorf("failed to connect to redis server: %w", err)
 		}
