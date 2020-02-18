@@ -9,6 +9,8 @@ import (
 	"time"
 	"unsafe"
 
+	storageTimeline "github.com/dejaq/prototype/broker/pkg/storage/timeline"
+
 	"github.com/dejaq/prototype/broker/domain"
 	"github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
@@ -44,6 +46,8 @@ CREATE TABLE $BODY (
 );
 `
 ) //https://www.cockroachlabs.com/docs/stable/foreign-key.html
+
+var _ = storageTimeline.Repository(&CRClient{})
 
 type CRClient struct {
 	db     *sql.DB
@@ -305,13 +309,13 @@ func (c *CRClient) Lookup(ctx context.Context, timelineID []byte, messageIDs [][
 	panic("implement me")
 }
 
-func (c *CRClient) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []errors.MessageIDTuple {
+func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) []errors.MessageIDTuple {
 	batchSize := 25
 	var batch [][]byte
 	result := make([]errors.MessageIDTuple, 0)
-	ids := make([][]byte, len(deleteMessages.Messages))
-	for i := range deleteMessages.Messages {
-		ids[i] = deleteMessages.Messages[i].MessageID
+	ids := make([][]byte, len(request.Messages))
+	for i := range request.GetTimelineID() {
+		ids[i] = request.Messages[i].MessageID
 	}
 
 	failBatch := func(err error) {
@@ -352,13 +356,13 @@ func (c *CRClient) Delete(ctx context.Context, deleteMessages timeline.DeleteMes
 			failBatch(err)
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(deleteMessages.GetTimelineID()), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(request.GetTimelineID()), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(deleteMessages.GetTimelineID()), -1), args...)
+		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(request.GetTimelineID()), -1), args...)
 		if err != nil {
 			failBatch(err)
 			txn.Rollback()
@@ -388,8 +392,8 @@ func (c *CRClient) CountByRangeWaiting(ctx context.Context, timelineID []byte, a
 	panic("implement me")
 }
 
-func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
-	panic("implement me")
+func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
+	return nil, false, nil
 }
 
 func (c *CRClient) SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message {
