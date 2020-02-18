@@ -275,7 +275,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	grpServer := coordinator.NewGRPCServer(nil)
 	coordinatorConfig := coordinator.Config{}
 	dealer := coordinator.NewExclusiveDealer()
-	catalog := overseer.NewCatalog()
+	catalog := overseer.GetDefaultCatalog()
 	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 	go func() {
