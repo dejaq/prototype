@@ -62,14 +62,15 @@ type Config struct {
 }
 
 func main() {
+	logger := logrus.New()
+
 	// load configuration
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(logger)
 	if err != nil {
 		panic("Can not read config file which is mandatory, provide the path to a 'config.yaml' as the first argument")
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))
-	logger := logrus.New()
 
 	if cfg.StartBroker {
 		err = startBroker(ctx, cfg, logger, cancel)
@@ -176,7 +177,7 @@ func main() {
 	cancel() //propagate trough the context
 }
 
-func loadConfig() (Config, error) {
+func loadConfig(logger *logrus.Logger) (Config, error) {
 	v := viper.New()
 	path, _ := os.Getwd()
 	v.AddConfigPath(path)
@@ -192,12 +193,12 @@ func loadConfig() (Config, error) {
 	}
 
 	err = v.Unmarshal(&cfg)
-	overrideConfigByCLIParams(&cfg)
+	overrideConfigByCLIParams(&cfg, logger)
 
 	return cfg, err
 }
 
-func overrideConfigByCLIParams(cfg *Config) {
+func overrideConfigByCLIParams(cfg *Config, logger *logrus.Logger) {
 	s := reflect.ValueOf(cfg).Elem()
 	for i := 0; i < s.NumField(); i++ {
 		v := s.Field(i)
@@ -205,11 +206,11 @@ func overrideConfigByCLIParams(cfg *Config) {
 		if !ok && !s.Field(i).CanSet() {
 			continue
 		}
-		overrideField(tagName, v)
+		overrideField(tagName, v, logger)
 	}
 }
 
-func overrideField(tagName string, v reflect.Value) {
+func overrideField(tagName string, v reflect.Value, logger *logrus.Logger) {
 	for _, arg := range os.Args[1:] {
 		if !strings.HasPrefix(arg[2:], tagName) {
 			continue
@@ -222,6 +223,13 @@ func overrideField(tagName string, v reflect.Value) {
 			}
 		case reflect.String:
 			v.SetString(val)
+		case reflect.Bool:
+			boolValue, err := strconv.ParseBool(val)
+			if err != nil {
+				logger.WithError(err).Warnf("Could not parse boolean value for param: %s", tagName)
+				break
+			}
+			v.SetBool(boolValue)
 		}
 	}
 }
