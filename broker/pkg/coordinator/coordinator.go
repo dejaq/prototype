@@ -228,20 +228,21 @@ func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer)
 }
 
 func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
-	err := c.storage.CreateTopic(ctx, topic)
-	if err != nil {
-		log.Error(err)
-		return
-	}
 	syncTopic := synchronization.Topic{}
 	syncTopic.ID = topic
 	syncTopic.CreationTimestamp = dtime.TimeToMS(time.Now())
 	syncTopic.ProvisionStatus = protocol.TopicProvisioningStatus_Live
 	syncTopic.Settings = settings
 
-	err = c.catalog.AddTopic(ctx, syncTopic)
+	err := c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
 		log.Error(err)
+	}
+
+	err = c.storage.CreateTopic(ctx, topic)
+	if err != nil {
+		log.Error(err)
+		return
 	}
 }
 
