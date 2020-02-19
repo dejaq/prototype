@@ -29,11 +29,11 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 		})
 		return result
 	}
-	var i uint16
 
 	if consumersCount >= noOfBuckets {
 		// 1 consumer 1 bucket OR
 		// more consumers than buckets, some of them will have no buckets!
+		var i uint16
 		for ; i < consumersCount; i++ {
 			result = append(result, domain.BucketRange{
 				Start: i,
@@ -43,20 +43,19 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 		return result
 	}
 
-	//most likely case, 1 consumer multiple buckets
-	avgCountPerConsumer := uint16(math.Ceil(float64(noOfBuckets) / float64(consumersCount)))
-	latestI := consumersCount - 1
-
-	for ; i < consumersCount; i++ {
+	var start uint16
+	step := uint16(math.Ceil(float64(noOfBuckets) / float64(consumersCount)))
+	for {
 		r := domain.BucketRange{
-			Start: i * avgCountPerConsumer,
+			Start: start,
+			End:   start + step - 1,
 		}
-		if latestI == i {
-			//this covers the case when consumers=3 buckets=11 and last range should be [7,11)
-			r.End = noOfBuckets
-		} else {
-			r.End = r.Start + avgCountPerConsumer - 1
+		if r.End >= noOfBuckets-1 {
+			r.End = noOfBuckets - 1
+			result = append(result, r)
+			break
 		}
+		start = start + step
 		result = append(result, r)
 	}
 
