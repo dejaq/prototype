@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dejaq/prototype/common/metrics/exporter"
+
 	"github.com/dejaq/prototype/broker/pkg/storage/inmemory"
 
 	"github.com/dejaq/prototype/client/timeline/producer"
@@ -45,7 +47,7 @@ import (
 type Config struct {
 	TopicCount          int    `mapstructure:"topic_count"`
 	BatchSize           int    `mapstructure:"batch_size"`
-	BucketCount         int    `mapstructure:"bucket_Count"`
+	BucketCount         int    `mapstructure:"bucket_count"`
 	MessagesPerTopic    int    `mapstructure:"messages_per_topic"`
 	ProducersPerTopic   int    `mapstructure:"producers_per_topic"`
 	ConsumersPerTopic   int    `mapstructure:"consumers_per_topic"`
@@ -63,7 +65,15 @@ type Config struct {
 	Seed                string `mapstructure:"seed"`
 }
 
+const (
+	subsystem         = "common"
+	subsystemBroker   = "broker"
+	subsystemProducer = "producer"
+	subsystemConsumer = "consumer"
+)
+
 func main() {
+	go exporter.SetupStandardMetricsExporter(subsystem) // TODO use fine grained subsystems after switching to dedicated service starting code (broker, producer, consumer)
 	logger := logrus.New()
 
 	// load configuration

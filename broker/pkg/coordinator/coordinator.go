@@ -244,6 +244,7 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 		log.Error(err)
 		return
 	}
+	metricTopicsCounter.Inc(1)
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []errors.MessageIDTuple {

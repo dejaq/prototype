@@ -1,6 +1,6 @@
 [
   {
-    "targets": [ "grafana:3000" ],
+    "targets": [ "localhost:3000" ],
     "labels": {
       "job": "grafana"
     }
