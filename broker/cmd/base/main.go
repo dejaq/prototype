@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dejaq/prototype/broker/pkg/storage/inmemory"
+
 	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
 
@@ -67,7 +69,7 @@ func main() {
 	// load configuration
 	cfg, err := loadConfig(logger)
 	if err != nil {
-		panic("Can not read config file which is mandatory, provide the path to a 'config.yaml' as the first argument")
+		panic(err)
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))
@@ -237,6 +239,8 @@ func overrideField(tagName string, v reflect.Value, logger *logrus.Logger) {
 func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEverything context.CancelFunc) error {
 	var storageClient storageTimeline.Repository
 	switch cfg.StorageType {
+	case "memory":
+		storageClient = inmemory.New(overseer.GetDefaultCatalog())
 	case "redis":
 		var err error
 		storageClient, err = redis.New(cfg.RedisHost)
