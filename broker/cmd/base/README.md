@@ -1,6 +1,6 @@
 # Base command
 
-A simple tool we are using to jump start a broker and test how fast can we insert and consumer messages.
+A simple tool we are using to jump start a broker and test how fast can we insert and consume messages.
 
 ## Config
 
@@ -12,7 +12,7 @@ cp config.example config.yml
 ```
 
 ## Simple test
-Start a broker, set of consumers and producers.It will stop after all messages are consumed (so the entire flow is working, including deleting the messages).
+Start a broker, set of consumers and producers. It will stop after all messages are consumed (so the entire flow is working, including deleting the messages).
 
 ```bash
 go run main.go

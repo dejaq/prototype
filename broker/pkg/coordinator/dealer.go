@@ -31,10 +31,8 @@ func generateRangesFor(consumersCount uint16, noOfBuckets uint16) []domain.Bucke
 	}
 
 	if consumersCount >= noOfBuckets {
-		// 1 consumer 1 bucket OR
 		// more consumers than buckets, some of them will have no buckets!
-		var i uint16
-		for ; i < consumersCount; i++ {
+		for i := uint16(0); i < noOfBuckets; i++ {
 			result = append(result, domain.BucketRange{
 				Start: i,
 				End:   i,

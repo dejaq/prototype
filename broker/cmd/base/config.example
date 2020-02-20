@@ -2,7 +2,7 @@
 # if they are not present in config file,
 topic_count: 12
 batch_size: 15
-bucket_Count: 52
+bucket_count: 52
 messages_per_topic: 33
 producers_per_topic: 2
 consumers_per_topic: 13
