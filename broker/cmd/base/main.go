@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"math/rand"
 	"net"
 	"os"
@@ -43,7 +44,7 @@ import (
 type Config struct {
 	TopicCount          int    `mapstructure:"topic_count"`
 	BatchSize           int    `mapstructure:"batch_size"`
-	BucketCount         int    `mapstructure:"bucket_Count"`
+	BucketCount         int    `mapstructure:"bucket_count"`
 	MessagesPerTopic    int    `mapstructure:"messages_per_topic"`
 	ProducersPerTopic   int    `mapstructure:"producers_per_topic"`
 	ConsumersPerTopic   int    `mapstructure:"consumers_per_topic"`
@@ -61,13 +62,21 @@ type Config struct {
 	Seed                string `mapstructure:"seed"`
 }
 
+const (
+	subsystem = "common"
+	subsystemBroker = "broker"
+	subsystemProducer = "producer"
+	subsystemConsumer = "consumer"
+)
+
 func main() {
+	go exporter.SetupStandardMetricsExporter(subsystem) // TODO use fine grained subsystems after switching to dedicated service starting code (broker, producer, consumer)
 	logger := logrus.New()
 
 	// load configuration
 	cfg, err := loadConfig(logger)
 	if err != nil {
-		panic("Can not read config file which is mandatory, provide the path to a 'config.yaml' as the first argument")
+		panic("Can not read config file which is mandatory, provide the path to a 'config.yml' as the first argument")
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))

@@ -13,7 +13,6 @@ import (
 
 const (
 	namespace = "dejaq"
-	subsystem = "broker"
 )
 
 func SetupStandardMetricsExporter(subsystem string) {
