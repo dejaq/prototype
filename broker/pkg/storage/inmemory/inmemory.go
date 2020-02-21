@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
+
+	"go.uber.org/atomic"
 
 	"github.com/sirupsen/logrus"
 
@@ -36,8 +39,9 @@ var (
 )
 
 type memory struct {
-	topics  map[string]topic
-	catalog synchronization.Catalog
+	topics         map[string]topic
+	catalog        synchronization.Catalog
+	deleteReqCount atomic.Int64
 }
 
 type topic struct {
@@ -46,6 +50,7 @@ type topic struct {
 }
 
 type bucket struct {
+	m        sync.Mutex
 	id       uint16
 	messages []message
 }
@@ -120,8 +125,8 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 		// TODO maybe check more details about a message, like ID, BucketID, maybe all details
 		// insert message
 		bucket := &m.topics[stringTimelineID].buckets[int(msg.BucketID)]
-		bucket.id = msg.BucketID
 
+		bucket.m.Lock()
 		// raise error if message with same id already exists
 		var hasError bool
 		for _, message := range bucket.messages {
@@ -151,6 +156,7 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 				return bucket.messages[i].data.TimestampMS < bucket.messages[j].data.TimestampMS
 			})
 		}
+		bucket.m.Unlock()
 	}
 
 	return errs
@@ -192,11 +198,15 @@ func (m *memory) GetAndLease(
 			return results, false, derror
 		}
 
+		bucket := &m.topics[stringTimelineID].buckets[int(bucketID)]
+
 		// TODO issue, always will get messages from lower buckets which brake time priority, because of limit could not rich high priority messages
 		// get available messages
-		for i, msg := range m.topics[stringTimelineID].buckets[int(bucketID)].messages {
+		bucket.m.Lock()
+		for i, msg := range bucket.messages {
 			// stop when rich limit
 			if limit <= 0 {
+				bucket.m.Unlock()
 				return results, false, nil
 			}
 
@@ -223,6 +233,7 @@ func (m *memory) GetAndLease(
 				limit--
 			}
 		}
+		bucket.m.Unlock()
 	}
 
 	return results, false, nil
@@ -260,6 +271,9 @@ func (m *memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 }
 
 func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
+	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
+
 	stringTimelineID := string(deleteMessages.TimelineID)
 	var errs []derrors.MessageIDTuple
 
@@ -274,8 +288,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 		return append(errs, derrors.MessageIDTuple{Error: derror})
 	}
 
-	// iterate over messages and insert them
-	for i, deleteMessage := range deleteMessages.Messages {
+	for _, deleteMessage := range deleteMessages.Messages {
 		// check if bucket exists
 		if len(m.topics[stringTimelineID].buckets)-1 < int(deleteMessage.BucketID) {
 			var derror derrors.Dejaror
@@ -287,72 +300,19 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 		}
 
-		var messageFound bool
-		for _, msg := range m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages {
-			// check if message exists
-			if bytes.Equal(msg.data.ID, deleteMessage.MessageID) {
-				messageFound = true
-				// raise error if message does not belongs to consumer
-				if !bytes.Equal(msg.data.LockConsumerID, deleteMessages.CallerID) {
-					var derror derrors.Dejaror
-					derror.Module = derrors.ModuleStorage
-					derror.Operation = "delete"
-					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
-						deleteMessages.CallerType,
-						deleteMessages.CallerID,
-						deleteMessages.TimelineID,
-						ErrCallerNotAllowToDeleteMessage.Error(),
-					)
-					derror.ShouldRetry = false
-					derror.WrappedErr = ErrCallerNotAllowToDeleteMessage
-					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
-					logrus.WithError(derror)
-					break
-				}
-
-				// raise error if consumer lease is expired
-				if deleteMessages.Timestamp > msg.endLeaseMS {
-					var derror derrors.Dejaror
-					derror.Module = derrors.ModuleStorage
-					derror.Operation = "delete"
-					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
-						deleteMessages.CallerType,
-						deleteMessages.CallerID,
-						deleteMessages.TimelineID,
-						ErrExpiredLease.Error(),
-					)
-					derror.ShouldRetry = false
-					derror.WrappedErr = ErrExpiredLease
-					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
-					logrus.WithError(derror)
-					break
-				}
-
-				// raise error if version is not the same
-				if deleteMessages.Timestamp > msg.endLeaseMS {
-					var derror derrors.Dejaror
-					derror.Module = derrors.ModuleStorage
-					derror.Operation = "delete"
-					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
-						deleteMessages.CallerType,
-						deleteMessages.CallerID,
-						deleteMessages.TimelineID,
-						ErrMessageWrongVersion.Error(),
-					)
-					derror.ShouldRetry = false
-					derror.WrappedErr = ErrMessageWrongVersion
-					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
-					logrus.WithError(derror)
-					break
-				}
-
-				// delete message
-				m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages = removeMessage(m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages, i)
+		indexToDelete := -1
+		bucket := &m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)]
+		bucket.m.Lock()
+		for i, msg := range bucket.messages {
+			if !bytes.Equal(msg.data.ID, deleteMessage.MessageID) {
+				continue
 			}
+			indexToDelete = i
+			break
 		}
 
-		// if message was not found raise an error
-		if !messageFound {
+		// raise error if did not find message
+		if indexToDelete < 0 {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "delete"
@@ -366,7 +326,81 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			derror.WrappedErr = ErrMessageNotFound
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 			logrus.WithError(derror)
+
+			bucket.m.Unlock()
+			continue
 		}
+
+		msg := m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages[indexToDelete]
+
+		// raise error if message does not belongs to consumer
+		if !bytes.Equal(msg.data.LockConsumerID, deleteMessages.CallerID) {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+				deleteMessages.CallerType,
+				deleteMessages.CallerID,
+				deleteMessages.TimelineID,
+				ErrCallerNotAllowToDeleteMessage.Error(),
+			)
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrCallerNotAllowToDeleteMessage
+			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			logrus.WithError(derror)
+
+			bucket.m.Unlock()
+			continue
+		}
+
+		// raise error if consumer lease is expired
+		if deleteMessages.Timestamp > msg.endLeaseMS {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+				deleteMessages.CallerType,
+				deleteMessages.CallerID,
+				deleteMessages.TimelineID,
+				ErrExpiredLease.Error(),
+			)
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrExpiredLease
+			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			logrus.WithError(derror)
+
+			bucket.m.Unlock()
+			continue
+		}
+
+		// raise error if version is not the same
+		if deleteMessage.Version != msg.data.Version {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+				deleteMessages.CallerType,
+				deleteMessages.CallerID,
+				deleteMessages.TimelineID,
+				ErrMessageWrongVersion.Error(),
+			)
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrMessageWrongVersion
+			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			logrus.WithError(derror)
+
+			bucket.m.Unlock()
+			continue
+		}
+
+		// delete message
+		bucket.messages = removeMessage(bucket.messages, indexToDelete)
+		bucket.m.Unlock()
+
+		//fmt.Printf("Delete message: %s from: %d\n",
+		//	deleteMessage.MessageID,
+		//	len(bucket.messages),
+		//)
 	}
 
 	return errs

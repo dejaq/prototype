@@ -314,12 +314,12 @@ type deployConfig struct {
 }
 
 func runProducers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
-	wgProducers := sync.WaitGroup{}
+	//wgProducers := sync.WaitGroup{}
 	leftToProduce := config.msgsCount
 	aproxCountPerGroup := leftToProduce / config.producerGroupsCount
 
 	for pi := 0; pi < config.producerGroupsCount; pi++ {
-		wgProducers.Add(1)
+		//wgProducers.Add(1)
 		thisGroupShare := aproxCountPerGroup
 		//if is the last one, get the rest of the messages
 		if pi == config.producerGroupsCount-1 {
@@ -328,7 +328,7 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 		leftToProduce -= thisGroupShare
 
 		go func(producerGroupID string, toProduce int) {
-			defer wgProducers.Done()
+			//defer wgProducers.Done()
 			//TODO add more producers per group
 			pc := sync_produce.SyncProduceConfig{
 				Count:           toProduce,
@@ -349,8 +349,8 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			}
 		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}
-	wgProducers.Wait()
-	logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
+	//wgProducers.Wait()
+	//logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
 }
 
 func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
@@ -366,7 +366,7 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 					Topic:         config.topic,
 					Cluster:       "",
 					MaxBufferSize: config.consumersBufferSize,
-					LeaseDuration: time.Millisecond * 1000,
+					LeaseDuration: time.Minute, // TODO extract to config
 				}),
 			}
 			avgFullRoundTripMS, err := sync_consume.Consume(consumersCtx, counter, &cc)
