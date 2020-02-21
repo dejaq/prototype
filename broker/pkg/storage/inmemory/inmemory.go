@@ -1,9 +1,13 @@
 package inmemory
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 
@@ -18,11 +22,17 @@ import (
 var _ = storage.Repository(&memory{})
 
 var (
-	ErrTopicNotExists         = errors.New("topic not exists")
-	ErrTopicAlreadyExists     = errors.New("topic already exists")
-	ErrInvalidTopicName       = errors.New("invalid topic name")
-	ErrBucketCountLessThanOne = errors.New("buckets count should not be less than 1")
-	ErrBucketNotExists        = errors.New("bucket not exists")
+	ErrTopicNotExists                 = errors.New("topic not exists")
+	ErrTopicAlreadyExists             = errors.New("topic already exists")
+	ErrInvalidTopicName               = errors.New("invalid topic name")
+	ErrBucketCountLessThanOne         = errors.New("buckets count should not be less than 1")
+	ErrBucketNotExists                = errors.New("bucket not exists")
+	ErrUnknownDeleteCaller            = errors.New("unknown delete caller")
+	ErrCallerNotAllowToDeleteMessage  = errors.New("caller not allowed to delete message")
+	ErrMessageNotFound                = errors.New("message not found in storage")
+	ErrExpiredLease                   = errors.New("can not do actions on messages without an active lease")
+	ErrMessageWrongVersion            = errors.New("message has a different version, maybe it was updated meantime")
+	ErrMessageWithSameIDAlreadyExists = errors.New("message with same id already exists")
 )
 
 type memory struct {
@@ -43,7 +53,6 @@ type bucket struct {
 type message struct {
 	id         string
 	endLeaseMS uint64
-	consumerID string
 	data       timeline.Message
 }
 
@@ -82,9 +91,9 @@ func (m *memory) CreateTopic(ctx context.Context, timelineID string) error {
 // Insert ...
 func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	stringTimelineID := string(timelineID)
-	var insertErrors []derrors.MessageIDTuple
+	var errs []derrors.MessageIDTuple
 
-	// check if bucket exists
+	// check if topic exists
 	if _, ok := m.topics[stringTimelineID]; !ok {
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
@@ -92,7 +101,7 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 		derror.Message = ErrTopicNotExists.Error()
 		derror.ShouldRetry = false
 		derror.WrappedErr = ErrTopicNotExists
-		return append(insertErrors, derrors.MessageIDTuple{Error: derror})
+		return append(errs, derrors.MessageIDTuple{Error: derror})
 	}
 
 	// iterate over messages and insert them
@@ -105,26 +114,46 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.Message = ErrBucketNotExists.Error()
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrBucketNotExists
-			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
 		}
 
 		// TODO maybe check more details about a message, like ID, BucketID, maybe all details
 		// insert message
 		bucket := &m.topics[stringTimelineID].buckets[int(msg.BucketID)]
 		bucket.id = msg.BucketID
-		bucket.messages = append(bucket.messages, message{
-			id:         msg.GetID(),
-			endLeaseMS: msg.TimestampMS,
-			data:       msg,
-		})
 
-		// sort messages asc in slice
-		sort.Slice(bucket.messages, func(i, j int) bool {
-			return bucket.messages[i].data.TimestampMS < bucket.messages[j].data.TimestampMS
-		})
+		// raise error if message with same id already exists
+		var hasError bool
+		for _, message := range bucket.messages {
+			if bytes.Equal(message.data.ID, msg.ID) {
+				// TODO will refactor this, it is a nasty way
+				hasError = true
+				var derror derrors.Dejaror
+				derror.Module = derrors.ModuleStorage
+				derror.Operation = "insert"
+				derror.Message = ErrMessageWithSameIDAlreadyExists.Error()
+				derror.ShouldRetry = false
+				derror.WrappedErr = ErrMessageWithSameIDAlreadyExists
+				errs = append(errs, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+				break
+			}
+		}
+
+		if !hasError {
+			bucket.messages = append(bucket.messages, message{
+				id:         msg.GetID(),
+				endLeaseMS: msg.TimestampMS,
+				data:       msg,
+			})
+
+			// sort messages asc in slice
+			sort.Slice(bucket.messages, func(i, j int) bool {
+				return bucket.messages[i].data.TimestampMS < bucket.messages[j].data.TimestampMS
+			})
+		}
 	}
 
-	return insertErrors
+	return errs
 }
 
 func (m *memory) GetAndLease(
@@ -137,7 +166,6 @@ func (m *memory) GetAndLease(
 	currentTimeMS, maxTimeMS uint64,
 ) ([]timeline.Lease, bool, error) {
 	stringTimelineID := string(timelineID)
-	stringConsumerID := string(consumerID)
 	var results []timeline.Lease
 
 	// check if topic exists
@@ -173,7 +201,7 @@ func (m *memory) GetAndLease(
 			}
 
 			// messages with lease expired or messages unleased (prefetch)
-			if msg.endLeaseMS <= currentTimeMS || (msg.endLeaseMS > currentTimeMS && msg.endLeaseMS <= maxTimeMS && msg.consumerID == "") {
+			if msg.endLeaseMS <= currentTimeMS || (msg.endLeaseMS > currentTimeMS && msg.endLeaseMS <= maxTimeMS && len(msg.data.LockConsumerID) == 0) {
 				// calculate endLeaseMS by choose max time
 				// Normal:   currentTimeMS + leaseMS
 				// Prefetch: maxTimeMS + leaseMS
@@ -185,7 +213,7 @@ func (m *memory) GetAndLease(
 
 				// add or refresh lease on message
 				m.topics[stringTimelineID].buckets[int(bucketID)].messages[i].endLeaseMS = endLeaseMS
-				m.topics[stringTimelineID].buckets[int(bucketID)].messages[i].consumerID = stringConsumerID
+				m.topics[stringTimelineID].buckets[int(bucketID)].messages[i].data.LockConsumerID = consumerID
 
 				results = append(results, timeline.Lease{
 					ExpirationTimestampMS: endLeaseMS,
@@ -207,8 +235,152 @@ func (m *memory) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]b
 
 // Delete ...
 func (m *memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+	var errs []derrors.MessageIDTuple
+
+	switch deleteMessages.CallerType {
+	case timeline.DeleteCaller_Consumer:
+		if delErr := m.deleteByConsumerId(deleteMessages); delErr != nil {
+			errs = append(errs, delErr...)
+		}
+	case timeline.DeleteCaller_Producer:
+		if delErr := m.deleteByProducerGroupId(deleteMessages); delErr != nil {
+			errs = append(errs, delErr...)
+		}
+	default:
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "delete"
+		derror.Message = fmt.Sprintf("could not identify hwo wants to delete messages")
+		derror.ShouldRetry = false
+		derror.WrappedErr = ErrUnknownDeleteCaller
+		logrus.WithError(derror)
+		errs = append(errs, derrors.MessageIDTuple{Error: derror})
+	}
+	return errs
+}
+
+func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+	stringTimelineID := string(deleteMessages.TimelineID)
+	var errs []derrors.MessageIDTuple
+
+	// check if topic exists
+	if _, ok := m.topics[stringTimelineID]; !ok {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "delete"
+		derror.Message = ErrTopicNotExists.Error()
+		derror.ShouldRetry = false
+		derror.WrappedErr = ErrTopicNotExists
+		return append(errs, derrors.MessageIDTuple{Error: derror})
+	}
+
+	// iterate over messages and insert them
+	for i, deleteMessage := range deleteMessages.Messages {
+		// check if bucket exists
+		if len(m.topics[stringTimelineID].buckets)-1 < int(deleteMessage.BucketID) {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = ErrBucketNotExists.Error()
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrBucketNotExists
+			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+		}
+
+		var messageFound bool
+		for _, msg := range m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages {
+			// check if message exists
+			if bytes.Equal(msg.data.ID, deleteMessage.MessageID) {
+				messageFound = true
+				// raise error if message does not belongs to consumer
+				if !bytes.Equal(msg.data.LockConsumerID, deleteMessages.CallerID) {
+					var derror derrors.Dejaror
+					derror.Module = derrors.ModuleStorage
+					derror.Operation = "delete"
+					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+						deleteMessages.CallerType,
+						deleteMessages.CallerID,
+						deleteMessages.TimelineID,
+						ErrCallerNotAllowToDeleteMessage.Error(),
+					)
+					derror.ShouldRetry = false
+					derror.WrappedErr = ErrCallerNotAllowToDeleteMessage
+					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+					logrus.WithError(derror)
+					break
+				}
+
+				// raise error if consumer lease is expired
+				if deleteMessages.Timestamp > msg.endLeaseMS {
+					var derror derrors.Dejaror
+					derror.Module = derrors.ModuleStorage
+					derror.Operation = "delete"
+					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+						deleteMessages.CallerType,
+						deleteMessages.CallerID,
+						deleteMessages.TimelineID,
+						ErrExpiredLease.Error(),
+					)
+					derror.ShouldRetry = false
+					derror.WrappedErr = ErrExpiredLease
+					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+					logrus.WithError(derror)
+					break
+				}
+
+				// raise error if version is not the same
+				if deleteMessages.Timestamp > msg.endLeaseMS {
+					var derror derrors.Dejaror
+					derror.Module = derrors.ModuleStorage
+					derror.Operation = "delete"
+					derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+						deleteMessages.CallerType,
+						deleteMessages.CallerID,
+						deleteMessages.TimelineID,
+						ErrMessageWrongVersion.Error(),
+					)
+					derror.ShouldRetry = false
+					derror.WrappedErr = ErrMessageWrongVersion
+					errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+					logrus.WithError(derror)
+					break
+				}
+
+				// delete message
+				m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages = removeMessage(m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages, i)
+			}
+		}
+
+		// if message was not found raise an error
+		if !messageFound {
+			var derror derrors.Dejaror
+			derror.Module = derrors.ModuleStorage
+			derror.Operation = "delete"
+			derror.Message = fmt.Sprintf("can not delete on behalf of: %v with id: %s from timeline: %s, err: %s",
+				deleteMessages.CallerType,
+				deleteMessages.CallerID,
+				deleteMessages.TimelineID,
+				ErrMessageNotFound.Error(),
+			)
+			derror.ShouldRetry = false
+			derror.WrappedErr = ErrMessageNotFound
+			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			logrus.WithError(derror)
+		}
+	}
+
+	return errs
+}
+
+func (m *memory) deleteByProducerGroupId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	var deleteErrors []derrors.MessageIDTuple
+	// TODO implement when will rich this part
 	return deleteErrors
+}
+
+func removeMessage(s []message, i int) []message {
+	s[i] = s[len(s)-1]
+	return s[:len(s)-1]
 }
 
 // CountByRange - not used at this time
