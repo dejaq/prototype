@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/common/log"
+
 	"github.com/dejaq/prototype/client/timeline/producer"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
@@ -84,6 +86,6 @@ func Produce(ctx context.Context, config *SyncProduceConfig) error {
 	if err := flush(); err != nil {
 		return err
 	}
-	//log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.Producer.GetProducerGroupID(), config.Producer.GetTopic())
+	log.Infof("inserted %d messages group=%s on topic=%s", config.Count, config.Producer.GetProducerGroupID(), config.Producer.GetTopic())
 	return nil
 }

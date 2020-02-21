@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"math/rand"
 	"net"
 	"os"
@@ -15,6 +14,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
+
+	"github.com/dejaq/prototype/broker/pkg/storage/inmemory"
 
 	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
@@ -63,8 +66,8 @@ type Config struct {
 }
 
 const (
-	subsystem = "common"
-	subsystemBroker = "broker"
+	subsystem         = "common"
+	subsystemBroker   = "broker"
 	subsystemProducer = "producer"
 	subsystemConsumer = "consumer"
 )
@@ -76,7 +79,7 @@ func main() {
 	// load configuration
 	cfg, err := loadConfig(logger)
 	if err != nil {
-		panic("Can not read config file which is mandatory, provide the path to a 'config.yml' as the first argument")
+		panic(err)
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))
@@ -246,6 +249,8 @@ func overrideField(tagName string, v reflect.Value, logger *logrus.Logger) {
 func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEverything context.CancelFunc) error {
 	var storageClient storageTimeline.Repository
 	switch cfg.StorageType {
+	case "memory":
+		storageClient = inmemory.New(overseer.GetDefaultCatalog())
 	case "redis":
 		var err error
 		storageClient, err = redis.New(cfg.RedisHost)
@@ -277,7 +282,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	grpServer := coordinator.NewGRPCServer(nil)
 	coordinatorConfig := coordinator.Config{}
 	dealer := coordinator.NewExclusiveDealer()
-	catalog := overseer.NewCatalog()
+	catalog := overseer.GetDefaultCatalog()
 	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 	go func() {
@@ -309,12 +314,12 @@ type deployConfig struct {
 }
 
 func runProducers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
-	wgProducers := sync.WaitGroup{}
+	//wgProducers := sync.WaitGroup{}
 	leftToProduce := config.msgsCount
 	aproxCountPerGroup := leftToProduce / config.producerGroupsCount
 
 	for pi := 0; pi < config.producerGroupsCount; pi++ {
-		wgProducers.Add(1)
+		//wgProducers.Add(1)
 		thisGroupShare := aproxCountPerGroup
 		//if is the last one, get the rest of the messages
 		if pi == config.producerGroupsCount-1 {
@@ -323,7 +328,7 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 		leftToProduce -= thisGroupShare
 
 		go func(producerGroupID string, toProduce int) {
-			defer wgProducers.Done()
+			//defer wgProducers.Done()
 			//TODO add more producers per group
 			pc := sync_produce.SyncProduceConfig{
 				Count:           toProduce,
@@ -344,8 +349,8 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			}
 		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}
-	wgProducers.Wait()
-	logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
+	//wgProducers.Wait()
+	//logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
 }
 
 func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
@@ -361,7 +366,7 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 					Topic:         config.topic,
 					Cluster:       "",
 					MaxBufferSize: config.consumersBufferSize,
-					LeaseDuration: time.Millisecond * 1000,
+					LeaseDuration: time.Minute, // TODO extract to config
 				}),
 			}
 			avgFullRoundTripMS, err := sync_consume.Consume(consumersCtx, counter, &cc)

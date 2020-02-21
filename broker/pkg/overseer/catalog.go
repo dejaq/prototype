@@ -9,6 +9,16 @@ import (
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 )
 
+var onceCatalog sync.Once
+var defaultCatalog synchronization.Catalog
+
+func GetDefaultCatalog() synchronization.Catalog {
+	onceCatalog.Do(func() {
+		defaultCatalog = newCatalog()
+	})
+	return defaultCatalog
+}
+
 type Catalog struct {
 	m         sync.RWMutex
 	topics    map[string]synchronization.Topic
@@ -16,7 +26,7 @@ type Catalog struct {
 	producers map[string]synchronization.Producer
 }
 
-func NewCatalog() synchronization.Catalog {
+func newCatalog() synchronization.Catalog {
 	return &Catalog{
 		topics:    make(map[string]synchronization.Topic),
 		consumers: make(map[string]synchronization.Consumer),

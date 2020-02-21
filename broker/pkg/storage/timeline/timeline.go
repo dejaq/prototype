@@ -15,6 +15,8 @@ type MsgTime struct {
 	NewTimestamp uint64
 }
 
+// TODO inconsistent error management, sometimes return error and other times []errors
+// Insert return collection and GetAndLease return only one
 type Repository interface {
 	// Create a sample interface
 	CreateTopic(ctx context.Context, timelineID string) error

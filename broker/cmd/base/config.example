@@ -11,7 +11,7 @@ produce_delta_min_ms: 1000
 produce_delta_max_ms: 1000
 overseer_seed_host: "127.0.0.1:9000"
 broker_host: "127.0.0.1:9000"
-# STORAGE options: "cockroach", "miniredis", "redis" -miniredis not works
+# STORAGE options: "cockroach", "redis", "memory"
 # "redis" is tested with version 5.0.6
 storage_type: "redis"
 redis_host: "127.0.0.1:6379"

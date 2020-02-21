@@ -3,9 +3,10 @@ package coordinator
 import (
 	"context"
 	"fmt"
-	"github.com/dejaq/prototype/broker/domain"
 	"sync"
 	"time"
+
+	"github.com/dejaq/prototype/broker/domain"
 
 	"github.com/sirupsen/logrus"
 
@@ -42,7 +43,7 @@ func NewLoader(conf *LConfig, storage storage.Repository, dealer Dealer, greeter
 		//TODO move the min to the NewLoader as parameter, each Storage would want different setting
 		timer: NewTimer(&LoaderTimerConfig{
 			Min:  time.Millisecond * 5,
-			Max:  time.Millisecond * 300,
+			Max:  time.Millisecond * 200,
 			Step: time.Millisecond * 25,
 		}),
 	}
@@ -65,7 +66,7 @@ func (c *Loader) Start(ctx context.Context) {
 				c.myCtx = nil
 				return
 			case <-time.After(c.timer.GetNextDuration()):
-				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Second*20)
+				thisIntervalCtx, _ := context.WithTimeout(ctx, time.Minute)
 				allConsumersGotAllMessages := c.loadMessages(thisIntervalCtx)
 				if allConsumersGotAllMessages {
 					c.timer.Increase() //we can wait for more time next time
@@ -141,6 +142,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 				defer wg.Done()
 
 				msgsSent, sentAllMessages, err := c.loadOneConsumer(ctx, 100, tuple)
+				//fmt.Printf("Loader sent: %d\n", msgsSent)
 				if err != nil {
 					logrus.WithError(err).Error("loadOneConsumer failed")
 					return
