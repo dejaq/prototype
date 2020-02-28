@@ -1,22 +1,25 @@
-# config file is mandatory, env vars will not be read
-# if they are not present in config file,
-topic_count: 12
-batch_size: 15
-bucket_count: 52
-messages_per_topic: 33
-producers_per_topic: 2
-consumers_per_topic: 13
-consumers_buffer_size: 100
-produce_delta_min_ms: 1000
-produce_delta_max_ms: 1000
+# if they are not present in config file, env vars will not be read
+# config file is mandatory
+
+# development and testing params
+topic_count: 10
+messages_per_topic: 200
+producers_per_topic: 25
+consumers_per_topic: 35
+produce_delta_max_ms: 100
+produce_delta_min_ms: 100
 overseer_seed_host: "127.0.0.1:9000"
 broker_host: "127.0.0.1:9000"
-# STORAGE options: "cockroach", "redis", "memory"
-# "redis" is tested with version 5.0.6
-storage_type: "redis"
 redis_host: "127.0.0.1:6379"
-run_timeout_ms: 7200
+run_timeout_ms: 11720000
 start_producers: true
 start_broker: true
 start_consumers: true
-seed: ""
+
+# production params
+batch_size: 500
+bucket_count: 2000
+consumers_buffer_size: 10000
+# STORAGE options: "cockroach", "redis", "memory"
+# "redis" is tested with version 5.0.6
+storage_type: "memory"

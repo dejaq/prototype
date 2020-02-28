@@ -39,6 +39,7 @@ var (
 )
 
 type memory struct {
+	mu             sync.Mutex
 	topics         map[string]topic
 	catalog        synchronization.Catalog
 	deleteReqCount atomic.Int64
@@ -50,7 +51,7 @@ type topic struct {
 }
 
 type bucket struct {
-	m        sync.Mutex
+	mu       sync.Mutex
 	id       uint16
 	messages []message
 }
@@ -79,6 +80,8 @@ func (m *memory) CreateTopic(ctx context.Context, timelineID string) error {
 	if bucketCount < 1 {
 		return ErrBucketCountLessThanOne
 	}
+
+	m.mu.Lock()
 	if _, ok := m.topics[timelineID]; ok {
 		return ErrTopicAlreadyExists
 	}
@@ -90,6 +93,7 @@ func (m *memory) CreateTopic(ctx context.Context, timelineID string) error {
 		id:      timelineID,
 		buckets: buckets,
 	}
+	m.mu.Unlock()
 	return nil
 }
 
@@ -126,7 +130,7 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 		// insert message
 		bucket := &m.topics[stringTimelineID].buckets[int(msg.BucketID)]
 
-		bucket.m.Lock()
+		bucket.mu.Lock()
 		// raise error if message with same id already exists
 		var hasError bool
 		for _, message := range bucket.messages {
@@ -156,7 +160,7 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 				return bucket.messages[i].data.TimestampMS < bucket.messages[j].data.TimestampMS
 			})
 		}
-		bucket.m.Unlock()
+		bucket.mu.Unlock()
 	}
 
 	return errs
@@ -202,11 +206,11 @@ func (m *memory) GetAndLease(
 
 		// TODO issue, always will get messages from lower buckets which brake time priority, because of limit could not rich high priority messages
 		// get available messages
-		bucket.m.Lock()
+		bucket.mu.Lock()
 		for i, msg := range bucket.messages {
 			// stop when rich limit
 			if limit <= 0 {
-				bucket.m.Unlock()
+				bucket.mu.Unlock()
 				return results, false, nil
 			}
 
@@ -233,7 +237,7 @@ func (m *memory) GetAndLease(
 				limit--
 			}
 		}
-		bucket.m.Unlock()
+		bucket.mu.Unlock()
 	}
 
 	return results, false, nil
@@ -272,7 +276,7 @@ func (m *memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 
 func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
-	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
+	//fmt.Printf("-- Requested messages to delete %d\n", mu.deleteReqCount)
 
 	stringTimelineID := string(deleteMessages.TimelineID)
 	var errs []derrors.MessageIDTuple
@@ -302,7 +306,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 
 		indexToDelete := -1
 		bucket := &m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)]
-		bucket.m.Lock()
+		bucket.mu.Lock()
 		for i, msg := range bucket.messages {
 			if !bytes.Equal(msg.data.ID, deleteMessage.MessageID) {
 				continue
@@ -327,7 +331,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 			logrus.WithError(derror)
 
-			bucket.m.Unlock()
+			bucket.mu.Unlock()
 			continue
 		}
 
@@ -349,7 +353,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 			logrus.WithError(derror)
 
-			bucket.m.Unlock()
+			bucket.mu.Unlock()
 			continue
 		}
 
@@ -369,7 +373,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 			logrus.WithError(derror)
 
-			bucket.m.Unlock()
+			bucket.mu.Unlock()
 			continue
 		}
 
@@ -389,13 +393,13 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
 			logrus.WithError(derror)
 
-			bucket.m.Unlock()
+			bucket.mu.Unlock()
 			continue
 		}
 
 		// delete message
 		bucket.messages = removeMessage(bucket.messages, indexToDelete)
-		bucket.m.Unlock()
+		bucket.mu.Unlock()
 
 		//fmt.Printf("Delete message: %s from: %d\n",
 		//	deleteMessage.MessageID,
