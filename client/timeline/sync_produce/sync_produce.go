@@ -68,7 +68,7 @@ func Produce(ctx context.Context, config *SyncProduceConfig) error {
 		minT := dtime.TimeToMS(t.Add(-config.ProduceDeltaMin))
 		maxT := dtime.TimeToMS(t.Add(config.ProduceDeltaMax))
 
-		bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%d|", strconv.Itoa(int(dtime.TimeToMS(t))), config.Producer.GetProducerGroupID(), msgID)
+		bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%d|", strconv.FormatInt(t.UnixNano(), 10), config.Producer.GetProducerGroupID(), msgID)
 
 		batch = append(batch, timeline.Message{
 			//first part must be the the ms timestamp, so consumers can calculate the latency

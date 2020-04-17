@@ -35,7 +35,11 @@ func NewClient(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*S
 	result.baseCtx, result.closeEverything = context.WithCancel(ctx)
 
 	for _, seed := range conf.OverseersSeeds {
-		conn, err := grpc.Dial(seed, grpc.WithInsecure(), grpc.WithCodec(flatbuffers.FlatbuffersCodec{}))
+		conn, err := grpc.Dial(seed,
+			grpc.WithInsecure(),
+			grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
+			grpc.WithReadBufferSize(64*1024),
+			grpc.WithWriteBufferSize(64*1024))
 		if err != nil || conn == nil {
 			logger.WithError(err).Errorf("Failed to connect to: %s", seed)
 			continue

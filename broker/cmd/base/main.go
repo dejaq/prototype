@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -58,11 +59,15 @@ type Config struct {
 	BrokerHost          string `mapstructure:"broker_host"`
 	StorageType         string `mapstructure:"storage_type"`
 	RedisHost           string `mapstructure:"redis_host"`
-	RunTimeoutMS        int    `mapstructure:"run_timeout_ms"`
+	InternalRunTimeout  string `mapstructure:"run_timeout"`
 	StartProducers      bool   `mapstructure:"start_producers"`
 	StartBroker         bool   `mapstructure:"start_broker"`
 	StartConsumers      bool   `mapstructure:"start_consumers"`
 	Seed                string `mapstructure:"seed"`
+}
+
+func (c *Config) RunTimeout() (time.Duration, error) {
+	return time.ParseDuration(c.InternalRunTimeout)
 }
 
 const (
@@ -74,6 +79,10 @@ const (
 
 func main() {
 	go exporter.SetupStandardMetricsExporter(subsystem) // TODO use fine grained subsystems after switching to dedicated service starting code (broker, producer, consumer)
+	run()
+}
+
+func run() {
 	logger := logrus.New()
 
 	// load configuration
@@ -81,8 +90,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	timeout, err := cfg.RunTimeout()
+	if err != nil {
+		panic(err)
+	}
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond*time.Duration(cfg.RunTimeoutMS)))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 	if cfg.StartBroker {
 		err = startBroker(ctx, cfg, logger, cancel)
@@ -94,7 +107,10 @@ func main() {
 	}
 	start := time.Now()
 	defer func() {
-		logger.Infof("finished in %dms", time.Now().Sub(start).Milliseconds())
+		total := cfg.TopicCount * cfg.MessagesPerTopic
+		duration := time.Now().Sub(start)
+		throughput := math.Round(float64(total) / duration.Seconds())
+		logger.Infof("finished in %s throughput=%.0f events/s", duration.String(), throughput)
 	}()
 
 	clientConfig := satellite.Config{
@@ -278,7 +294,10 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
-	ser := grpc.NewServer(grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}))
+	ser := grpc.NewServer(
+		grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}),
+		grpc.ConnectionTimeout(time.Second*120),
+		grpc.MaxConcurrentStreams(uint32(cfg.TopicCount*(cfg.ConsumersPerTopic+cfg.ProducersPerTopic))))
 	grpServer := coordinator.NewGRPCServer(nil)
 	coordinatorConfig := coordinator.Config{}
 	dealer := coordinator.NewExclusiveDealer()
@@ -369,12 +388,11 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 					LeaseDuration: time.Minute, // TODO extract to config
 				}),
 			}
-			avgFullRoundTripMS, err := sync_consume.Consume(consumersCtx, counter, &cc)
+			avgFullRoundTripNs, err := sync_consume.Consume(consumersCtx, counter, &cc)
 			if err != nil {
 				log.Error(err)
 			}
-			//duration, _ := time.ParseDuration(fmt.Sprintf("%dms", avgFullRoundTripMS))
-			logger.Infof("avg round trip was %dms", avgFullRoundTripMS)
+			logger.Infof("avg round trip was %s", time.Duration(avgFullRoundTripNs).String())
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
 	}
 

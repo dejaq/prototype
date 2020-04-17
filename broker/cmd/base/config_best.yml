@@ -1,21 +1,21 @@
 # config file is mandatory, env vars will not be read
 # if they are not present in config file,
-topic_count: 12
-batch_size: 15
-bucket_count: 52
-messages_per_topic: 33
-producers_per_topic: 2
-consumers_per_topic: 13
-consumers_buffer_size: 100
+topic_count: 2
+batch_size: 3000
+consumers_buffer_size: 3000
+bucket_Count: 500
+messages_per_topic: 75000
+producers_per_topic: 1
+consumers_per_topic: 5
 produce_delta_min_ms: 1000
-produce_delta_max_ms: 1000
+produce_delta_max_ms: 0
 overseer_seed_host: "127.0.0.1:9000"
 broker_host: "127.0.0.1:9000"
-# STORAGE options: "cockroach", "redis", "memory"
+# STORAGE options: "cockroach", "miniredis", "redis" -miniredis not works
 # "redis" is tested with version 5.0.6
-storage_type: "redis"
+storage_type: "memory"
 redis_host: "127.0.0.1:6379"
-run_timeout: 7s
+run_timeout: 20s
 start_producers: true
 start_broker: true
 start_consumers: true

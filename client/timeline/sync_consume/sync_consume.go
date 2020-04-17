@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	dtime "github.com/dejaq/prototype/common/time"
-
 	"github.com/dejaq/prototype/client/timeline/consumer"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/prometheus/common/log"
@@ -20,16 +18,16 @@ type Average struct {
 	n   int
 }
 
-func (a Average) Add(x int64) {
+func (a *Average) Add(x int64) {
 	if x <= 0 {
 		return
 	}
 	a.sum += x
 	a.n++
 }
-func (a Average) Get() int64 {
+func (a *Average) Get() float64 {
 	if a.n > 0 {
-		return a.sum / int64(a.n)
+		return float64(a.sum) / float64(a.n)
 	}
 	return 0
 }
@@ -75,21 +73,21 @@ func (sc *syncconsumer) callback(lease timeline.Lease) {
 		return
 	}
 
-	createdMSTs, err := strconv.Atoi(string(parts[0]))
+	createdNs, err := strconv.Atoi(string(parts[0]))
 	if err != nil {
 		log.Errorf("malformed lateny ts, not an int id=%s err=%v", lease.Message.ID, err)
 		return
 	}
 
-	currentMSTS := dtime.TimeToMS(time.Now().UTC())
-	if int64(currentMSTS) <= int64(createdMSTs)-2 {
+	currentNs := time.Now().UTC().UnixNano()
+	if currentNs <= int64(createdNs) {
 		log.Errorf("we invented a time machine id=%s err=%v", lease.Message.ID, err)
 		return
 	}
-	sc.avg.Add(int64(currentMSTS) - int64(createdMSTs))
+	sc.avg.Add(currentNs - int64(createdNs))
 }
 
-func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeConfig) (int64, error) {
+func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeConfig) (float64, error) {
 
 	sc := &syncconsumer{
 		avg:         &Average{},
