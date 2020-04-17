@@ -16,33 +16,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dejaq/prototype/common/metrics/exporter"
-
-	"github.com/dejaq/prototype/broker/pkg/storage/inmemory"
-
-	"github.com/dejaq/prototype/client/timeline/producer"
-	"github.com/dejaq/prototype/client/timeline/sync_produce"
-
-	"github.com/spf13/viper"
-
-	"github.com/dejaq/prototype/broker/pkg/coordinator"
+	"github.com/dejaq/prototype/broker/pkg/carrier"
 	"github.com/dejaq/prototype/broker/pkg/overseer"
 	"github.com/dejaq/prototype/broker/pkg/storage/cockroach"
+	"github.com/dejaq/prototype/broker/pkg/storage/inmemory"
 	"github.com/dejaq/prototype/broker/pkg/storage/redis"
 	storageTimeline "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	brokerClient "github.com/dejaq/prototype/client"
 	"github.com/dejaq/prototype/client/satellite"
 	"github.com/dejaq/prototype/client/timeline/consumer"
+	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_consume"
+	"github.com/dejaq/prototype/client/timeline/sync_produce"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
+	_ "github.com/lib/pq"
 	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-
-	_ "github.com/lib/pq"
 )
 
 type Config struct {
@@ -263,10 +258,11 @@ func overrideField(tagName string, v reflect.Value, logger *logrus.Logger) {
 }
 
 func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEverything context.CancelFunc) error {
+	catalog := overseer.NewCatalog()
 	var storageClient storageTimeline.Repository
 	switch cfg.StorageType {
 	case "memory":
-		storageClient = inmemory.New(overseer.GetDefaultCatalog())
+		storageClient = inmemory.New(catalog)
 	case "redis":
 		var err error
 		storageClient, err = redis.New(cfg.RedisHost)
@@ -289,7 +285,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	default:
 		return errors.New("unknown storage")
 	}
-	greeter := coordinator.NewGreeter()
+	greeter := carrier.NewGreeter()
 	lis, err := net.Listen("tcp", cfg.BrokerHost)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -298,11 +294,10 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 		grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}),
 		grpc.ConnectionTimeout(time.Second*120),
 		grpc.MaxConcurrentStreams(uint32(cfg.TopicCount*(cfg.ConsumersPerTopic+cfg.ProducersPerTopic))))
-	grpServer := coordinator.NewGRPCServer(nil)
-	coordinatorConfig := coordinator.Config{}
-	dealer := coordinator.NewExclusiveDealer()
-	catalog := overseer.GetDefaultCatalog()
-	supervisor := coordinator.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
+	grpServer := carrier.NewGRPCServer(nil)
+	coordinatorConfig := carrier.Config{}
+	dealer := carrier.NewExclusiveDealer()
+	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 	go func() {
 		defer logger.Println("closing SERVER goroutine")

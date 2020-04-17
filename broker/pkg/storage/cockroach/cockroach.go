@@ -21,8 +21,8 @@ import (
 
 var (
 	stmtTopic = `
-DROP TABLE IF EXISTS $TOPIC CASCADE;
-CREATE TABLE $TOPIC (
+DROP TABLE IF EXISTS "$TOPIC" CASCADE;
+CREATE TABLE "$TOPIC" (
 	id STRING NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
@@ -38,8 +38,8 @@ CREATE TABLE $TOPIC (
 	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
  	FAMILY mutable (timeline, consumer_id, version)
 		);
-DROP TABLE IF EXISTS $BODY CASCADE;
-CREATE TABLE $BODY (
+DROP TABLE IF EXISTS "$BODY" CASCADE;
+CREATE TABLE "$BODY" (
 	id STRING NOT NULL,
 	body STRING,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC)
@@ -119,7 +119,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		}
 
 		//https://godoc.org/github.com/lib/pq#hdr-Bulk_imports
-		stmt, err := txn.Prepare(pq.CopyIn(table(string(timelineID)),
+		stmt, err := txn.PrepareContext(ctx, pq.CopyIn(table(string(timelineID)),
 			"id",
 			"bucket_id",
 			"ts",
@@ -161,7 +161,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 			continue
 		}
 
-		stmtBodies, err := txn.Prepare(pq.CopyIn(tableBodies(string(timelineID)), "id", "body"))
+		stmtBodies, err := txn.PrepareContext(ctx, pq.CopyIn(tableBodies(string(timelineID)), "id", "body"))
 		if err != nil {
 			addFailedBatch(err)
 			txn.Rollback()
@@ -204,12 +204,13 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets domain.BucketRange, consumerId []byte, leaseMs uint64, limit int, currentTimeMS uint64, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 
 	//https://www.cockroachlabs.com/docs/v19.2/update.html#update-and-return-values
-	queryUpdate := strings.Replace(`UPDATE $TOPIC SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
+	queryUpdate := strings.Replace(`UPDATE "$TOPIC" SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
 		( timeline <= $1 OR (timeline > $1 AND timeline <= $4 AND consumer_id = NULL )) 
 		AND bucket_id >= $5 AND bucket_id <= $6
 		LIMIT $7
 		RETURNING id;
 	`, "$TOPIC", table(string(timelineID)), -1)
+	//Note: the server will automatically do some retries https://www.cockroachlabs.com/docs/stable/transactions.html#automatic-retries
 
 	st, err := c.db.PrepareContext(ctx, queryUpdate)
 	if err != nil {
@@ -260,7 +261,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 
 	querySelect := fmt.Sprintf(`SELECT 
 		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id, topic.version, bodies.body
-		FROM %s AS topic INNER JOIN %s AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
+		FROM "%s" AS topic INNER JOIN "%s" AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
 		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(params, ","))
 
 	sel, err := c.db.PrepareContext(ctx, querySelect)
@@ -314,7 +315,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 	var batch [][]byte
 	result := make([]errors.MessageIDTuple, 0)
 	ids := make([][]byte, len(request.Messages))
-	for i := range request.GetTimelineID() {
+	for i := range request.Messages {
 		ids[i] = request.Messages[i].MessageID
 	}
 
@@ -344,7 +345,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 
 		holders := strings.Split(strings.Repeat("?", max), "")
 		//the same queries works for bodies as well
-		query := fmt.Sprintf(`DELETE * FROM $TABLE WHERE id IN (%s);`, strings.Join(holders, ","))
+		query := fmt.Sprintf(`DELETE * FROM "$TABLE" WHERE id IN (%s) LIMIT %d;`, strings.Join(holders, ","), len(batch))
 
 		args := make([]interface{}, len(batch))
 		for i := range batch {
