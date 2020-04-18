@@ -203,13 +203,14 @@ func (c *Consumer) sendConsumerStatus(ctx context.Context, bidiStream dejaq.Brok
 	builder = flatbuffers.NewBuilder(128)
 	ticker := time.NewTicker(c.conf.UpdatePreloadStatsTick)
 	defer ticker.Stop() //otherwise it will leak
+	sessionID := c.getSessionID()
 
 	for {
 		select {
 		case <-ticker.C:
 			builder.Reset()
 
-			sessionIDPosition := builder.CreateString(c.sessionID)
+			sessionIDPosition := builder.CreateString(sessionID)
 			dejaq.TimelineConsumerStatusStart(builder)
 			dejaq.TimelineConsumerStatusAddMaxBufferSize(builder, uint32(c.conf.MaxBufferSize))
 			dejaq.TimelineConsumerStatusAddAvailableBufferSize(builder, uint32(int(c.conf.MaxBufferSize)-len(c.msgBuffer)))
@@ -288,8 +289,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 }
 
 func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
-	c.mutex.RLock()
-	defer c.mutex.RLock()
+	sessionID := c.getSessionID()
 
 	stream, err := c.carrier.TimelineDelete(ctx)
 	if err != nil {
@@ -303,7 +303,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 		builder.Reset()
 
 		msgIDPosition := builder.CreateByteVector(msgs[i].ID)
-		sessionIDPosition := builder.CreateString(c.sessionID)
+		sessionIDPosition := builder.CreateString(sessionID)
 		dejaq.TimelineDeleteRequestStart(builder)
 		dejaq.TimelineDeleteRequestAddMessageID(builder, msgIDPosition)
 		dejaq.TimelineDeleteRequestAddSessionID(builder, sessionIDPosition)

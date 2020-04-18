@@ -53,20 +53,20 @@ func (sc *syncconsumer) callback(lease timeline.Lease) {
 		sc.logger.Fatalf("server sent message for another topic: %s sent consumerID: %s, msgID: %s, producedBy: %s",
 			sc.conf.Consumer.GetTopicID(), lease.GetConsumerID(), lease.Message.GetID(), lease.Message.GetProducerGroupID())
 	}
-	//Process the messages
-	//err := sc.conf.Consumer.Delete(sc.ctx, []timeline.Message{{
-	//	ID:          lease.Message.ID,
-	//	TimestampMS: lease.Message.TimestampMS,
-	//	BucketID:    lease.Message.BucketID,
-	//	Version:     lease.Message.Version,
-	//}})
-
 	sc.msgsCounter.Dec()
 
-	//if err != nil {
-	//	sc.logger.WithError(err).Error("delete failed")
-	//	return
-	//}
+	//Process the messages
+	err := sc.conf.Consumer.Delete(sc.ctx, []timeline.Message{{
+		ID:          lease.Message.ID,
+		TimestampMS: lease.Message.TimestampMS,
+		BucketID:    lease.Message.BucketID,
+		Version:     lease.Message.Version,
+	}})
+
+	if err != nil {
+		sc.logger.WithError(err).Error("delete failed")
+		return
+	}
 
 	//retrieve the time when it was created, so we can see how long it took to process it
 	parts := bytes.SplitN(lease.Message.Body[:25], []byte{'|'}, 2)
@@ -98,11 +98,15 @@ func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeCo
 		logger:      logger,
 	}
 
-	err := conf.Consumer.Handshake(ctx)
-	if err != nil {
-		return 0, err
+	handshakeAndStart := func() error {
+		err := conf.Consumer.Handshake(ctx)
+		if err != nil {
+			return err
+		}
+		return conf.Consumer.Start()
 	}
-	err = conf.Consumer.Start()
+
+	err := handshakeAndStart()
 	if err != nil {
 		return 0, err
 	}
@@ -113,15 +117,16 @@ func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeCo
 		if err != nil {
 			if err == consumer.ErrMissingHandshake {
 				//try only once to reconnect
-				herr := conf.Consumer.Handshake(ctx)
-				if herr != nil {
-					return sc.avg.Get(), herr
+				err = handshakeAndStart()
+				if err == nil {
+					//successfull, we're back in business
+					continue
 				}
+			}
 
-				//this is not an error since we consumed all messages
-				if strings.Contains(err.Error(), context.Canceled.Error()) {
-					err = nil
-				}
+			//this is not an error since we consumed all messages
+			if strings.Contains(err.Error(), context.Canceled.Error()) {
+				err = nil
 			}
 			return sc.avg.Get(), err
 		}
