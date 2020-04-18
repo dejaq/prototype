@@ -76,6 +76,9 @@ func TestGladiatorDealer_Shuffle(t *testing.T) {
 						t.Errorf("failed duplicate/wrong bucket=%d for test=%v", bi, tt)
 					}
 				}
+				if len(leftToCheck) > 0 {
+					t.Errorf("buckets %v left not assigned", leftToCheck)
+				}
 			}
 		})
 	}
