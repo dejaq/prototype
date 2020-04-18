@@ -1,4 +1,4 @@
-package coordinator
+package carrier
 
 import (
 	"math"
@@ -83,6 +83,9 @@ func (d ExclusiveDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 	}
 }
 
+// GladiatorDealer deals all the buckets to all the consumers, but in different orders
+// If a consumer dies or is slower the others will help by consuming its buckets
+// The system is more fault-tolerant but it will add more load on the storage
 type GladiatorDealer struct {
 }
 
@@ -108,7 +111,8 @@ func (d GladiatorDealer) Shuffle(consumers []*Consumer, noOfBuckets uint16) {
 	for i := 0; i < int(noOfConsumers)*int(noOfRanges-1); i++ {
 		consumerIndex := (i + int(noOfRanges)) % int(noOfConsumers)
 		assignedBuckets := consumers[consumerIndex].GetAssignedBuckets()
-		assignedBuckets = append(assignedBuckets, allRanges[(i+int(noOfRanges))/int(noOfRanges)].DESC())
+		bucketRange := allRanges[(i+int(noOfRanges))/int(noOfRanges)]
+		assignedBuckets = append(assignedBuckets, bucketRange.DESC())
 		consumers[consumerIndex].SetAssignedBuckets(assignedBuckets)
 	}
 }

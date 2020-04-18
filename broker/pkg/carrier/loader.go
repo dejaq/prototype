@@ -1,4 +1,4 @@
-package coordinator
+package carrier
 
 import (
 	"context"
@@ -16,36 +16,34 @@ import (
 	"github.com/dejaq/prototype/common/timeline"
 )
 
-type LConfig struct {
+type LoaderConfig struct {
 	PrefetchMaxNoMsgs       uint16
 	PrefetchMaxMilliseconds uint64
 	Topic                   *timeline.Topic
+	Timers                  LoaderTimerConfig
 }
 
+// Loader is in charge of pushing the messages to all active consumers.
+// It has an internal tick that checks the DB for available msgs.
 type Loader struct {
 	opMutex sync.Mutex
-	conf    *LConfig
+	conf    *LoaderConfig
 	myCtx   context.Context
 	cancel  context.CancelFunc
 	storage storage.Repository
 	dealer  Dealer
 	greeter *Greeter
-	timer   *LoaderTimer
+	timer   *loaderTimer
 }
 
-func NewLoader(conf *LConfig, storage storage.Repository, dealer Dealer, greeter *Greeter) *Loader {
+func NewLoader(conf *LoaderConfig, storage storage.Repository, dealer Dealer, greeter *Greeter) *Loader {
 	return &Loader{
 		conf:    conf,
 		storage: storage,
 		dealer:  dealer,
 		opMutex: sync.Mutex{},
 		greeter: greeter,
-		//TODO move the min to the NewLoader as parameter, each Storage would want different setting
-		timer: NewTimer(&LoaderTimerConfig{
-			Min:  time.Millisecond * 5,
-			Max:  time.Millisecond * 200,
-			Step: time.Millisecond * 25,
-		}),
+		timer:   newTimer(conf.Timers),
 	}
 }
 
@@ -58,7 +56,6 @@ func (c *Loader) Start(ctx context.Context) {
 	c.myCtx, c.cancel = context.WithCancel(ctx)
 
 	go func() {
-		//TODO replace this with a smarter time interval
 		for {
 			select {
 			case <-ctx.Done():
@@ -245,34 +242,40 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 	return sent, true, nil
 }
 
+// LoaderTimerConfig contains the settings for the interval between 2 ticks of the Loader
 type LoaderTimerConfig struct {
-	Min, Max time.Duration
-	Step     time.Duration
+	// the minimum wait time between 2 ticks, will be used when consumers have not consumed all their messages
+	// for the last few ticks
+	Min time.Duration
+	// will reach this state when consumers are up to date, most likely no traffic is done
+	Max time.Duration
+	// each step the tick wait time is adjusted with this value
+	Step time.Duration
 }
-type LoaderTimer struct {
-	conf    *LoaderTimerConfig
+type loaderTimer struct {
+	conf    LoaderTimerConfig
 	Current time.Duration
 }
 
-func NewTimer(conf *LoaderTimerConfig) *LoaderTimer {
-	return &LoaderTimer{
+func newTimer(conf LoaderTimerConfig) *loaderTimer {
+	return &loaderTimer{
 		conf:    conf,
 		Current: conf.Min,
 	}
 }
 
-func (t *LoaderTimer) GetNextDuration() time.Duration {
+func (t *loaderTimer) GetNextDuration() time.Duration {
 	return t.Current
 }
 
-func (t *LoaderTimer) Decrease() {
+func (t *loaderTimer) Decrease() {
 	t.Current = t.Current - t.conf.Step
 	if t.Current < t.conf.Min {
 		t.Current = t.conf.Min
 	}
 }
 
-func (t *LoaderTimer) Increase() {
+func (t *loaderTimer) Increase() {
 	t.Current = t.Current + t.conf.Step
 	if t.Current > t.conf.Max {
 		t.Current = t.conf.Max

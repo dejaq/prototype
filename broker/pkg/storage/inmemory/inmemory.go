@@ -22,7 +22,7 @@ import (
 )
 
 //force implementation of interface
-var _ = storage.Repository(&memory{})
+var _ = storage.Repository(&Memory{})
 
 var (
 	ErrTopicNotExists                 = errors.New("topic not exists")
@@ -38,7 +38,7 @@ var (
 	ErrMessageWithSameIDAlreadyExists = errors.New("message with same id already exists")
 )
 
-type memory struct {
+type Memory struct {
 	topics         map[string]topic
 	catalog        synchronization.Catalog
 	deleteReqCount atomic.Int64
@@ -61,14 +61,14 @@ type message struct {
 	data       timeline.Message
 }
 
-func New(catalog synchronization.Catalog) *memory {
-	return &memory{
+func New(catalog synchronization.Catalog) *Memory {
+	return &Memory{
 		topics:  make(map[string]topic),
 		catalog: catalog,
 	}
 }
 
-func (m *memory) CreateTopic(ctx context.Context, timelineID string) error {
+func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	if timelineID == "" {
 		return ErrInvalidTopicName
 	}
@@ -94,7 +94,7 @@ func (m *memory) CreateTopic(ctx context.Context, timelineID string) error {
 }
 
 // Insert ...
-func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
+func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	stringTimelineID := string(timelineID)
 	var errs []derrors.MessageIDTuple
 
@@ -162,7 +162,7 @@ func (m *memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 	return errs
 }
 
-func (m *memory) GetAndLease(
+func (m *Memory) GetAndLease(
 	ctx context.Context,
 	timelineID []byte,
 	buckets domain.BucketRange,
@@ -240,12 +240,12 @@ func (m *memory) GetAndLease(
 }
 
 // Lookup - not used at this time
-func (m *memory) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
+func (m *Memory) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil
 }
 
 // Delete ...
-func (m *memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	var errs []derrors.MessageIDTuple
 
 	switch deleteMessages.CallerType {
@@ -270,7 +270,7 @@ func (m *memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 	return errs
 }
 
-func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
 	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
 
@@ -406,7 +406,7 @@ func (m *memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 	return errs
 }
 
-func (m *memory) deleteByProducerGroupId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (m *Memory) deleteByProducerGroupId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	var deleteErrors []derrors.MessageIDTuple
 	// TODO implement when will rich this part
 	return deleteErrors
@@ -418,27 +418,27 @@ func removeMessage(s []message, i int) []message {
 }
 
 // CountByRange - not used at this time
-func (m *memory) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
+func (m *Memory) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
 	return 0
 }
 
 // CountByRangeProcessing - not used at this time
-func (m *memory) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
+func (m *Memory) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
 	return 0
 }
 
 // CountByRangeWaiting - not used at this time
-func (m *memory) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
+func (m *Memory) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
 	return 0
 }
 
 // SelectByConsumer...
-func (m *memory) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
+func (m *Memory) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
 	var results []timeline.Lease
 	return results, false, nil
 }
 
 // SelectByProducer - not used at this time
-func (m *memory) SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message {
+func (m *Memory) SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message {
 	return nil
 }

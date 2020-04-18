@@ -1,4 +1,4 @@
-package coordinator
+package carrier
 
 import (
 	"context"
@@ -172,10 +172,15 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 		if err != nil {
 			return nil, err
 		}
-		c.loaders[consumer.GetTopic()] = NewLoader(&LConfig{
+		c.loaders[consumer.GetTopic()] = NewLoader(&LoaderConfig{
 			PrefetchMaxNoMsgs:       1000,
 			PrefetchMaxMilliseconds: 0,
 			Topic:                   &topic.Topic,
+			Timers: LoaderTimerConfig{
+				Min:  time.Millisecond * 5,
+				Max:  time.Millisecond * 200,
+				Step: time.Millisecond * 25,
+			},
 		}, c.storage, c.dealer, c.greeter)
 		c.loaders[consumer.GetTopic()].Start(c.baseCtx)
 		logrus.Infof("started consumer loader for topic: %s", consumer.GetTopic())
