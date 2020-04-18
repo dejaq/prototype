@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.11.2 // indirect
-	github.com/ilyakaznacheev/cleanenv v1.2.1 // indirect
+	github.com/ilyakaznacheev/cleanenv v1.2.1
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/lib/pq v1.2.0
 	github.com/onsi/ginkgo v1.10.3 // indirect

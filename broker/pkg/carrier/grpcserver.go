@@ -206,6 +206,7 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 	s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
 	builder := flatbuffers.NewBuilder(128)
 	grpc.ErrorStart(builder)
+	//TODO return the error if any
 	root := grpc.ErrorEnd(builder)
 	builder.Finish(root)
 	return builder, nil

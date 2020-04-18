@@ -358,12 +358,12 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			})
 			err := p.Handshake(ctx)
 			if err != nil {
-				log.Error(err)
+				logger.Error(err)
 			}
 
-			err = sync_produce.Produce(ctx, &pc, p)
+			err = sync_produce.Produce(ctx, &pc, p, logger)
 			if err != nil {
-				log.Error(err)
+				logger.Error(err)
 			}
 		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}

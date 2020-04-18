@@ -8,6 +8,7 @@ import (
 //go:generate stringer -type=Module,Severity
 
 var ErrConsumerNotSubscribed = errors.New("consumer is not subscribed")
+var ErrTopicNotFound = errors.New("topic not found")
 
 type Module uint8
 type Severity uint8

@@ -233,6 +233,10 @@ func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer)
 }
 
 func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
+	if _, err := c.catalog.GetTopic(ctx, topic); err == nil {
+		//already exists
+		return
+	}
 	syncTopic := synchronization.Topic{}
 	syncTopic.ID = topic
 	syncTopic.CreationTimestamp = dtime.TimeToMS(time.Now())

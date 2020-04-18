@@ -8,11 +8,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/dejaq/prototype/client/timeline/producer"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 )
 
 type Strategy uint8
@@ -58,35 +59,33 @@ func getBodyOfSize(size int) []byte {
 	return b.Bytes()
 }
 
-func Produce(ctx context.Context, config *SyncProduceConfig, p *producer.Producer) error {
+func Produce(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, logger logrus.FieldLogger) error {
 	switch config.Strategy {
 	case StrategySingleBurst:
-		return singleBurst(ctx, config, p, config.SingleBurstEventsCount)
+		return singleBurst(ctx, config, p, config.SingleBurstEventsCount, logger)
 	case StrategyConstantBursts:
-		return constantBursts(ctx, config, p)
+		return constantBursts(ctx, config, p, logger)
 	default:
 		return errors.New("unknown strategy")
 	}
 }
 
-func constantBursts(ctx context.Context, config *SyncProduceConfig, p *producer.Producer) error {
-	sent := uint64(0)
+func constantBursts(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, logger logrus.FieldLogger) error {
 	ticker := time.NewTicker(config.ConstantBurstsTickDuration)
 	for range ticker.C {
 		if ctx.Err() != nil {
 			ticker.Stop()
 			break
 		}
-		err := singleBurst(ctx, config, p, config.ConstantBurstsTickEventsCount)
+		err := singleBurst(ctx, config, p, config.ConstantBurstsTickEventsCount, logger)
 		if err != nil {
-			log.Error(err)
+			logger.Error(err)
 		}
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", sent, p.GetProducerGroupID(), p.GetTopic())
 	return nil
 }
 
-func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, toSendCount int) error {
+func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, toSendCount int, logger logrus.FieldLogger) error {
 	left := toSendCount
 	var batch []timeline.Message
 
@@ -111,7 +110,7 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 	if err := flush(ctx, batch, p); err != nil {
 		return err
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
+	logger.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
 	return nil
 }
 

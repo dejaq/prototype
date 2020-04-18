@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	derrors "github.com/dejaq/prototype/common/errors"
+
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 )
 
@@ -48,7 +50,7 @@ func (c *Catalog) GetTopic(ctx context.Context, topicID string) (synchronization
 	defer c.m.RUnlock()
 	topic, ok := c.topics[topicID]
 	if !ok {
-		return synchronization.Topic{}, errors.New("topic not found")
+		return synchronization.Topic{}, derrors.ErrTopicNotFound
 	}
 	return topic, nil
 }
