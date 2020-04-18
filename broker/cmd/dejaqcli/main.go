@@ -33,7 +33,6 @@ import (
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.uber.org/atomic"
@@ -268,7 +267,6 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 			return fmt.Errorf("failed to connect to redis server: %w", err)
 		}
 	case "cockroach":
-		// Connect to the "bank" database.
 		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable") //&binary_parameters
 		if err != nil {
 			return fmt.Errorf("error connecting to the database: %w", err)
@@ -298,12 +296,12 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 	go func() {
-		defer logger.Println("closing SERVER goroutine")
+		defer logger.Info("closing SERVER goroutine")
 
 		DejaQ.RegisterBrokerServer(ser, grpServer)
-		log.Info("start server")
+		logger.Info("start grpc server")
 		if err := ser.Serve(lis); err != nil {
-			logger.Printf("Failed to serve: %v", err)
+			logger.WithError(err).Error("grpc server failed")
 		}
 		stopEverything() //this fix the case when the broker shutdowns by its own (not killed by the user or err)
 	}()
@@ -367,8 +365,6 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			}
 		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}
-	//wgProducers.Wait()
-	//logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
 }
 
 func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {

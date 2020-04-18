@@ -19,12 +19,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-//DROP TABLE IF EXISTS "$TOPIC" CASCADE;
-//DROP TABLE IF EXISTS "$BODY" CASCADE;
-
 var (
 	stmtTopic = `
-CREATE TABLE "$TOPIC" IF NOT EXISTS (
+CREATE TABLE  IF NOT EXISTS "$TOPIC" (
 	id STRING NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
@@ -41,7 +38,7 @@ CREATE TABLE "$TOPIC" IF NOT EXISTS (
  	FAMILY mutable (timeline, consumer_id, version)
 );
 
-CREATE TABLE "$BODY" IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS "$BODY"  (
 	id STRING NOT NULL,
 	body STRING,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC)

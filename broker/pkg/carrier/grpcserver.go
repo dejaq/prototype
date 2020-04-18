@@ -22,7 +22,7 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 //TimelineListeners Coordinator can listen and react to these calls
 type TimelineListeners struct {
 	ProducerHandshake      func(context.Context, *Producer) (string, error)
-	CreateTimeline         func(context.Context, string, timeline.TopicSettings)
+	CreateTimeline         func(context.Context, string, timeline.TopicSettings) error
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
@@ -38,11 +38,13 @@ type TimelineListeners struct {
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
 type GRPCServer struct {
 	listeners *TimelineListeners
+	logger    logrus.FieldLogger
 }
 
 func NewGRPCServer(listeners *TimelineListeners) *GRPCServer {
 	s := GRPCServer{
 		listeners: listeners,
+		logger:    logrus.New().WithField("component", "grpcServer"),
 	}
 	return &s
 }
@@ -203,11 +205,12 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 	settings.MinimumProtocolVersion = req.MinimumProtocolVersion()
 	settings.MaxSecondsFutureAllowed = req.MaxSecondsFutureAllowed()
 
-	s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
+	err := s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
 	builder := flatbuffers.NewBuilder(128)
-	grpc.ErrorStart(builder)
-	//TODO return the error if any
-	root := grpc.ErrorEnd(builder)
+	if err != nil {
+		s.logger.WithError(err).Error("creation failed")
+	}
+	root := writeError(derrors.NewDejaror("failed creation", "create"), builder)
 	builder.Finish(root)
 	return builder, nil
 }

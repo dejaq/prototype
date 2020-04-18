@@ -7,18 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
-	"github.com/dejaq/prototype/common/protocol"
-
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
-	"github.com/dejaq/prototype/common/errors"
 	derrors "github.com/dejaq/prototype/common/errors"
+	"github.com/dejaq/prototype/common/protocol"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/log"
 	"github.com/rcrowley/go-metrics"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -31,8 +29,8 @@ var (
 	metricTopicsCounter       = metrics.NewRegisteredCounter(numberOfTopics, nil)
 	metricTimelinesCounter    = metrics.NewRegisteredCounter(numberOfTimelines, nil)
 	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
-	ErrConsumerNotConnected   = errors.NewDejaror("consumer not connected", "load")
-	ErrUnknownDeleteRequester = errors.NewDejaror("unknown hwo wants to delete messages", "delete")
+	ErrConsumerNotConnected   = derrors.NewDejaror("consumer not connected", "load")
+	ErrUnknownDeleteRequester = derrors.NewDejaror("unknown delete actor", "delete")
 )
 
 type Producer struct {
@@ -77,7 +75,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 		ConsumerConnected:    c.consumerConnected,
 		ConsumerDisconnected: c.consumerDisconnected,
 		ConsumerStatus:       c.consumerStatus,
-		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []errors.MessageIDTuple {
+		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []derrors.MessageIDTuple {
 			data := timeline.DeleteMessages{
 				Timestamp:  dtime.TimeToMS(time.Now()),
 				TimelineID: []byte(timelineID),
@@ -232,10 +230,10 @@ func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer)
 	return sessionID, err
 }
 
-func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) {
+func (c *Coordinator) createTopic(ctx context.Context, topic string, settings timeline.TopicSettings) error {
 	if _, err := c.catalog.GetTopic(ctx, topic); err == nil {
 		//already exists
-		return
+		return nil
 	}
 	syncTopic := synchronization.Topic{}
 	syncTopic.ID = topic
@@ -245,22 +243,22 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 
 	err := c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "catalog failed")
 	}
 
 	err = c.storage.CreateTopic(ctx, topic)
 	if err != nil {
-		log.Error(err)
-		return
+		return errors.Wrap(err, "storage failed")
 	}
 	metricTopicsCounter.Inc(1)
+	return nil
 }
 
-func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []errors.MessageIDTuple {
+func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []derrors.MessageIDTuple {
 	metricMessagesCounter.Inc(int64(len(msgs)))
 	topic, err := c.catalog.GetTopic(ctx, topicID)
 	if err != nil {
-		return []errors.MessageIDTuple{
+		return []derrors.MessageIDTuple{
 			{Error: derrors.Dejaror{WrappedErr: err, Message: err.Error()}, MessageID: msgs[0].ID},
 		}
 	}
