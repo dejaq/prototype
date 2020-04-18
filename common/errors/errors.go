@@ -1,8 +1,13 @@
 package errors
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 //go:generate stringer -type=Module,Severity
+
+var ErrConsumerNotSubscribed = errors.New("consumer is not subscribed")
 
 type Module uint8
 type Severity uint8

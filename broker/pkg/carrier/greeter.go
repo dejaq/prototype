@@ -7,13 +7,14 @@ import (
 	"math/rand"
 	"sync"
 
+	derrors "github.com/dejaq/prototype/common/errors"
+
 	"github.com/dejaq/prototype/common/protocol"
 
 	"github.com/dejaq/prototype/common/timeline"
 )
 
 var (
-	ErrConsumerNotSubscribed  = errors.New("consumer is not subscribed")
 	ErrConsumerIsNotConnected = errors.New("cannot find the channel connection")
 	ErrNotFound               = errors.New("not found")
 )
@@ -161,7 +162,7 @@ func (s *Greeter) GetConsumer(sessionID string) (*Consumer, error) {
 	defer s.opMutex.RUnlock()
 	consumer, ok := s.consumerSessionsIDs[sessionID]
 	if !ok {
-		return nil, errors.New("consumer not found")
+		return nil, derrors.ErrConsumerNotSubscribed
 	}
 	return consumer, nil
 }
