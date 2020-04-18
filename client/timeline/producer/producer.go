@@ -2,10 +2,10 @@ package producer
 
 import (
 	"context"
-	"errors"
 	"io"
-	"log"
 	"sync"
+
+	"github.com/pkg/errors"
 
 	"github.com/dejaq/prototype/common/timeline"
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
@@ -104,13 +104,13 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		err = stream.Send(builder)
 		//TODO if err is invalid/expired sessionID do a handshake automatically
 		if err != nil {
-			log.Fatalf("insert2 err: %s", err.Error())
+			return errors.Wrap(err, "failed stream")
 		}
 	}
 
 	_, err = stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
-		log.Fatalf("insert3 err: %s", err.Error())
+		return errors.Wrap(err, "failed to send the events")
 	}
 	return nil
 }

@@ -111,7 +111,7 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 	if err := flush(ctx, batch, p); err != nil {
 		return err
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", config.SingleBurstEventsCount, p.GetProducerGroupID(), p.GetTopic())
+	log.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
 	return nil
 }
 

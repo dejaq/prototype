@@ -21,7 +21,7 @@ type Config struct {
 	ProducerGroup string `env:"NAME"`
 
 	TimeoutDuration        string `env:"TIMEOUT" env-default:"7s"`
-	SingleBurstEventsCount int    `env:"SINGLE_BURST_EVENTS" env-default:"100"`
+	SingleBurstEventsCount int    `env:"SINGLE_BURST_EVENTS"`
 
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION"`
 	ConstantBurstsTickEventsCount int    `env:"CONSTANT_TICK_COUNT"`
