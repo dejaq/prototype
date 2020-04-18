@@ -6,6 +6,7 @@ require (
 	github.com/dejaq/prototype/common v0.0.0-00010101000000-000000000000
 	github.com/dejaq/prototype/grpc v0.0.0-00010101000000-000000000000
 	github.com/google/flatbuffers v1.11.0
+	github.com/google/uuid v1.1.1 // indirect
 	github.com/pkg/errors v0.8.0
 	github.com/prometheus/common v0.6.0
 	github.com/sirupsen/logrus v1.2.0

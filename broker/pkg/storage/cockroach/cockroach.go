@@ -21,8 +21,8 @@ import (
 
 var (
 	stmtTopic = `
-DROP TABLE IF EXISTS "$TOPIC" CASCADE;
-CREATE TABLE "$TOPIC" (
+//DROP TABLE IF EXISTS "$TOPIC" CASCADE;
+CREATE TABLE "$TOPIC" IF NOT EXISTS (
 	id STRING NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
@@ -38,8 +38,8 @@ CREATE TABLE "$TOPIC" (
 	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
  	FAMILY mutable (timeline, consumer_id, version)
 		);
-DROP TABLE IF EXISTS "$BODY" CASCADE;
-CREATE TABLE "$BODY" (
+//DROP TABLE IF EXISTS "$BODY" CASCADE;
+CREATE TABLE "$BODY" IF NOT EXISTS (
 	id STRING NOT NULL,
 	body STRING,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC)

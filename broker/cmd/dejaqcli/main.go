@@ -202,13 +202,11 @@ func run() {
 
 func loadConfig(logger *logrus.Logger) (Config, error) {
 	v := viper.New()
-	path, _ := os.Getwd()
-	v.AddConfigPath(path)
+	v.SetConfigType("yaml") // REQUIRED if the config file does not have the extension in the name
+	v.AddConfigPath(".")
 	v.SetConfigName("config")
 	v.AutomaticEnv()
 
-	// config file is mandatory, env vars will not be read
-	// if they are not present in config file,
 	var cfg Config
 	err := v.ReadInConfig()
 	if err != nil {
@@ -333,7 +331,6 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 	aproxCountPerGroup := leftToProduce / config.producerGroupsCount
 
 	for pi := 0; pi < config.producerGroupsCount; pi++ {
-		//wgProducers.Add(1)
 		thisGroupShare := aproxCountPerGroup
 		//if is the last one, get the rest of the messages
 		if pi == config.producerGroupsCount-1 {
@@ -342,22 +339,29 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 		leftToProduce -= thisGroupShare
 
 		go func(producerGroupID string, toProduce int) {
-			//defer wgProducers.Done()
 			//TODO add more producers per group
 			pc := sync_produce.SyncProduceConfig{
-				Count:           toProduce,
-				BatchSize:       config.batchSize,
-				ProduceDeltaMin: config.produceDeltaMin,
-				ProduceDeltaMax: config.produceDeltaMax,
-				Producer: client.NewProducer(&producer.Config{
-					Cluster:         "",
-					Topic:           config.topic,
-					ProducerGroupID: producerGroupID,
-					ProducerID:      fmt.Sprintf("%s:%d", producerGroupID, rand.Int()),
-				}),
+				Strategy:               sync_produce.StrategySingleBurst,
+				SingleBurstEventsCount: toProduce,
+				BatchSize:              config.batchSize,
+				EventTimelineMinDelta:  config.produceDeltaMin,
+				EventTimelineMaxDelta:  config.produceDeltaMax,
+				BodySizeBytes:          12 * 1024,
+				DeterministicEventID:   true,
 			}
 
-			err := sync_produce.Produce(ctx, &pc)
+			p := client.NewProducer(&producer.Config{
+				Cluster:         "",
+				Topic:           config.topic,
+				ProducerGroupID: producerGroupID,
+				ProducerID:      fmt.Sprintf("%s:%d", producerGroupID, rand.Int()),
+			})
+			err := p.Handshake(ctx)
+			if err != nil {
+				log.Error(err)
+			}
+
+			err = sync_produce.Produce(ctx, &pc, p)
 			if err != nil {
 				log.Error(err)
 			}
