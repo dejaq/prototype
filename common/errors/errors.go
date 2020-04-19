@@ -74,7 +74,7 @@ func NewDejaror(message, operation string) Dejaror {
 	}
 }
 
-// Error implements the Error interface
+// MsgError implements the MsgError interface
 func (d Dejaror) Error() string {
 	return d.Message
 }
@@ -102,10 +102,4 @@ func DeconstructStackTrace(err error) []string {
 	}
 
 	return result
-}
-
-// MessageIDTuple a pair of MessageID and an error
-type MessageIDTuple struct {
-	MessageID []byte
-	Error     Dejaror
 }

@@ -129,7 +129,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.Message = err.Error()
 			derror.ShouldRetry = true
 			derror.WrappedErr = ErrStorageInternalError
-			insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
 		}
 
 		// continue on success
@@ -164,7 +164,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.WrappedErr = ErrUnknown
 		}
 
-		insertErrors = append(insertErrors, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+		insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
 	}
 
 	return insertErrors
@@ -356,7 +356,7 @@ func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 		derror.WrappedErr = ErrUnknownWhoWantsToAction
 		logrus.WithError(derror)
 
-		deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+		deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MsgError: derror})
 	}
 	return deleteErrors
 }
@@ -383,7 +383,7 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
 		logrus.WithError(derror)
-		return append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+		return append(deleteErrors, derrors.MessageIDTuple{MsgError: derror})
 	}
 	dataCollection := data.([]interface{})
 	for _, val := range dataCollection {
@@ -410,7 +410,7 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 			derror.WrappedErr = ErrNotAllowedToPerformOperation
 			logrus.WithError(derror)
 
-			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{Error: derror})
+			deleteErrors = append(deleteErrors, derrors.MessageIDTuple{MsgError: derror})
 		}
 	}
 	return deleteErrors
@@ -434,7 +434,7 @@ func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessages, 
 		derror.ShouldRetry = true
 		derror.WrappedErr = ErrStorageInternalError
 		logrus.WithError(derror)
-		return []derrors.MessageIDTuple{{Error: derror}}
+		return []derrors.MessageIDTuple{{MsgError: derror}}
 	}
 	_ = data
 	return deleteErrors

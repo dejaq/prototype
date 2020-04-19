@@ -101,7 +101,7 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 				derror.WrappedErr = ErrUnknownDeleteRequester
 				logrus.WithError(derror)
 
-				return []derrors.MessageIDTuple{derrors.MessageIDTuple{Error: derror}}
+				return []derrors.MessageIDTuple{derrors.MessageIDTuple{MsgError: derror}}
 			}
 
 			return c.storage.Delete(ctx, data)
@@ -262,7 +262,7 @@ func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicI
 	topic, err := c.catalog.GetTopic(ctx, topicID)
 	if err != nil {
 		return []derrors.MessageIDTuple{
-			{Error: derrors.Dejaror{WrappedErr: err, Message: err.Error()}, MessageID: msgs[0].ID},
+			{MsgError: derrors.Dejaror{WrappedErr: err, Message: err.Error()}, MsgID: msgs[0].ID},
 		}
 	}
 	for i := range msgs {

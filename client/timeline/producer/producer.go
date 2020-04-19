@@ -5,6 +5,8 @@ import (
 	"io"
 	"sync"
 
+	derrors "github.com/dejaq/prototype/common/errors"
+
 	"github.com/pkg/errors"
 
 	"github.com/dejaq/prototype/common/timeline"
@@ -70,6 +72,7 @@ func (c *Producer) Handshake(ctx context.Context) error {
 // InsertMessages creates a stream and push all the messages.
 //It fails if it does not have a valid session from the overseer
 //Thread safe
+// Returns a simple error, Dejaror or MessageIDTupleList
 func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
@@ -108,9 +111,25 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		}
 	}
 
-	_, err = stream.CloseAndRecv()
+	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
 		return errors.Wrap(err, "failed to send the events")
+	}
+	if response != nil {
+		rerr := response.Err(nil)
+		if rerr != nil {
+			return derrors.GrpcErroToDerror(rerr)
+		}
+
+		if response.MessagesErrorsLength() > 0 {
+			individualErrors := make(derrors.MessageIDTupleList, response.MessagesErrorsLength())
+			for i := range individualErrors {
+				var gerr dejaq.TimelineMessageIDErrorTuple
+				response.MessagesErrors(&gerr, i)
+				individualErrors[i] = derrors.GrpcErrTupleToTuple(gerr)
+			}
+			return individualErrors
+		}
 	}
 	return nil
 }

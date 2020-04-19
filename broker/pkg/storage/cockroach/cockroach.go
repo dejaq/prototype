@@ -90,8 +90,8 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		c.logger.WithError(err).Error("insert msg batch failed")
 		for i := range batch {
 			result = append(result, derrors.MessageIDTuple{
-				MessageID: batch[i].ID,
-				Error: derrors.Dejaror{
+				MsgID: batch[i].ID,
+				MsgError: derrors.Dejaror{
 					Severity:         derrors.SeverityError,
 					Message:          "failed",
 					Module:           derrors.ModuleStorage,
@@ -324,8 +324,8 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 		c.logger.WithError(err).Error("delete batch failed")
 		for i := range batch {
 			result = append(result, derrors.MessageIDTuple{
-				MessageID: *(*[]byte)(unsafe.Pointer(&batch[i])),
-				Error: derrors.Dejaror{
+				MsgID: *(*[]byte)(unsafe.Pointer(&batch[i])),
+				MsgError: derrors.Dejaror{
 					Severity:         derrors.SeverityError,
 					Message:          "failed",
 					Module:           derrors.ModuleStorage,

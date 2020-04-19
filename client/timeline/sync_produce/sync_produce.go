@@ -90,14 +90,15 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 	var batch []timeline.Message
 
 	body := getBodyOfSize(config.BodySizeBytes)
-	var msgID int
+	var msgID string
+	seed := rand.Uint64()
 
 	for left > 0 {
 		left--
 		if config.DeterministicEventID {
-			msgID = toSendCount - left
+			msgID = fmt.Sprintf("%d", toSendCount-left)
 		} else {
-			msgID = rand.Int()
+			msgID = fmt.Sprintf("%d_%d_%d", seed, left, time.Now().UTC().UnixNano())
 		}
 
 		batch = append(batch, newMsg(p, msgID, body, config))
@@ -114,14 +115,14 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 	return nil
 }
 
-func newMsg(p *producer.Producer, msgID int, body []byte, config *SyncProduceConfig) timeline.Message {
+func newMsg(p *producer.Producer, msgID string, body []byte, config *SyncProduceConfig) timeline.Message {
 	t := time.Now().UTC()
 	minT := dtime.TimeToMS(t.Add(-config.EventTimelineMinDelta))
 	maxT := dtime.TimeToMS(t.Add(config.EventTimelineMaxDelta))
-	bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%d|", strconv.FormatInt(t.UnixNano(), 10), p.GetProducerGroupID(), msgID)
+	bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%s|", strconv.FormatInt(t.UnixNano(), 10), p.GetProducerGroupID(), msgID)
 	return timeline.Message{
 		//first part must be the the ms timestamp, so consumers can calculate the latency
-		ID:   []byte(fmt.Sprintf("id %s|msg_%d | topic_%s", p.GetProducerGroupID(), msgID, p.GetTopic())),
+		ID:   []byte(fmt.Sprintf("id %s|msg_%s | topic_%s", p.GetProducerGroupID(), msgID, p.GetTopic())),
 		Body: append([]byte(bodyHeader), body...),
 		//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),
 		TimestampMS: minT + uint64(rand.Intn(int(maxT-minT))),

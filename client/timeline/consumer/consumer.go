@@ -323,7 +323,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 	}
 	//if response != nil && response.MessagesErrorsLength() > 0 {
 	//	var errorTuple dejaq.TimelineMessageIDErrorTuple
-	//	var errorInErrorTuple dejaq.Error
+	//	var errorInErrorTuple dejaq.MsgError
 	//	for i := 0; i < response.MessagesErrorsLength(); i++ {
 	//		response.MessagesErrors(&errorTuple, i)
 	//		errorTuple.Err(&errorInErrorTuple)

@@ -229,6 +229,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var err error
 	var errGet error
 	var producer *Producer
+	var replyError derrors.Dejaror
 
 	//gather all the messages from the client
 	for err == nil {
@@ -247,7 +248,16 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 		if producer == nil {
 			producer, errGet = s.listeners.CreateMessagesRequest(stream.Context(), string(request.SessionID()))
 			if errGet != nil {
-				return err
+				switch v := errGet.(type) {
+				case derrors.Dejaror:
+					replyError = v
+				default:
+					replyError = derrors.Dejaror{
+						Severity: derrors.SeverityError,
+						Message:  errGet.Error(),
+					}
+				}
+				break
 			}
 		}
 
@@ -260,18 +270,25 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 		})
 	}
 
-	if producer == nil {
-		return errors.New("no message with sessionID")
-	}
-
-	msgErrors := s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
-
 	//returns the response to the client
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
 
-	root := writeTimelineResponse(msgErrors, builder)
-	builder.Finish(root)
+	if producer == nil {
+		replyError = derrors.Dejaror{
+			Severity: derrors.SeverityError,
+			Message:  "no message with sessionID",
+		}
+	}
+
+	if replyError.Message == "" {
+		msgErrors := s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
+		root := writeTimelineResponse(msgErrors, builder)
+		builder.Finish(root)
+	} else {
+		root := writeError(replyError, builder)
+		builder.Finish(root)
+	}
 
 	err = stream.SendMsg(builder)
 	if err != nil {
@@ -346,8 +363,8 @@ func writeTimelineResponse(errors []derrors.MessageIDTuple, builder *flatbuffers
 		return rootListErrors
 	}
 	for i := range errors {
-		messageIDRoot := builder.CreateByteVector(errors[i].MessageID)
-		errorRoot := writeError(errors[i].Error, builder)
+		messageIDRoot := builder.CreateByteVector(errors[i].MsgID)
+		errorRoot := writeError(errors[i].MsgError, builder)
 		grpc.TimelineMessageIDErrorTupleStart(builder)
 		grpc.TimelineMessageIDErrorTupleAddMessgeID(builder, messageIDRoot)
 		grpc.TimelineMessageIDErrorTupleAddErr(builder, errorRoot)

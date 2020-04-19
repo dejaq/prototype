@@ -35,7 +35,7 @@ type Repository interface {
 		currentTimeMS uint64,
 		maxTimeMS uint64,
 	) ([]timeline.Lease, bool, error)
-	// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
+	// LOOKUP message by TimelineID, MsgID (owner control, lease operations)
 	Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple)
 	// DELETE remove message(s) from storage
 	// Only CONSUMER that have an active lease can delete a message

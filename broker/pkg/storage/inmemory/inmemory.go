@@ -106,7 +106,7 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 		derror.Message = ErrTopicNotExists.Error()
 		derror.ShouldRetry = false
 		derror.WrappedErr = ErrTopicNotExists
-		return append(errs, derrors.MessageIDTuple{Error: derror})
+		return append(errs, derrors.MessageIDTuple{MsgError: derror})
 	}
 
 	// iterate over messages and insert them
@@ -119,7 +119,7 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.Message = ErrBucketNotExists.Error()
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrBucketNotExists
-			errs = append(errs, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
 		}
 
 		// TODO maybe check more details about a message, like ID, BucketID, maybe all details
@@ -139,7 +139,7 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 				derror.Message = ErrMessageWithSameIDAlreadyExists.Error()
 				derror.ShouldRetry = false
 				derror.WrappedErr = ErrMessageWithSameIDAlreadyExists
-				errs = append(errs, derrors.MessageIDTuple{MessageID: msg.ID, Error: derror})
+				errs = append(errs, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
 				break
 			}
 		}
@@ -265,7 +265,7 @@ func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 		derror.ShouldRetry = false
 		derror.WrappedErr = ErrUnknownDeleteCaller
 		logrus.WithError(derror)
-		errs = append(errs, derrors.MessageIDTuple{Error: derror})
+		errs = append(errs, derrors.MessageIDTuple{MsgError: derror})
 	}
 	return errs
 }
@@ -285,7 +285,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 		derror.Message = ErrTopicNotExists.Error()
 		derror.ShouldRetry = false
 		derror.WrappedErr = ErrTopicNotExists
-		return append(errs, derrors.MessageIDTuple{Error: derror})
+		return append(errs, derrors.MessageIDTuple{MsgError: derror})
 	}
 
 	for _, deleteMessage := range deleteMessages.Messages {
@@ -297,7 +297,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			derror.Message = ErrBucketNotExists.Error()
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrBucketNotExists
-			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: deleteMessage.MessageID, MsgError: derror})
 		}
 
 		indexToDelete := -1
@@ -324,7 +324,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			)
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrMessageNotFound
-			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: deleteMessage.MessageID, MsgError: derror})
 			logrus.WithError(derror)
 
 			bucket.m.Unlock()
@@ -346,7 +346,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			)
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrCallerNotAllowToDeleteMessage
-			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: deleteMessage.MessageID, MsgError: derror})
 			logrus.WithError(derror)
 
 			bucket.m.Unlock()
@@ -366,7 +366,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			)
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrExpiredLease
-			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: deleteMessage.MessageID, MsgError: derror})
 			logrus.WithError(derror)
 
 			bucket.m.Unlock()
@@ -386,7 +386,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 			)
 			derror.ShouldRetry = false
 			derror.WrappedErr = ErrMessageWrongVersion
-			errs = append(errs, derrors.MessageIDTuple{MessageID: deleteMessage.MessageID, Error: derror})
+			errs = append(errs, derrors.MessageIDTuple{MsgID: deleteMessage.MessageID, MsgError: derror})
 			logrus.WithError(derror)
 
 			bucket.m.Unlock()
@@ -398,7 +398,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 		bucket.m.Unlock()
 
 		//fmt.Printf("Delete message: %s from: %d\n",
-		//	deleteMessage.MessageID,
+		//	deleteMessage.MsgID,
 		//	len(bucket.messages),
 		//)
 	}

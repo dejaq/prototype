@@ -23,8 +23,8 @@ table TimelineMessageIDErrorTuple {
     err:Error;
 }
 table TimelineResponse {
-    messagesErrors:[TimelineMessageIDErrorTuple];
     err:Error;
+    messagesErrors:[TimelineMessageIDErrorTuple];
 }
 
 table TimelineCreateRequest {
