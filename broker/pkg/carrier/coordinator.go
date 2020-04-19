@@ -27,10 +27,13 @@ const (
 
 var (
 	metricTopicsCounter       = metrics.NewRegisteredCounter(numberOfTopics, nil)
-	metricTimelinesCounter    = metrics.NewRegisteredCounter(numberOfTimelines, nil)
 	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
-	ErrConsumerNotConnected   = derrors.NewDejaror("consumer not connected", "load")
-	ErrUnknownDeleteRequester = derrors.NewDejaror("unknown delete actor", "delete")
+	ErrUnknownDeleteRequester = derrors.Dejaror{
+		Severity:  derrors.SeverityError,
+		Message:   "unknown client",
+		Module:    derrors.ModuleBroker,
+		Operation: "deleteMessage",
+	}
 )
 
 type Producer struct {

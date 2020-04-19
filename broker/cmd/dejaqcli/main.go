@@ -78,6 +78,7 @@ func main() {
 
 func run() {
 	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
 
 	// load configuration
 	cfg, err := loadConfig(logger)

@@ -34,6 +34,10 @@ type MessageRequestDetails struct {
 	Version   uint16
 }
 
+func (r MessageRequestDetails) GetMessageID() string {
+	return *(*string)(unsafe.Pointer(&r.MessageID))
+}
+
 // Message is a timeline full representation. Not all the fields are populated all the time
 type Message struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes

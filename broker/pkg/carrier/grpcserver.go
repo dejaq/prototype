@@ -210,7 +210,15 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 	if err != nil {
 		s.logger.WithError(err).Error("creation failed")
 	}
-	root := writeError(derrors.NewDejaror("failed creation", "create"), builder)
+	var root flatbuffers.UOffsetT
+	if err != nil {
+		if derr, ok := err.(derrors.Dejaror); ok {
+			root = writeError(derr, builder)
+		} else {
+			s.logger.WithError(err).Error("timelineCreate unknown error type returned")
+			root = writeError(derrors.NewDejaror("failed creation", "create"), builder)
+		}
+	}
 	builder.Finish(root)
 	return builder, nil
 }
@@ -267,7 +275,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 
 	err = stream.SendMsg(builder)
 	if err != nil {
-		_ = fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
+		s.logger.WithError(err).Error("timeline create msgs failed to send response")
 	}
 
 	return nil
@@ -308,6 +316,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			timelineID, topicErr = s.listeners.DeleteRequest(stream.Context(), string(req.SessionID()))
 
 			if topicErr != nil {
+				s.logger.WithError(err).Error("delete request from unknown client")
 				return errors.New("producer missing session")
 			}
 		}
