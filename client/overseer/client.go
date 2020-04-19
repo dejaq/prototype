@@ -3,6 +3,8 @@ package overseer
 import (
 	"context"
 
+	derrors "github.com/dejaq/prototype/common/errors"
+
 	"github.com/dejaq/prototype/client"
 	"github.com/dejaq/prototype/common/timeline"
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
@@ -38,9 +40,15 @@ func (c *Chief) CreateTimelineTopic(ctx context.Context, id string, topicSetting
 	root := dejaq.TimelineCreateRequestEnd(builder)
 
 	builder.Finish(root)
-	_, err := c.overseers[0].TimelineCreate(ctx, builder)
+	brokerErr, err := c.overseers[0].TimelineCreate(ctx, builder)
 	if err != nil {
 		return err
+	}
+	if brokerErr != nil {
+		if derrors.IsGrpcElementEmpty(brokerErr) {
+			return nil
+		}
+		return derrors.GrpcErroToDerror(brokerErr)
 	}
 	return nil
 }

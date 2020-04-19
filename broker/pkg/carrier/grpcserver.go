@@ -207,6 +207,8 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 
 	err := s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
 	builder := flatbuffers.NewBuilder(128)
+	builder.Reset()
+
 	if err != nil {
 		s.logger.WithError(err).Error("creation failed")
 	}
@@ -281,15 +283,18 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 		}
 	}
 
+	var root flatbuffers.UOffsetT
 	if replyError.Message == "" {
 		msgErrors := s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
-		root := writeTimelineResponse(msgErrors, builder)
-		builder.Finish(root)
+		if len(msgErrors) > 0 {
+			root = writeTimelineResponse(msgErrors, builder)
+			grpc.TimelineResponseAddMessagesErrors(builder, root)
+		}
 	} else {
-		root := writeError(replyError, builder)
-		builder.Finish(root)
+		root = writeError(replyError, builder)
+		grpc.TimelineResponseAddErr(builder, root)
 	}
-
+	builder.Finish(root)
 	err = stream.SendMsg(builder)
 	if err != nil {
 		s.logger.WithError(err).Error("timeline create msgs failed to send response")

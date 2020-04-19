@@ -1,6 +1,9 @@
 package errors
 
-import dejaq "github.com/dejaq/prototype/grpc/DejaQ"
+import (
+	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
+	flatbuffers "github.com/google/flatbuffers/go"
+)
 
 func GrpcErrTupleToTuple(gerr dejaq.TimelineMessageIDErrorTuple) MessageIDTuple {
 	rerr := gerr.Err(nil)
@@ -11,9 +14,6 @@ func GrpcErrTupleToTuple(gerr dejaq.TimelineMessageIDErrorTuple) MessageIDTuple 
 }
 
 func GrpcErroToDerror(rerr *dejaq.Error) Dejaror {
-	if rerr == nil {
-		return Dejaror{}
-	}
 	return Dejaror{
 		Severity:         Severity(rerr.Severity()),
 		Message:          string(rerr.Message()),
@@ -25,4 +25,14 @@ func GrpcErroToDerror(rerr *dejaq.Error) Dejaror {
 		ShouldRetry:      rerr.ShouldRetry(),
 		ClientShouldSync: rerr.ShouldSync(),
 	}
+}
+
+type GrpcTable interface {
+	Table() flatbuffers.Table
+}
+
+// grpc returns pointers to structs that throws index out of range panics. Until I figure it out
+// this replaces the nil check
+func IsGrpcElementEmpty(fbElement GrpcTable) bool {
+	return int(fbElement.Table().Pos) >= len(fbElement.Table().Bytes)
 }

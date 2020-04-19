@@ -91,24 +91,25 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 
 	body := getBodyOfSize(config.BodySizeBytes)
 	var msgID string
-	seed := rand.Uint64()
+	var err error
+	seed := time.Now().UTC().UnixNano()
 
 	for left > 0 {
 		left--
 		if config.DeterministicEventID {
 			msgID = fmt.Sprintf("%d", toSendCount-left)
 		} else {
-			msgID = fmt.Sprintf("%d_%d_%d", seed, left, time.Now().UTC().UnixNano())
+			msgID = fmt.Sprintf("%d_%d", seed, toSendCount-left)
 		}
 
 		batch = append(batch, newMsg(p, msgID, body, config))
 		if len(batch) >= config.BatchSize {
-			if err := flush(ctx, batch, p); err != nil {
+			if batch, err = flush(ctx, batch, p); err != nil {
 				return err
 			}
 		}
 	}
-	if err := flush(ctx, batch, p); err != nil {
+	if batch, err = flush(ctx, batch, p); err != nil {
 		return err
 	}
 	logger.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
@@ -129,14 +130,14 @@ func newMsg(p *producer.Producer, msgID string, body []byte, config *SyncProduce
 	}
 }
 
-func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) error {
+func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) ([]timeline.Message, error) {
 	if len(batch) == 0 {
-		return nil
+		return batch, nil
 	}
 	err := p.InsertMessages(ctx, batch)
 	if err != nil {
-		return errors.Wrap(err, "InsertMessages ERROR")
+		return batch, errors.Wrap(err, "InsertMessages ERROR")
 	}
 	batch = batch[:0]
-	return nil
+	return batch, nil
 }

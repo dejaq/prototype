@@ -115,9 +115,9 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 	if err != nil && err != io.EOF {
 		return errors.Wrap(err, "failed to send the events")
 	}
-	if response != nil {
+	if response != nil && !derrors.IsGrpcElementEmpty(response) {
 		rerr := response.Err(nil)
-		if rerr != nil {
+		if rerr != nil && !derrors.IsGrpcElementEmpty(rerr) {
 			return derrors.GrpcErroToDerror(rerr)
 		}
 
