@@ -99,13 +99,13 @@ func (w *Cassandra) Init() error {
 }
 
 // INSERT messages (timelineID, []messages) map[msgID]error
-func (w *Cassandra) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
+func (w *Cassandra) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	batch := w.session.NewBatch(gocql.LoggedBatch)
 	batch.WithContext(ctx)
-	for _, msg := range messages {
-		batch.Query(stmtInsertMessage, msg.ID, msg.BodyID)
-		batch.Query(fmt.Sprintf(stmtInsertTimeline, getUnsafeString(timelineID)), // TODO replace with method better suited for byte arrays
-			msg.ID, msg.TimestampMS, msg.LockConsumerID, msg.ProducerGroupID, len(msg.Body), msg.Version)
+	for _, msg := range req.Messages {
+		batch.Query(stmtInsertMessage, msg.ID, msg.GetID())
+		batch.Query(fmt.Sprintf(stmtInsertTimeline, req.GetTimelineID()), // TODO replace with method better suited for byte arrays
+			msg.ID, msg.TimestampMS, []byte{}, req.ProducerGroupID, len(msg.Body), msg.Version)
 	}
 
 	err := w.session.ExecuteBatch(batch)
@@ -129,39 +129,14 @@ func (w *Cassandra) UpdateLeases(ctx context.Context, timelineID []byte, msgs []
 	return nil
 }
 
-// LOOKUP message by TimelineID, MsgID (owner control, lease operations)
-func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
-	return nil, nil
-}
-
 // DELETE messages by TimelineID, MsgID map[msgID]error
-func (w *Cassandra) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (w *Cassandra) Delete(ctx context.Context, deleteMessages timeline.DeleteMessagesRequest) error {
 	return nil
-}
-
-// COUNT messages BY TimelineID, RANGE (spike detection/consumer scaling and metrics)
-func (w *Cassandra) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// COUNT messages BY TimelineID, RANGE and LockConsumerID is empty (count processing status)
-func (w *Cassandra) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// COUNT messages BY TimelineID, RANGE and LockConsumerID is not empty (count waiting status)
-func (w *Cassandra) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
 }
 
 // SELECT messages by TimelineID, LockConsumerID (when consumer restarts)
 func (w *Cassandra) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 	return nil, false, nil
-}
-
-// SELECT messages by TimelineID, ProducerOwnerID (ownership control)
-func (w *Cassandra) SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message {
-	return nil
 }
 
 func (w *Cassandra) GetAvailableMessages(ctx context.Context, timeline string, from, until float64, limit int) (ids []string, err error) {

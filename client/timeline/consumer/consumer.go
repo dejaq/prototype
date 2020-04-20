@@ -260,7 +260,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 		c.msgBuffer <- timeline.Lease{
 			ExpirationTimestampMS: response.ExpirationTSMSUTC(),
 			ConsumerID:            response.ConsumerIDBytes(),
-			Message: timeline.LeaseMessage{
+			Message: timeline.MessageLease{
 				ID:              msg.MessageIDBytes(),
 				TimestampMS:     msg.TimestampMS(),
 				ProducerGroupID: msg.ProducerGroupIDBytes(),

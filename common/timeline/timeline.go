@@ -6,82 +6,6 @@ import (
 	"github.com/dejaq/prototype/common/protocol"
 )
 
-type DeleteCaller uint8
-
-const (
-	DeleteCaller_Consumer DeleteCaller = iota
-	DeleteCaller_Producer
-)
-
-type DeleteMessages struct {
-	// Reference timestamp for calculate active leases
-	Timestamp uint64
-	// Who wants to delete messages
-	CallerType DeleteCaller
-	//Identity of who wants to delete
-	CallerID   []byte
-	TimelineID []byte
-	Messages   []MessageRequestDetails
-}
-
-func (dm *DeleteMessages) GetTimelineID() string {
-	return *(*string)(unsafe.Pointer(&dm.TimelineID))
-}
-
-type MessageRequestDetails struct {
-	MessageID []byte
-	BucketID  uint16
-	Version   uint16
-}
-
-func (r MessageRequestDetails) GetMessageID() string {
-	return *(*string)(unsafe.Pointer(&r.MessageID))
-}
-
-// Message is a timeline full representation. Not all the fields are populated all the time
-type Message struct {
-	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes
-	ID []byte
-	// the Unix timestamp, in milliseconds, when the message should be processed
-	TimestampMS uint64
-	// the id of the payload
-	BodyID []byte
-	// the payload
-	Body []byte
-	// Group of producers that has ownership, string
-	ProducerGroupID []byte
-	// Unique consumer client id that has a lock on it. Only valid if TimestampMS >= Now()
-	LockConsumerID []byte
-	// Randomly chosen at creation, used by the Loader
-	BucketID uint16
-	// Updated at each mutation, used to detect mutation contention
-	Version uint16
-}
-
-func (m Message) GetID() string {
-	return *(*string)(unsafe.Pointer(&m.ID))
-}
-
-func (m Message) GetBodyID() string {
-	return *(*string)(unsafe.Pointer(&m.BodyID))
-}
-
-func (m Message) GetBody() string {
-	return *(*string)(unsafe.Pointer(&m.Body))
-}
-
-func (m Message) GetProducerGroupID() string {
-	return *(*string)(unsafe.Pointer(&m.ProducerGroupID))
-}
-
-func (m Message) GetLockConsumerID() string {
-	return *(*string)(unsafe.Pointer(&m.LockConsumerID))
-}
-
-func (m Message) String() string {
-	return "{Message [id:" + m.GetID() + "]"
-}
-
 type Topic struct {
 	ID                string
 	CreationTimestamp uint64
@@ -124,15 +48,15 @@ type TopicSettings struct {
 type Lease struct {
 	ExpirationTimestampMS uint64
 	ConsumerID            []byte
-	Message               LeaseMessage
+	Message               MessageLease
 }
 
 func (l Lease) GetConsumerID() string {
 	return *(*string)(unsafe.Pointer(&l.ConsumerID))
 }
 
-// LeaseMessage is the message representation received by a consumer
-type LeaseMessage struct {
+// MessageLease is the message representation received by a consumer
+type MessageLease struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes
 	ID []byte
 	// the Unix timestamp, in milliseconds, when the message should be processed
@@ -146,19 +70,19 @@ type LeaseMessage struct {
 	BucketID uint16
 }
 
-func (m LeaseMessage) GetID() string {
+func (m MessageLease) GetID() string {
 	return *(*string)(unsafe.Pointer(&m.ID))
 }
-func (m LeaseMessage) GetProducerGroupID() string {
+func (m MessageLease) GetProducerGroupID() string {
 	return *(*string)(unsafe.Pointer(&m.ProducerGroupID))
 }
 
-func (m LeaseMessage) String() string {
+func (m MessageLease) String() string {
 	return "{Message [id:" + m.GetID() + "]"
 }
 
-func NewLeaseMessage(msg Message) LeaseMessage {
-	return LeaseMessage{
+func NewLeaseMessage(msg Message) MessageLease {
+	return MessageLease{
 		ID:              msg.ID,
 		TimestampMS:     msg.TimestampMS,
 		ProducerGroupID: msg.ProducerGroupID,
