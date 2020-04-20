@@ -355,7 +355,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 		//the same queries works for bodies as well
 
 		//TODO Prepare does notwork in IN statements, do a manual escape for sql injections
-		query := fmt.Sprintf(`DELETE FROM "$TABLE" WHERE id IN (%s) LIMIT %d RETURNING NOTHING;`, strings.Join(params, ","), len(batch))
+		queryPattern := fmt.Sprintf(`DELETE FROM "$TABLE" WHERE id IN (%s) LIMIT %d RETURNING NOTHING;`, strings.Join(params, ","), len(batch))
 
 		//args := make([]interface{}, len(batch))
 		//for i := range batch {
@@ -367,7 +367,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 			failBatch(err)
 			continue
 		}
-		query = strings.Replace(query, "$TABLE", table(request.GetTimelineID()), -1)
+		query := strings.Replace(queryPattern, "$TABLE", table(request.GetTimelineID()), -1)
 		stmt, err := txn.PrepareContext(ctx, query)
 		if err != nil {
 			c.logger.Debugf(query)
@@ -383,7 +383,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 			continue
 		}
 
-		query = strings.Replace(query, "$TABLE", tableBodies(request.GetTimelineID()), -1)
+		query = strings.Replace(queryPattern, "$TABLE", tableBodies(request.GetTimelineID()), -1)
 		stmt, err = txn.PrepareContext(ctx, query)
 		if err != nil {
 			c.logger.Debugf(query)

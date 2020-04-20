@@ -292,7 +292,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 
 	stream, err := c.carrier.TimelineDelete(ctx)
 	if err != nil {
-		return fmt.Errorf("delete err: %w", err)
+		return fmt.Errorf("cannot create gRPC stream: %w", err)
 	}
 
 	var builder *flatbuffers.Builder
@@ -312,7 +312,7 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
 		if err != nil {
-			return fmt.Errorf("delete2 err: %w", err)
+			return fmt.Errorf("upstream failed: %w", err)
 		}
 	}
 
