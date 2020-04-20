@@ -53,7 +53,6 @@ func (sc *syncconsumer) callback(lease timeline.Lease) {
 		sc.logger.Fatalf("server sent message for another topic: %s sent consumerID: %s, msgID: %s, producedBy: %s",
 			sc.conf.Consumer.GetTopicID(), lease.GetConsumerID(), lease.Message.GetID(), lease.Message.GetProducerGroupID())
 	}
-	sc.msgsCounter.Dec()
 
 	//Process the messages
 	err := sc.conf.Consumer.Delete(sc.ctx, []timeline.Message{{
@@ -62,6 +61,9 @@ func (sc *syncconsumer) callback(lease timeline.Lease) {
 		BucketID:    lease.Message.BucketID,
 		Version:     lease.Message.Version,
 	}})
+
+	//wait for delete then decrement
+	sc.msgsCounter.Dec()
 
 	if err != nil {
 		sc.logger.WithError(err).Error("delete failed")

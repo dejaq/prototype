@@ -5,13 +5,11 @@ import (
 	"io"
 	"sync"
 
-	derrors "github.com/dejaq/prototype/common/errors"
-
-	"github.com/pkg/errors"
-
+	derror "github.com/dejaq/prototype/common/errors"
 	"github.com/dejaq/prototype/common/timeline"
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
 
@@ -115,23 +113,7 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 	if err != nil && err != io.EOF {
 		return errors.Wrap(err, "failed to send the events")
 	}
-	if response != nil && !derrors.IsGrpcElementEmpty(response) {
-		rerr := response.Err(nil)
-		if rerr != nil && !derrors.IsGrpcElementEmpty(rerr) {
-			return derrors.GrpcErroToDerror(rerr)
-		}
-
-		if response.MessagesErrorsLength() > 0 {
-			individualErrors := make(derrors.MessageIDTupleList, response.MessagesErrorsLength())
-			for i := range individualErrors {
-				var gerr dejaq.TimelineMessageIDErrorTuple
-				response.MessagesErrors(&gerr, i)
-				individualErrors[i] = derrors.GrpcErrTupleToTuple(gerr)
-			}
-			return individualErrors
-		}
-	}
-	return nil
+	return derror.ParseTimelineResponse(response)
 }
 
 func (c *Producer) GetProducerGroupID() string {

@@ -2,7 +2,6 @@ package errors
 
 import (
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
-	flatbuffers "github.com/google/flatbuffers/go"
 )
 
 func GrpcErrTupleToTuple(gerr dejaq.TimelineMessageIDErrorTuple) MessageIDTuple {
@@ -13,6 +12,13 @@ func GrpcErrTupleToTuple(gerr dejaq.TimelineMessageIDErrorTuple) MessageIDTuple 
 	}
 }
 
+func GrpcErrToError(rerr *dejaq.Error) error {
+	//if we do not write an ErrObject TimelineCreate will panic, so we put empty errors :(
+	if rerr == nil || len(rerr.Message()) == 0 {
+		return nil
+	}
+	return GrpcErroToDerror(rerr)
+}
 func GrpcErroToDerror(rerr *dejaq.Error) Dejaror {
 	return Dejaror{
 		Severity:         Severity(rerr.Severity()),
@@ -27,12 +33,22 @@ func GrpcErroToDerror(rerr *dejaq.Error) Dejaror {
 	}
 }
 
-type GrpcTable interface {
-	Table() flatbuffers.Table
-}
+func ParseTimelineResponse(response *dejaq.TimelineResponse) error {
+	if response != nil {
+		rerr := response.Err(nil)
+		if rerr != nil {
+			return GrpcErroToDerror(rerr)
+		}
 
-// grpc returns pointers to structs that throws index out of range panics. Until I figure it out
-// this replaces the nil check
-func IsGrpcElementEmpty(fbElement GrpcTable) bool {
-	return int(fbElement.Table().Pos) >= len(fbElement.Table().Bytes)
+		if response.MessagesErrorsLength() > 0 {
+			individualErrors := make(MessageIDTupleList, response.MessagesErrorsLength())
+			for i := range individualErrors {
+				var gerr dejaq.TimelineMessageIDErrorTuple
+				response.MessagesErrors(&gerr, i)
+				individualErrors[i] = GrpcErrTupleToTuple(gerr)
+			}
+			return individualErrors
+		}
+	}
+	return nil
 }

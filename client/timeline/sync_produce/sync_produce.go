@@ -136,7 +136,7 @@ func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) 
 	}
 	err := p.InsertMessages(ctx, batch)
 	if err != nil {
-		return batch, errors.Wrap(err, "InsertMessages ERROR")
+		return batch, err
 	}
 	batch = batch[:0]
 	return batch, nil

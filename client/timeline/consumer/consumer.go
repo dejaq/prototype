@@ -8,8 +8,7 @@ import (
 	"sync"
 	"time"
 
-	derrors "github.com/dejaq/prototype/common/errors"
-
+	derror "github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
@@ -91,7 +90,7 @@ func (c *Consumer) Start() error {
 
 	if err != nil {
 		//the session expired or the brokers lost it
-		if strings.Contains(derrors.ErrConsumerNotSubscribed.Error(), err.Error()) ||
+		if strings.Contains(derror.ErrConsumerNotSubscribed.Error(), err.Error()) ||
 			strings.Contains("session", err.Error()) {
 			c.resetSession()
 			err = ErrMissingHandshake
@@ -281,7 +280,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 	c.mutex.Unlock()
 
 	if err != nil {
-		if strings.Contains(derrors.ErrConsumerNotSubscribed.Error(), err.Error()) ||
+		if strings.Contains(derror.ErrConsumerNotSubscribed.Error(), err.Error()) ||
 			strings.Contains("session", err.Error()) {
 			c.resetSession()
 		}
@@ -317,20 +316,11 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 		}
 	}
 
-	_, err = stream.CloseAndRecv()
-	if err != nil && err != io.EOF && !strings.Contains(err.Error(), context.Canceled.Error()) {
-		return fmt.Errorf("delete3 err: %w", err)
+	response, err := stream.CloseAndRecv()
+	if err != nil && err != io.EOF {
+		return err
 	}
-	//if response != nil && response.MessagesErrorsLength() > 0 {
-	//	var errorTuple dejaq.TimelineMessageIDErrorTuple
-	//	var errorInErrorTuple dejaq.MsgError
-	//	for i := 0; i < response.MessagesErrorsLength(); i++ {
-	//		response.MessagesErrors(&errorTuple, i)
-	//		errorTuple.Err(&errorInErrorTuple)
-	//		log.Printf("Delete response error id:%s err:%s", string(errorTuple.MessgeIDBytes()), errorInErrorTuple.Message())
-	//	}
-	//}
-	return nil
+	return derror.ParseTimelineResponse(response)
 }
 
 func (c *Consumer) GetConsumerID() string {

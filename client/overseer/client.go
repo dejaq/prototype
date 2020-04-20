@@ -44,11 +44,5 @@ func (c *Chief) CreateTimelineTopic(ctx context.Context, id string, topicSetting
 	if err != nil {
 		return err
 	}
-	if brokerErr != nil {
-		if derrors.IsGrpcElementEmpty(brokerErr) {
-			return nil
-		}
-		return derrors.GrpcErroToDerror(brokerErr)
-	}
-	return nil
+	return derrors.GrpcErrToError(brokerErr)
 }

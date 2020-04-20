@@ -12,6 +12,7 @@ import (
 	"github.com/dejaq/prototype/client/satellite"
 	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
+	derror "github.com/dejaq/prototype/common/errors"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -179,7 +180,14 @@ func main() {
 	go func() {
 		err = sync_produce.Produce(ctx, &pc, p, logger)
 		if err != nil {
-			logger.Error(err)
+			switch v := err.(type) {
+			case derror.MessageIDTupleList:
+				for _, ve := range v {
+					logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
+				}
+			default:
+				logger.Error(err.Error())
+			}
 		}
 		shutdownEverything() //propagate trough the context
 	}()
