@@ -94,12 +94,11 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 }
 
 // Insert ...
-func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
-	stringTimelineID := string(timelineID)
-	var errs []derrors.MessageIDTuple
+func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
+	errs := make(derrors.MessageIDTupleList, 0)
 
 	// check if topic exists
-	if _, ok := m.topics[stringTimelineID]; !ok {
+	if _, ok := m.topics[req.GetTimelineID()]; !ok {
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "insert"
@@ -110,9 +109,9 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 	}
 
 	// iterate over messages and insert them
-	for _, msg := range messages {
+	for _, msg := range req.Messages {
 		// check if bucket exists
-		if len(m.topics[stringTimelineID].buckets)-1 < int(msg.BucketID) {
+		if len(m.topics[req.GetTimelineID()].buckets)-1 < int(msg.BucketID) {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "insert"
@@ -124,7 +123,7 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 
 		// TODO maybe check more details about a message, like ID, BucketID, maybe all details
 		// insert message
-		bucket := &m.topics[stringTimelineID].buckets[int(msg.BucketID)]
+		bucket := &m.topics[req.GetTimelineID()].buckets[int(msg.BucketID)]
 
 		bucket.m.Lock()
 		// raise error if message with same id already exists
@@ -148,7 +147,7 @@ func (m *Memory) Insert(ctx context.Context, timelineID []byte, messages []timel
 			bucket.messages = append(bucket.messages, message{
 				id:         msg.GetID(),
 				endLeaseMS: msg.TimestampMS,
-				data:       msg,
+				data:       insertMsgToMsg(msg, req.ProducerGroupID),
 			})
 
 			// sort messages asc in slice
@@ -239,21 +238,16 @@ func (m *Memory) GetAndLease(
 	return results, false, nil
 }
 
-// Lookup - not used at this time
-func (m *Memory) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
-	return nil, nil
-}
-
 // Delete ...
-func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
-	var errs []derrors.MessageIDTuple
+func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessagesRequest) error {
+	errs := make(derrors.MessageIDTupleList, 0)
 
 	switch deleteMessages.CallerType {
-	case timeline.DeleteCaller_Consumer:
+	case timeline.DeleteCallerConsumer:
 		if delErr := m.deleteByConsumerId(deleteMessages); delErr != nil {
 			errs = append(errs, delErr...)
 		}
-	case timeline.DeleteCaller_Producer:
+	case timeline.DeleteCallerProducer:
 		if delErr := m.deleteByProducerGroupId(deleteMessages); delErr != nil {
 			errs = append(errs, delErr...)
 		}
@@ -270,7 +264,7 @@ func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 	return errs
 }
 
-func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesRequest) []derrors.MessageIDTuple {
 	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
 	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
 
@@ -334,7 +328,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 		msg := m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages[indexToDelete]
 
 		// raise error if message does not belongs to consumer
-		if !bytes.Equal(msg.data.LockConsumerID, deleteMessages.CallerID) {
+		if string(msg.data.LockConsumerID) != deleteMessages.CallerID {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "delete"
@@ -406,7 +400,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessages) []de
 	return errs
 }
 
-func (m *Memory) deleteByProducerGroupId(deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (m *Memory) deleteByProducerGroupId(deleteMessages timeline.DeleteMessagesRequest) []derrors.MessageIDTuple {
 	var deleteErrors []derrors.MessageIDTuple
 	// TODO implement when will rich this part
 	return deleteErrors
@@ -417,28 +411,21 @@ func removeMessage(s []message, i int) []message {
 	return s[:len(s)-1]
 }
 
-// CountByRange - not used at this time
-func (m *Memory) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// CountByRangeProcessing - not used at this time
-func (m *Memory) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// CountByRangeWaiting - not used at this time
-func (m *Memory) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
 // SelectByConsumer...
 func (m *Memory) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, timeReferenceMS uint64) ([]timeline.Lease, bool, error) {
 	var results []timeline.Lease
 	return results, false, nil
 }
 
-// SelectByProducer - not used at this time
-func (m *Memory) SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message {
-	return nil
+func insertMsgToMsg(i timeline.InsertMessagesRequestItem, producerGroupID string) timeline.Message {
+	return timeline.Message{
+		ID:              i.ID,
+		TimestampMS:     i.TimestampMS,
+		BodyID:          i.ID,
+		Body:            i.Body,
+		ProducerGroupID: []byte(producerGroupID),
+		LockConsumerID:  nil,
+		BucketID:        i.BucketID,
+		Version:         i.Version,
+	}
 }

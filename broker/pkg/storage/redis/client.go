@@ -99,24 +99,24 @@ func (c *Client) CreateTopic(ctx context.Context, timelineID string) error {
 }
 
 // Insert ...
-func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
+func (c *Client) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	// TODO create batches and insert
 
-	var insertErrors []derrors.MessageIDTuple
+	insertErrors := make(derrors.MessageIDTupleList, 0)
 
-	for _, msg := range messages {
-		bucketKey := c.createBucketKey(clusterName, timelineID, msg.BucketID)
-		messageKey := c.createMessageKey(clusterName, timelineID, msg.BucketID, msg.ID)
+	for mi := range req.Messages {
+		bucketKey := c.createBucketKey(clusterName, []byte(req.TimelineID), req.Messages[mi].BucketID)
+		messageKey := c.createMessageKey(clusterName, []byte(req.TimelineID), req.Messages[mi].BucketID, req.Messages[mi].ID)
 
 		data := []string{
-			"ID", msg.GetID(),
-			"TimestampMS", strconv.FormatUint(msg.TimestampMS, 10),
-			"BodyID", msg.GetBodyID(),
-			"Body", msg.GetBody(),
-			"ProducerGroupID", msg.GetProducerGroupID(),
-			"LockConsumerID", msg.GetLockConsumerID(),
-			"BucketID", strconv.Itoa(int(msg.BucketID)),
-			"Version", strconv.Itoa(int(msg.Version)),
+			"ID", req.Messages[mi].GetID(),
+			"TimestampMS", strconv.FormatUint(req.Messages[mi].TimestampMS, 10),
+			"BodyID", req.Messages[mi].GetID(),
+			"Body", req.Messages[mi].GetBody(),
+			"ProducerGroupID", req.GetProducerGroupID(),
+			"LockConsumerID", "",
+			"BucketID", strconv.Itoa(int(req.Messages[mi].BucketID)),
+			"Version", strconv.Itoa(int(req.Messages[mi].Version)),
 		}
 
 		keys := []string{bucketKey, messageKey, data[1], data[3]}
@@ -129,7 +129,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.Message = err.Error()
 			derror.ShouldRetry = true
 			derror.WrappedErr = ErrStorageInternalError
-			insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
+			insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: req.Messages[mi].ID, MsgError: derror})
 		}
 
 		// continue on success
@@ -164,7 +164,7 @@ func (c *Client) Insert(ctx context.Context, timelineID []byte, messages []timel
 			derror.WrappedErr = ErrUnknown
 		}
 
-		insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: msg.ID, MsgError: derror})
+		insertErrors = append(insertErrors, derrors.MessageIDTuple{MsgID: req.Messages[mi].ID, MsgError: derror})
 	}
 
 	return insertErrors
@@ -323,27 +323,21 @@ func convertRawMsgToTimelineMsg(rawMessage []interface{}) (timeline.Message, err
 	return message, nil
 }
 
-// Lookup - not used at this time
-func (c *Client) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
-	return nil, nil
-}
-
 // Delete ...
-func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
-	// TODO talk with @Adrian redundant return error and log it ???
-	var deleteErrors []derrors.MessageIDTuple
+func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessagesRequest) error {
+	deleteErrors := make(derrors.MessageIDTupleList, 0)
 	keys := []string{
-		c.createTimelineKey(clusterName, deleteMessages.TimelineID),
-		string(deleteMessages.CallerID),
+		c.createTimelineKey(clusterName, []byte(deleteMessages.TimelineID)),
+		deleteMessages.CallerID,
 		strconv.FormatUint(deleteMessages.Timestamp, 10),
 	}
 
 	switch deleteMessages.CallerType {
-	case timeline.DeleteCaller_Consumer:
+	case timeline.DeleteCallerConsumer:
 		if delErr := deleteByConsumerId(c, deleteMessages, keys); delErr != nil {
 			deleteErrors = append(deleteErrors, delErr...)
 		}
-	case timeline.DeleteCaller_Producer:
+	case timeline.DeleteCallerProducer:
 		if delErr := deleteByProducerGroupId(c, deleteMessages, keys); delErr != nil {
 			deleteErrors = append(deleteErrors, delErr...)
 		}
@@ -361,7 +355,7 @@ func (c *Client) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 	return deleteErrors
 }
 
-func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys []string) []derrors.MessageIDTuple {
+func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessagesRequest, keys []string) []derrors.MessageIDTuple {
 	var deleteErrors []derrors.MessageIDTuple
 	var argv []string
 	for _, msg := range deleteMessages.Messages {
@@ -416,7 +410,7 @@ func deleteByConsumerId(c *Client, deleteMessages timeline.DeleteMessages, keys 
 	return deleteErrors
 }
 
-func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessages, keys []string) []derrors.MessageIDTuple {
+func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessagesRequest, keys []string) []derrors.MessageIDTuple {
 	// TODO will be implemented
 	var deleteErrors []derrors.MessageIDTuple
 	var argv []string
@@ -438,21 +432,6 @@ func deleteByProducerGroupId(c *Client, deleteMessages timeline.DeleteMessages, 
 	}
 	_ = data
 	return deleteErrors
-}
-
-// CountByRange - not used at this time
-func (c *Client) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// CountByRangeProcessing - not used at this time
-func (c *Client) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
-}
-
-// CountByRangeWaiting - not used at this time
-func (c *Client) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	return 0
 }
 
 // SelectByConsumer return consumer associated messages already leased
@@ -514,11 +493,6 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 	}
 
 	return results, false, nil
-}
-
-// SelectByProducer - not used at this time
-func (c *Client) SelectByProducer(ctx context.Context, timelineID []byte, producerID []byte) []timeline.Message {
-	return nil
 }
 
 type LeaseLu struct {

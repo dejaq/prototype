@@ -37,7 +37,7 @@ var (
 )
 
 type Producer struct {
-	GroupID    []byte
+	GroupID    string
 	Topic      string
 	Cluster    string
 	ProducerID string
@@ -74,40 +74,13 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 
 func (c *Coordinator) AttachToServer(server *GRPCServer) {
 	server.SetListeners(&TimelineListeners{
-		ConsumerHandshake:    c.consumerHandshake,
-		ConsumerConnected:    c.consumerConnected,
-		ConsumerDisconnected: c.consumerDisconnected,
-		ConsumerStatus:       c.consumerStatus,
-		DeleteMessagesListener: func(ctx context.Context, sessionID string, timelineID string, messageIDs []timeline.MessageRequestDetails) []derrors.MessageIDTuple {
-			data := timeline.DeleteMessages{
-				Timestamp:  dtime.TimeToMS(time.Now()),
-				TimelineID: []byte(timelineID),
-				Messages:   messageIDs,
-			}
-
-			// check hwo wants to delete message based on sessionID
-			if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
-				data.CallerType = timeline.DeleteCaller_Consumer
-				data.CallerID = consumer.GetIDAsBytes()
-			} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
-				data.CallerType = timeline.DeleteCaller_Producer
-				data.CallerID = producer.GroupID
-			} else {
-				var derror derrors.Dejaror
-				derror.Module = derrors.ModuleBroker
-				derror.Operation = "deleteMessageListener"
-				derror.Message = fmt.Sprintf("coordinator not able to find delete requester with sessionID: %s", sessionID)
-				derror.ShouldRetry = false
-				derror.WrappedErr = ErrUnknownDeleteRequester
-				logrus.WithError(derror)
-
-				return []derrors.MessageIDTuple{derrors.MessageIDTuple{MsgError: derror}}
-			}
-
-			return c.storage.Delete(ctx, data)
-		},
-		ProducerHandshake: c.producerHandshake,
-		CreateTimeline:    c.createTopic,
+		ConsumerHandshake:      c.consumerHandshake,
+		ConsumerConnected:      c.consumerConnected,
+		ConsumerDisconnected:   c.consumerDisconnected,
+		ConsumerStatus:         c.consumerStatus,
+		DeleteMessagesListener: c.listenerTimelineDeleteMessages,
+		ProducerHandshake:      c.producerHandshake,
+		CreateTimeline:         c.createTopic,
 		CreateMessagesRequest: func(ctx context.Context, sessionID string) (*Producer, error) {
 			return c.greeter.GetProducerSessionData(sessionID)
 		},
@@ -257,19 +230,38 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 	return nil
 }
 
-func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, topicID string, msgs []timeline.Message) []derrors.MessageIDTuple {
-	metricMessagesCounter.Inc(int64(len(msgs)))
-	topic, err := c.catalog.GetTopic(ctx, topicID)
+func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req timeline.InsertMessagesRequest) error {
+	metricMessagesCounter.Inc(int64(len(req.Messages)))
+	topic, err := c.catalog.GetTopic(ctx, req.GetTimelineID())
 	if err != nil {
-		return []derrors.MessageIDTuple{
-			{MsgError: derrors.Dejaror{WrappedErr: err, Message: err.Error()}, MsgID: msgs[0].ID},
-		}
+		return err
 	}
-	for i := range msgs {
-		msgs[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
-		if msgs[i].GetID() == "" {
+	for i := range req.Messages {
+		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
+		if req.Messages[i].GetID() == "" {
 			logrus.Fatalf("coordinator received empty messageID")
 		}
 	}
-	return c.storage.Insert(ctx, []byte(topicID), msgs)
+	return c.storage.Insert(ctx, req)
+}
+
+func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessionID string, req timeline.DeleteMessagesRequest) error {
+	// check hwo wants to delete message based on sessionID
+	if consumer, err := c.greeter.GetConsumer(sessionID); err == nil {
+		req.CallerType = timeline.DeleteCallerConsumer
+		req.CallerID = consumer.GetID()
+	} else if producer, err := c.greeter.GetProducerSessionData(sessionID); err == nil {
+		req.CallerType = timeline.DeleteCallerProducer
+		req.CallerID = producer.GroupID
+	} else {
+		return derrors.Dejaror{
+			Severity:  derrors.SeverityError,
+			Message:   fmt.Sprintf("handshake required, coordinator not able to find delete requester with sessionID: %s", sessionID),
+			Module:    0,
+			Operation: "deleteMessageListener",
+			Kind:      derrors.KindNotFound,
+		}
+	}
+
+	return c.storage.Delete(ctx, req)
 }

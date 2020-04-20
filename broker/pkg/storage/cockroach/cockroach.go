@@ -81,10 +81,10 @@ func min(a, b int) int {
 	return b
 }
 
-func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
+func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	batchSize := 25
-	var batch []timeline.Message
-	result := make([]derrors.MessageIDTuple, 0)
+	var batch []timeline.InsertMessagesRequestItem
+	result := make(derrors.MessageIDTupleList, 0)
 
 	addFailedBatch := func(err error) {
 		c.logger.WithError(err).Error("insert msg batch failed")
@@ -106,6 +106,11 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		}
 	}
 
+	messages := make([]timeline.InsertMessagesRequestItem, len(req.Messages))
+	for i := range req.Messages {
+		messages[i] = req.Messages[i]
+	}
+
 	for len(messages) > 0 {
 		max := min(len(messages), batchSize)
 		batch = messages[:max]
@@ -118,7 +123,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 		}
 
 		//https://godoc.org/github.com/lib/pq#hdr-Bulk_imports
-		stmt, err := txn.PrepareContext(ctx, pq.CopyIn(table(string(timelineID)),
+		stmt, err := txn.PrepareContext(ctx, pq.CopyIn(table(req.GetTimelineID()),
 			"id",
 			"bucket_id",
 			"ts",
@@ -139,7 +144,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 				batch[i].BucketID,
 				batch[i].TimestampMS,
 				batch[i].TimestampMS,
-				batch[i].GetProducerGroupID(),
+				req.GetProducerGroupID(),
 				batch[i].GetID(), //body_id same as msg_id
 				batch[i].Version)
 			if err != nil {
@@ -160,7 +165,7 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 			continue
 		}
 
-		stmtBodies, err := txn.PrepareContext(ctx, pq.CopyIn(tableBodies(string(timelineID)), "id", "body"))
+		stmtBodies, err := txn.PrepareContext(ctx, pq.CopyIn(tableBodies(req.GetTimelineID()), "id", "body"))
 		if err != nil {
 			addFailedBatch(err)
 			txn.Rollback()
@@ -307,14 +312,10 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	return result, len(result) == limit, nil
 }
 
-func (c *CRClient) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
-	panic("implement me")
-}
-
-func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) []derrors.MessageIDTuple {
+func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessagesRequest) error {
 	batchSize := 25
 	var batch []string
-	result := make([]derrors.MessageIDTuple, 0)
+	result := make(derrors.MessageIDTupleList, 0)
 	ids := make([]string, len(request.Messages))
 	for i := range request.Messages {
 		ids[i] = request.Messages[i].GetMessageID()
@@ -417,24 +418,8 @@ func generateIncParams(start, end int) string {
 	return strings.Join(params, ",")
 }
 
-func (c *CRClient) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	panic("implement me")
-}
-
-func (c *CRClient) CountByRangeProcessing(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	panic("implement me")
-}
-
-func (c *CRClient) CountByRangeWaiting(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
-	panic("implement me")
-}
-
 func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error) {
 	return nil, false, nil
-}
-
-func (c *CRClient) SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message {
-	panic("implement me")
 }
 
 func (c *CRClient) externalErr(ctx context.Context, sql error, operation string) derrors.Dejaror {

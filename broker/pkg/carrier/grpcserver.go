@@ -21,18 +21,20 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 
 //TimelineListeners Coordinator can listen and react to these calls
 type TimelineListeners struct {
-	ProducerHandshake      func(context.Context, *Producer) (string, error)
-	CreateTimeline         func(context.Context, string, timeline.TopicSettings) error
-	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
-	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
+	ProducerHandshake     func(context.Context, *Producer) (string, error)
+	CreateTimeline        func(context.Context, string, timeline.TopicSettings) error
+	CreateMessagesRequest func(context.Context, string) (*Producer, error)
+	// CreateMessagesListener Returns a Dejaror or a MessageIDTupleList (if only specific messages failed)
+	CreateMessagesListener func(context.Context, timeline.InsertMessagesRequest) error
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerStatus       func(context.Context, protocol.ConsumerStatus) error
 	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
 	ConsumerDisconnected func(context.Context, string) error
 
+	// Returns a Dejaror or a MessageIDTupleList (if only specific messages failed)
 	DeleteRequest          func(context.Context, string) (string, error)
-	DeleteMessagesListener func(context.Context, string, string, []timeline.MessageRequestDetails) []derrors.MessageIDTuple
+	DeleteMessagesListener func(context.Context, string, timeline.DeleteMessagesRequest) error
 }
 
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
@@ -57,7 +59,7 @@ func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.Ti
 	var p Producer
 	p.Topic = string(req.TopicID())
 	p.Cluster = string(req.Cluster())
-	p.GroupID = req.ProducerGroupID()
+	p.GroupID = string(req.ProducerGroupID())
 	p.ProducerID = string(req.ProducerID())
 
 	sessionID, err := s.listeners.ProducerHandshake(ctx, &p)
@@ -229,8 +231,8 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 }
 
 func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMessagesServer) error {
-	var msgs []timeline.Message
 	var request *grpc.TimelineCreateMessageRequest
+	var storageRequest timeline.InsertMessagesRequest
 	var err error
 	var errGet error
 	var producer *Producer
@@ -259,19 +261,18 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 				default:
 					replyError = derrors.Dejaror{
 						Severity: derrors.SeverityError,
-						Message:  errGet.Error(),
+						Message:  v.Error(),
 					}
 				}
 				break
 			}
 		}
 
-		msgs = append(msgs, timeline.Message{
-			ID:              request.IdBytes(),
-			TimestampMS:     request.TimeoutMS(),
-			Body:            request.BodyBytes(),
-			ProducerGroupID: producer.GroupID,
-			Version:         1,
+		storageRequest.Messages = append(storageRequest.Messages, timeline.InsertMessagesRequestItem{
+			ID:          request.IdBytes(),
+			TimestampMS: request.TimeoutMS(),
+			Body:        request.BodyBytes(),
+			Version:     1,
 		})
 	}
 
@@ -285,10 +286,24 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	//returns the response to the client
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
-	var messagesErrors []derrors.MessageIDTuple
+	var messagesErrors derrors.MessageIDTupleList
 
 	if replyError.Message == "" {
-		messagesErrors = s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
+		storageRequest.ProducerGroupID = producer.GroupID
+		storageRequest.TimelineID = producer.Topic
+
+		storageError := s.listeners.CreateMessagesListener(stream.Context(), storageRequest)
+		switch v := storageError.(type) {
+		case derrors.Dejaror:
+			replyError = v
+		case derrors.MessageIDTupleList:
+			messagesErrors = v
+		default:
+			replyError = derrors.Dejaror{
+				Severity: derrors.SeverityError,
+				Message:  v.Error(),
+			}
+		}
 	}
 
 	root := writeTimelineResponse(replyError, messagesErrors, builder)
@@ -311,13 +326,12 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 
 	var err error
 	var topicErr error
-	var timelineID string
 	var sessionID string
 	var replyError derrors.Dejaror
 
 	var req *grpc.TimelineDeleteRequest
+	var storageRequest timeline.DeleteMessagesRequest
 
-	var batch []timeline.MessageRequestDetails
 	for {
 		req, err = stream.Recv()
 		if err != nil {
@@ -327,14 +341,14 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			return err
 		}
 
-		batch = append(batch, timeline.MessageRequestDetails{
+		storageRequest.Messages = append(storageRequest.Messages, timeline.DeleteMessagesRequestItem{
 			MessageID: req.MessageIDBytes(),
 			BucketID:  req.BucketID(),
 			Version:   req.Version(),
 		})
 
-		if timelineID == "" {
-			timelineID, topicErr = s.listeners.DeleteRequest(stream.Context(), string(req.SessionID()))
+		if storageRequest.TimelineID == "" {
+			storageRequest.TimelineID, topicErr = s.listeners.DeleteRequest(stream.Context(), string(req.SessionID()))
 
 			if topicErr != nil {
 				s.logger.WithError(err).Error("delete request from unknown client")
@@ -354,7 +368,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var messagesErrors []derrors.MessageIDTuple
 
 	//timelineID can be nil when no messages arrived
-	if timelineID == "" && replyError.Message != "" {
+	if storageRequest.TimelineID == "" && replyError.Message != "" {
 		replyError = derrors.Dejaror{
 			Severity: derrors.SeverityError,
 			Message:  "topicID missing and required",
@@ -367,7 +381,19 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 		}
 	}
 	if replyError.Message == "" {
-		messagesErrors = s.listeners.DeleteMessagesListener(stream.Context(), sessionID, timelineID, batch)
+		storageError := s.listeners.DeleteMessagesListener(stream.Context(), sessionID, storageRequest)
+		if storageError != nil {
+			switch v := storageError.(type) {
+			case derrors.Dejaror:
+				replyError = v
+			case derrors.MessageIDTupleList:
+				messagesErrors = v
+			default:
+				replyError = derrors.Dejaror{
+					Message: err.Error(),
+				}
+			}
+		}
 	}
 
 	rootPosition := writeTimelineResponse(replyError, messagesErrors, builder)
