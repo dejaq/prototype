@@ -8,11 +8,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/dejaq/prototype/client/timeline/producer"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 )
 
 type Strategy uint8
@@ -58,85 +59,85 @@ func getBodyOfSize(size int) []byte {
 	return b.Bytes()
 }
 
-func Produce(ctx context.Context, config *SyncProduceConfig, p *producer.Producer) error {
+func Produce(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, logger logrus.FieldLogger) error {
 	switch config.Strategy {
 	case StrategySingleBurst:
-		return singleBurst(ctx, config, p, config.SingleBurstEventsCount)
+		return singleBurst(ctx, config, p, config.SingleBurstEventsCount, logger)
 	case StrategyConstantBursts:
-		return constantBursts(ctx, config, p)
+		return constantBursts(ctx, config, p, logger)
 	default:
 		return errors.New("unknown strategy")
 	}
 }
 
-func constantBursts(ctx context.Context, config *SyncProduceConfig, p *producer.Producer) error {
-	sent := uint64(0)
+func constantBursts(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, logger logrus.FieldLogger) error {
 	ticker := time.NewTicker(config.ConstantBurstsTickDuration)
 	for range ticker.C {
 		if ctx.Err() != nil {
 			ticker.Stop()
 			break
 		}
-		err := singleBurst(ctx, config, p, config.ConstantBurstsTickEventsCount)
+		err := singleBurst(ctx, config, p, config.ConstantBurstsTickEventsCount, logger)
 		if err != nil {
-			log.Error(err)
+			logger.Error(err)
 		}
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", sent, p.GetProducerGroupID(), p.GetTopic())
 	return nil
 }
 
-func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, toSendCount int) error {
+func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, toSendCount int, logger logrus.FieldLogger) error {
 	left := toSendCount
 	var batch []timeline.Message
 
 	body := getBodyOfSize(config.BodySizeBytes)
-	var msgID int
+	var msgID string
+	var err error
+	seed := time.Now().UTC().UnixNano()
 
 	for left > 0 {
 		left--
 		if config.DeterministicEventID {
-			msgID = toSendCount - left
+			msgID = fmt.Sprintf("%d", toSendCount-left)
 		} else {
-			msgID = rand.Int()
+			msgID = fmt.Sprintf("%d_%d", seed, toSendCount-left)
 		}
 
 		batch = append(batch, newMsg(p, msgID, body, config))
 		if len(batch) >= config.BatchSize {
-			if err := flush(ctx, batch, p); err != nil {
+			if batch, err = flush(ctx, batch, p); err != nil {
 				return err
 			}
 		}
 	}
-	if err := flush(ctx, batch, p); err != nil {
+	if batch, err = flush(ctx, batch, p); err != nil {
 		return err
 	}
-	log.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
+	logger.Infof("inserted %d messages group=%s on topic=%s", toSendCount, p.GetProducerGroupID(), p.GetTopic())
 	return nil
 }
 
-func newMsg(p *producer.Producer, msgID int, body []byte, config *SyncProduceConfig) timeline.Message {
+func newMsg(p *producer.Producer, msgID string, body []byte, config *SyncProduceConfig) timeline.Message {
 	t := time.Now().UTC()
 	minT := dtime.TimeToMS(t.Add(-config.EventTimelineMinDelta))
 	maxT := dtime.TimeToMS(t.Add(config.EventTimelineMaxDelta))
-	bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%d|", strconv.FormatInt(t.UnixNano(), 10), p.GetProducerGroupID(), msgID)
+	bodyHeader := fmt.Sprintf("%s|BODY %s|msg_%s|", strconv.FormatInt(t.UnixNano(), 10), p.GetProducerGroupID(), msgID)
 	return timeline.Message{
 		//first part must be the the ms timestamp, so consumers can calculate the latency
-		ID:   []byte(fmt.Sprintf("id %s|msg_%d | topic_%s", p.GetProducerGroupID(), msgID, p.GetTopic())),
+		ID:   []byte(fmt.Sprintf("id %s|msg_%s | topic_%s", p.GetProducerGroupID(), msgID, p.GetTopic())),
 		Body: append([]byte(bodyHeader), body...),
 		//TimestampMS: dtime.TimeToMS(t.Add(time.Millisecond + time.Duration(msgID+200))),
 		TimestampMS: minT + uint64(rand.Intn(int(maxT-minT))),
 	}
 }
 
-func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) error {
+func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) ([]timeline.Message, error) {
 	if len(batch) == 0 {
-		return nil
+		return batch, nil
 	}
 	err := p.InsertMessages(ctx, batch)
 	if err != nil {
-		return errors.Wrap(err, "InsertMessages ERROR")
+		return batch, err
 	}
 	batch = batch[:0]
-	return nil
+	return batch, nil
 }

@@ -9,7 +9,9 @@ type Client struct {
 }
 
 // BucketRange represents a range of buckets, calculated by dealer
-//and used by Storage.
+// and used by Storage. Start and End are both INCLUSIVE.
+// Start:7 End:7 Means only one bucket, 7
+// Empty value it is the 0 bucket only.
 type BucketRange struct {
 	Start uint16
 	End   uint16
@@ -44,5 +46,5 @@ func (b BucketRange) Max() uint16 {
 }
 
 func (b BucketRange) Size() int {
-	return int(b.Max() - b.Min())
+	return int(b.Max()-b.Min()) + 1
 }

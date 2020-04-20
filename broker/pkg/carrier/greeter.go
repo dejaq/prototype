@@ -7,13 +7,16 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/sirupsen/logrus"
+
+	derrors "github.com/dejaq/prototype/common/errors"
+
 	"github.com/dejaq/prototype/common/protocol"
 
 	"github.com/dejaq/prototype/common/timeline"
 )
 
 var (
-	ErrConsumerNotSubscribed  = errors.New("consumer is not subscribed")
 	ErrConsumerIsNotConnected = errors.New("cannot find the channel connection")
 	ErrNotFound               = errors.New("not found")
 )
@@ -55,6 +58,7 @@ func NewGreeter() *Greeter {
 		consumerSessionIDsAndPipelines: make(map[string]*ConsumerPipelineTuple),
 		producerSessionIDs:             make(map[string]*Producer),
 		producerIDsAndSessionIDs:       newIDsPerTopic(),
+		logger:                         logrus.New().WithField("component", "greeter"),
 	}
 }
 
@@ -69,6 +73,7 @@ type ConsumerPipelineTuple struct {
 // Greeter is in charge of keeping the local state of all Clients
 type Greeter struct {
 	baseCtx                        context.Context
+	logger                         logrus.FieldLogger
 	opMutex                        sync.RWMutex
 	consumerIDsAndSessionIDs       *idsPerTopic
 	consumerSessionIDAndID         map[string]string
@@ -117,7 +122,7 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	defer s.opMutex.Unlock()
 
 	if _, alreadyExists := s.producerIDsAndSessionIDs.Get(req.ProducerID, req.Topic); alreadyExists {
-		return "", errors.New("producerID already has a handshake")
+		s.logger.Errorf("producerID %s on topic %s already has a handshake, removing the old one", req.ProducerID, req.Topic)
 	}
 
 	sessionID := randomSessionID()
@@ -161,7 +166,7 @@ func (s *Greeter) GetConsumer(sessionID string) (*Consumer, error) {
 	defer s.opMutex.RUnlock()
 	consumer, ok := s.consumerSessionsIDs[sessionID]
 	if !ok {
-		return nil, errors.New("consumer not found")
+		return nil, derrors.ErrConsumerNotSubscribed
 	}
 	return consumer, nil
 }

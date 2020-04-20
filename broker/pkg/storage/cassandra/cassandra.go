@@ -129,12 +129,12 @@ func (w *Cassandra) UpdateLeases(ctx context.Context, timelineID []byte, msgs []
 	return nil
 }
 
-// LOOKUP message by TimelineID, MessageID (owner control, lease operations)
+// LOOKUP message by TimelineID, MsgID (owner control, lease operations)
 func (w *Cassandra) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	return nil, nil
 }
 
-// DELETE messages by TimelineID, MessageID map[msgID]error
+// DELETE messages by TimelineID, MsgID map[msgID]error
 func (w *Cassandra) Delete(ctx context.Context, deleteMessages timeline.DeleteMessages) []derrors.MessageIDTuple {
 	return nil
 }

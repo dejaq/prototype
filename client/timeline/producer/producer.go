@@ -5,11 +5,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/pkg/errors"
-
+	derror "github.com/dejaq/prototype/common/errors"
 	"github.com/dejaq/prototype/common/timeline"
 	dejaq "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
 
@@ -70,6 +70,7 @@ func (c *Producer) Handshake(ctx context.Context) error {
 // InsertMessages creates a stream and push all the messages.
 //It fails if it does not have a valid session from the overseer
 //Thread safe
+// Returns a simple error, Dejaror or MessageIDTupleList
 func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
@@ -108,11 +109,11 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		}
 	}
 
-	_, err = stream.CloseAndRecv()
+	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
 		return errors.Wrap(err, "failed to send the events")
 	}
-	return nil
+	return derror.ParseTimelineResponse(response)
 }
 
 func (c *Producer) GetProducerGroupID() string {

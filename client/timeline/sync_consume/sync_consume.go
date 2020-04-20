@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/dejaq/prototype/client/timeline/consumer"
 	"github.com/dejaq/prototype/common/timeline"
-	"github.com/prometheus/common/log"
 	"go.uber.org/atomic"
 )
 
@@ -41,16 +42,18 @@ type syncconsumer struct {
 	ctx         context.Context
 	msgsCounter *atomic.Int64
 	conf        *SyncConsumeConfig
+	logger      logrus.FieldLogger
 }
 
 func (sc *syncconsumer) callback(lease timeline.Lease) {
 	if lease.GetConsumerID() != sc.conf.Consumer.GetConsumerID() {
-		log.Fatalf("server sent message for another consumer me=%s sent=%s", sc.conf.Consumer.GetConsumerID(), lease.GetConsumerID())
+		sc.logger.Fatalf("server sent message for another consumer me=%s sent=%s", sc.conf.Consumer.GetConsumerID(), lease.GetConsumerID())
 	}
 	if !strings.Contains(lease.Message.GetID(), sc.conf.Consumer.GetTopicID()) {
-		log.Fatalf("server sent message for another topic: %s sent consumerID: %s, msgID: %s, producedBy: %s",
+		sc.logger.Fatalf("server sent message for another topic: %s sent consumerID: %s, msgID: %s, producedBy: %s",
 			sc.conf.Consumer.GetTopicID(), lease.GetConsumerID(), lease.Message.GetID(), lease.Message.GetProducerGroupID())
 	}
+
 	//Process the messages
 	err := sc.conf.Consumer.Delete(sc.ctx, []timeline.Message{{
 		ID:          lease.Message.ID,
@@ -59,45 +62,76 @@ func (sc *syncconsumer) callback(lease timeline.Lease) {
 		Version:     lease.Message.Version,
 	}})
 
+	//wait for delete then decrement
 	sc.msgsCounter.Dec()
 
 	if err != nil {
-		log.Errorf("delete failed", err)
+		sc.logger.WithError(err).Error("delete failed")
 		return
 	}
 
 	//retrieve the time when it was created, so we can see how long it took to process it
 	parts := bytes.SplitN(lease.Message.Body[:25], []byte{'|'}, 2)
 	if len(parts) != 2 || len(parts[0]) == 0 {
-		log.Errorf("malformed body (ts for latency not found) id=%s body=%s", lease.Message.ID, lease.Message.Body)
+		sc.logger.Errorf("malformed body (ts for latency not found) id=%s body=%s", lease.Message.ID, lease.Message.Body)
 		return
 	}
 
 	createdNs, err := strconv.Atoi(string(parts[0]))
 	if err != nil {
-		log.Errorf("malformed lateny ts, not an int id=%s err=%v", lease.Message.ID, err)
+		sc.logger.Errorf("malformed lateny ts, not an int id=%s err=%v", lease.Message.ID, err)
 		return
 	}
 
 	currentNs := time.Now().UTC().UnixNano()
 	if currentNs <= int64(createdNs) {
-		log.Errorf("we invented a time machine id=%s err=%v", lease.Message.ID, err)
+		sc.logger.Errorf("we invented a time machine id=%s err=%v", lease.Message.ID, err)
 		return
 	}
 	sc.avg.Add(currentNs - int64(createdNs))
 }
 
-func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeConfig) (float64, error) {
-
+func Consume(ctx context.Context, msgsCounter *atomic.Int64, conf *SyncConsumeConfig, logger logrus.FieldLogger) (float64, error) {
 	sc := &syncconsumer{
 		avg:         &Average{},
 		ctx:         ctx,
 		msgsCounter: msgsCounter,
 		conf:        conf,
+		logger:      logger,
 	}
 
-	conf.Consumer.Start(ctx, sc.callback)
+	handshakeAndStart := func() error {
+		err := conf.Consumer.Handshake(ctx)
+		if err != nil {
+			return err
+		}
+		return conf.Consumer.Start()
+	}
 
-	<-ctx.Done()
-	return sc.avg.Get(), nil
+	err := handshakeAndStart()
+	if err != nil {
+		return 0, err
+	}
+	defer conf.Consumer.Stop()
+
+	for {
+		msg, err := conf.Consumer.ReadLease(ctx)
+		if err != nil {
+			if err == consumer.ErrMissingHandshake {
+				//try only once to reconnect
+				err = handshakeAndStart()
+				if err == nil {
+					//successfull, we're back in business
+					continue
+				}
+			}
+
+			//this is not an error since we consumed all messages
+			if strings.Contains(err.Error(), context.Canceled.Error()) {
+				err = nil
+			}
+			return sc.avg.Get(), err
+		}
+		sc.callback(msg)
+	}
 }

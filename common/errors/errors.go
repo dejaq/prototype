@@ -1,8 +1,14 @@
 package errors
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 //go:generate stringer -type=Module,Severity
+
+var ErrConsumerNotSubscribed = errors.New("consumer is not subscribed")
+var ErrTopicNotFound = errors.New("topic not found")
 
 type Module uint8
 type Severity uint8
@@ -68,7 +74,7 @@ func NewDejaror(message, operation string) Dejaror {
 	}
 }
 
-// Error implements the Error interface
+// MsgError implements the MsgError interface
 func (d Dejaror) Error() string {
 	return d.Message
 }
@@ -96,10 +102,4 @@ func DeconstructStackTrace(err error) []string {
 	}
 
 	return result
-}
-
-// MessageIDTuple a pair of MessageID and an error
-type MessageIDTuple struct {
-	MessageID []byte
-	Error     Dejaror
 }

@@ -7,9 +7,12 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/dejaq/prototype/common/timeline"
+
 	"github.com/dejaq/prototype/client/satellite"
 	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
+	derror "github.com/dejaq/prototype/common/errors"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -18,9 +21,10 @@ import (
 type Config struct {
 	OverseerSeed  string `env:"OVERSEER" env-default:"localhost:9000"`
 	Topic         string `env:"TOPIC"`
+	TopicBuckets  int    `env:"TOPIC_BUCKETS" env-default:"100"`
 	ProducerGroup string `env:"NAME"`
 
-	TimeoutDuration        string `env:"TIMEOUT" env-default:"7s"`
+	TimeoutDuration        string `env:"TIMEOUT" env-default:"3s"`
 	SingleBurstEventsCount int    `env:"SINGLE_BURST_EVENTS"`
 
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION"`
@@ -133,6 +137,23 @@ func main() {
 		logger.Fatal("The connection to the broker cannot be established in time.")
 	}
 
+	chief := client.NewOverseerClient()
+	err = chief.CreateTimelineTopic(ctx, c.Topic, timeline.TopicSettings{
+		ReplicaCount:            0,
+		MaxSecondsFutureAllowed: 10,
+		MaxSecondsLease:         10,
+		ChecksumBodies:          false,
+		MaxBodySizeBytes:        100000,
+		RQSLimitPerClient:       100000,
+		MinimumProtocolVersion:  0,
+		MinimumDriverVersion:    0,
+		BucketCount:             uint16(c.TopicBuckets),
+	})
+	if err != nil {
+		logger.WithError(err).Fatal("failed creating topic")
+		return
+	}
+
 	p := client.NewProducer(&producer.Config{
 		Cluster:         "",
 		Topic:           c.Topic,
@@ -157,9 +178,16 @@ func main() {
 	}
 
 	go func() {
-		err = sync_produce.Produce(ctx, &pc, p)
+		err = sync_produce.Produce(ctx, &pc, p, logger)
 		if err != nil {
-			logger.Error(err)
+			switch v := err.(type) {
+			case derror.MessageIDTupleList:
+				for _, ve := range v {
+					logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
+				}
+			default:
+				logger.Error(err.Error())
+			}
 		}
 		shutdownEverything() //propagate trough the context
 	}()

@@ -22,7 +22,7 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 //TimelineListeners Coordinator can listen and react to these calls
 type TimelineListeners struct {
 	ProducerHandshake      func(context.Context, *Producer) (string, error)
-	CreateTimeline         func(context.Context, string, timeline.TopicSettings)
+	CreateTimeline         func(context.Context, string, timeline.TopicSettings) error
 	CreateMessagesRequest  func(context.Context, string) (*Producer, error)
 	CreateMessagesListener func(context.Context, string, []timeline.Message) []derrors.MessageIDTuple
 
@@ -38,11 +38,13 @@ type TimelineListeners struct {
 // GRPCServer intercept gRPC and sends messages, and transforms to our business logic
 type GRPCServer struct {
 	listeners *TimelineListeners
+	logger    logrus.FieldLogger
 }
 
 func NewGRPCServer(listeners *TimelineListeners) *GRPCServer {
 	s := GRPCServer{
 		listeners: listeners,
+		logger:    logrus.New().WithField("component", "grpcServer"),
 	}
 	return &s
 }
@@ -203,11 +205,26 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 	settings.MinimumProtocolVersion = req.MinimumProtocolVersion()
 	settings.MaxSecondsFutureAllowed = req.MaxSecondsFutureAllowed()
 
-	s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
+	err := s.listeners.CreateTimeline(ctx, string(req.Id()), settings)
 	builder := flatbuffers.NewBuilder(128)
-	grpc.ErrorStart(builder)
-	root := grpc.ErrorEnd(builder)
-	builder.Finish(root)
+	builder.Reset()
+
+	if err != nil {
+		s.logger.WithError(err).Error("creation failed")
+	}
+	var derror derrors.Dejaror
+
+	if err != nil {
+		switch v := err.(type) {
+		case derrors.Dejaror:
+			derror = v
+		default:
+			s.logger.WithError(err).Error("timelineCreate unknown error type returned")
+			derror = derrors.NewDejaror("failed creation", "create")
+		}
+	}
+
+	builder.Finish(writeError(derror, builder))
 	return builder, nil
 }
 
@@ -217,6 +234,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var err error
 	var errGet error
 	var producer *Producer
+	var replyError derrors.Dejaror
 
 	//gather all the messages from the client
 	for err == nil {
@@ -235,7 +253,16 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 		if producer == nil {
 			producer, errGet = s.listeners.CreateMessagesRequest(stream.Context(), string(request.SessionID()))
 			if errGet != nil {
-				return err
+				switch v := errGet.(type) {
+				case derrors.Dejaror:
+					replyError = v
+				default:
+					replyError = derrors.Dejaror{
+						Severity: derrors.SeverityError,
+						Message:  errGet.Error(),
+					}
+				}
+				break
 			}
 		}
 
@@ -249,21 +276,26 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	}
 
 	if producer == nil {
-		return errors.New("no message with sessionID")
+		replyError = derrors.Dejaror{
+			Severity: derrors.SeverityError,
+			Message:  "no message with sessionID",
+		}
 	}
-
-	msgErrors := s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
 
 	//returns the response to the client
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
+	var messagesErrors []derrors.MessageIDTuple
 
-	root := writeTimelineResponse(msgErrors, builder)
+	if replyError.Message == "" {
+		messagesErrors = s.listeners.CreateMessagesListener(stream.Context(), producer.Topic, msgs)
+	}
+
+	root := writeTimelineResponse(replyError, messagesErrors, builder)
 	builder.Finish(root)
-
 	err = stream.SendMsg(builder)
 	if err != nil {
-		_ = fmt.Errorf("TimelineCreateMessages err=%s", err.Error())
+		s.logger.WithError(err).Error("timeline create msgs failed to send response")
 	}
 
 	return nil
@@ -281,6 +313,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	var topicErr error
 	var timelineID string
 	var sessionID string
+	var replyError derrors.Dejaror
 
 	var req *grpc.TimelineDeleteRequest
 
@@ -304,7 +337,12 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 			timelineID, topicErr = s.listeners.DeleteRequest(stream.Context(), string(req.SessionID()))
 
 			if topicErr != nil {
-				return errors.New("producer missing session")
+				s.logger.WithError(err).Error("delete request from unknown client")
+				replyError = derrors.Dejaror{
+					Severity: derrors.SeverityError,
+					Message:  "handshake required",
+				}
+				break
 			}
 		}
 		if sessionID == "" {
@@ -313,13 +351,26 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	}
 
 	builder := flatbuffers.NewBuilder(128)
-	var responseErrors []derrors.MessageIDTuple
+	var messagesErrors []derrors.MessageIDTuple
 
 	//timelineID can be nil when no messages arrived
-	if timelineID != "" && sessionID != "" {
-		responseErrors = s.listeners.DeleteMessagesListener(stream.Context(), sessionID, timelineID, batch)
+	if timelineID == "" && replyError.Message != "" {
+		replyError = derrors.Dejaror{
+			Severity: derrors.SeverityError,
+			Message:  "topicID missing and required",
+		}
 	}
-	rootPosition := writeTimelineResponse(responseErrors, builder)
+	if sessionID != "" && replyError.Message != "" {
+		replyError = derrors.Dejaror{
+			Severity: derrors.SeverityError,
+			Message:  "sessionID cannot be found",
+		}
+	}
+	if replyError.Message == "" {
+		messagesErrors = s.listeners.DeleteMessagesListener(stream.Context(), sessionID, timelineID, batch)
+	}
+
+	rootPosition := writeTimelineResponse(replyError, messagesErrors, builder)
 	builder.Finish(rootPosition)
 	return stream.SendAndClose(builder)
 }
@@ -327,27 +378,53 @@ func (s *GRPCServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) 
 	return nil, nil
 }
 
-func writeTimelineResponse(errors []derrors.MessageIDTuple, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
-	var rootListErrors flatbuffers.UOffsetT
-	if len(errors) == 0 {
-		return rootListErrors
+// writes a TimelineResponse message and returns its root
+func writeTimelineResponse(mainError derrors.Dejaror, msgIndividualErrors []derrors.MessageIDTuple, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	var rootListErrors *flatbuffers.UOffsetT
+	var rootMainErr *flatbuffers.UOffsetT
+
+	if len(msgIndividualErrors) > 0 {
+		eachErrorOffset := make([]flatbuffers.UOffsetT, len(msgIndividualErrors))
+		for i := range msgIndividualErrors {
+			tupleError := writeError(msgIndividualErrors[i].MsgError, builder)
+			messageIDRoot := builder.CreateByteVector(msgIndividualErrors[i].MsgID)
+			grpc.TimelineMessageIDErrorTupleStart(builder)
+			grpc.TimelineMessageIDErrorTupleAddMessgeID(builder, messageIDRoot)
+			grpc.TimelineMessageIDErrorTupleAddErr(builder, tupleError)
+			eachErrorOffset[i] = grpc.TimelineMessageIDErrorTupleEnd(builder)
+		}
+
+		grpc.TimelineMessageIDErrorTupleStartMessgeIDVector(builder, len(msgIndividualErrors))
+		for i := range eachErrorOffset {
+			builder.PrependUOffsetT(eachErrorOffset[i])
+		}
+		tmp := builder.EndVector(len(msgIndividualErrors))
+		rootListErrors = &tmp
 	}
-	for i := range errors {
-		messageIDRoot := builder.CreateByteVector(errors[i].MessageID)
-		errorRoot := writeError(errors[i].Error, builder)
-		grpc.TimelineMessageIDErrorTupleStart(builder)
-		grpc.TimelineMessageIDErrorTupleAddMessgeID(builder, messageIDRoot)
-		grpc.TimelineMessageIDErrorTupleAddErr(builder, errorRoot)
-		rootListErrors = grpc.TimelineMessageIDErrorTupleEnd(builder)
+
+	if mainError.Message != "" {
+		tmp := writeError(mainError, builder)
+		rootMainErr = &tmp
 	}
 
 	grpc.TimelineResponseStart(builder)
-	grpc.TimelineResponseAddMessagesErrors(builder, rootListErrors)
+	if rootMainErr != nil {
+		grpc.TimelineResponseAddErr(builder, *rootMainErr)
+	}
+	if rootListErrors != nil {
+		grpc.TimelineResponseAddMessagesErrors(builder, *rootListErrors)
+	}
 	return grpc.TimelineResponseEnd(builder)
 }
 
 func writeError(err derrors.Dejaror, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	//TODO first add the details tuples (map to tuples)
+
+	//no error
+	if err.Message == "" {
+		grpc.ErrorStart(builder)
+		return grpc.ErrorEnd(builder)
+	}
 
 	messageRoot := builder.CreateString(err.Message)
 	opRoot := builder.CreateString(err.Operation.String())

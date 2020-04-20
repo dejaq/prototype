@@ -33,7 +33,6 @@ import (
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.uber.org/atomic"
@@ -79,6 +78,7 @@ func main() {
 
 func run() {
 	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
 
 	// load configuration
 	cfg, err := loadConfig(logger)
@@ -268,7 +268,6 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 			return fmt.Errorf("failed to connect to redis server: %w", err)
 		}
 	case "cockroach":
-		// Connect to the "bank" database.
 		db, err := sql.Open("postgres", "postgresql://duser@localhost:26257/dejaq?sslmode=disable") //&binary_parameters
 		if err != nil {
 			return fmt.Errorf("error connecting to the database: %w", err)
@@ -298,12 +297,12 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
 	go func() {
-		defer logger.Println("closing SERVER goroutine")
+		defer logger.Info("closing SERVER goroutine")
 
 		DejaQ.RegisterBrokerServer(ser, grpServer)
-		log.Info("start server")
+		logger.Info("start grpc server")
 		if err := ser.Serve(lis); err != nil {
-			logger.Printf("Failed to serve: %v", err)
+			logger.WithError(err).Error("grpc server failed")
 		}
 		stopEverything() //this fix the case when the broker shutdowns by its own (not killed by the user or err)
 	}()
@@ -358,17 +357,15 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			})
 			err := p.Handshake(ctx)
 			if err != nil {
-				log.Error(err)
+				logger.Error(err)
 			}
 
-			err = sync_produce.Produce(ctx, &pc, p)
+			err = sync_produce.Produce(ctx, &pc, p, logger)
 			if err != nil {
-				log.Error(err)
+				logger.Error(err)
 			}
 		}(fmt.Sprintf("producer_group_%d", pi), thisGroupShare)
 	}
-	//wgProducers.Wait()
-	//logger.Infof("Successfully produced  %d messages on topic=%s", config.msgsCount, config.topic)
 }
 
 func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus.FieldLogger, config *deployConfig) {
@@ -378,18 +375,20 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 
 	for ci := 0; ci < config.consumersCount; ci++ {
 		go func(consumerID string, counter *atomic.Int64) {
+			logger = logger.WithField("sync_consumer", consumerID)
 			cc := sync_consume.SyncConsumeConfig{
 				Consumer: client.NewConsumer(&consumer.Config{
-					ConsumerID:    consumerID,
-					Topic:         config.topic,
-					Cluster:       "",
-					MaxBufferSize: config.consumersBufferSize,
-					LeaseDuration: time.Minute, // TODO extract to config
+					ConsumerID:             consumerID,
+					Topic:                  config.topic,
+					Cluster:                "",
+					MaxBufferSize:          config.consumersBufferSize,
+					LeaseDuration:          time.Minute, // TODO extract to config
+					UpdatePreloadStatsTick: time.Second,
 				}),
 			}
-			avgFullRoundTripNs, err := sync_consume.Consume(consumersCtx, counter, &cc)
+			avgFullRoundTripNs, err := sync_consume.Consume(consumersCtx, counter, &cc, logger)
 			if err != nil {
-				log.Error(err)
+				logger.WithError(err).Error("sync consuming failed")
 			}
 			logger.Infof("avg round trip was %s", time.Duration(avgFullRoundTripNs).String())
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
@@ -407,7 +406,9 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 				return
 			}
 		case <-ctx.Done():
+			closeConsumers()
 			logger.Errorf("Failed to consume all the produced messages, %d left on topic=%s", msgCounter.Load(), config.topic)
+			time.Sleep(time.Second) //wait for propagation
 			return
 		}
 	}

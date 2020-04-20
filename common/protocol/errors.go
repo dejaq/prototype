@@ -36,8 +36,8 @@ package protocol
 //	}
 //)
 //
-//type Error interface {
-//	Error() string
+//type MsgError interface {
+//	MsgError() string
 //	String() string
 //	Code() uint16
 //	Message() string

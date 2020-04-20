@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 	"unsafe"
@@ -12,7 +11,7 @@ import (
 	storageTimeline "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 
 	"github.com/dejaq/prototype/broker/domain"
-	"github.com/dejaq/prototype/common/errors"
+	derrors "github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/lib/pq"
@@ -21,8 +20,7 @@ import (
 
 var (
 	stmtTopic = `
-//DROP TABLE IF EXISTS "$TOPIC" CASCADE;
-CREATE TABLE "$TOPIC" IF NOT EXISTS (
+CREATE TABLE  IF NOT EXISTS "$TOPIC" (
 	id STRING NOT NULL,
 	timeline INT NOT NULL,
 	bucket_id INT NOT NULL,    
@@ -37,9 +35,9 @@ CREATE TABLE "$TOPIC" IF NOT EXISTS (
 	INDEX $TOPIC_index_consumerID (consumer_id ASC),    
 	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
  	FAMILY mutable (timeline, consumer_id, version)
-		);
-//DROP TABLE IF EXISTS "$BODY" CASCADE;
-CREATE TABLE "$BODY" IF NOT EXISTS (
+);
+
+CREATE TABLE IF NOT EXISTS "$BODY"  (
 	id STRING NOT NULL,
 	body STRING,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC)
@@ -55,7 +53,7 @@ type CRClient struct {
 }
 
 func New(db *sql.DB, logger logrus.FieldLogger) *CRClient {
-	return &CRClient{db: db, logger: logger}
+	return &CRClient{db: db, logger: logger.WithField("component", "cockroach")}
 }
 
 func table(topicID string) string {
@@ -71,7 +69,7 @@ func (c *CRClient) CreateTopic(ctx context.Context, timelineID string) error {
 	replaced = strings.Replace(replaced, "$BODY", tableBodies(timelineID), -1)
 	_, err := c.db.ExecContext(ctx, replaced)
 	if err != nil {
-		return fmt.Errorf("create failed: %w", err)
+		return c.externalErr(ctx, err, "createTopic")
 	}
 	return nil
 }
@@ -83,24 +81,24 @@ func min(a, b int) int {
 	return b
 }
 
-func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []errors.MessageIDTuple {
-
+func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []timeline.Message) []derrors.MessageIDTuple {
 	batchSize := 25
 	var batch []timeline.Message
-	result := make([]errors.MessageIDTuple, 0)
+	result := make([]derrors.MessageIDTuple, 0)
 
 	addFailedBatch := func(err error) {
+		c.logger.WithError(err).Error("insert msg batch failed")
 		for i := range batch {
-			result = append(result, errors.MessageIDTuple{
-				MessageID: batch[i].ID,
-				Error: errors.Dejaror{
-					Severity:         errors.SeverityError,
+			result = append(result, derrors.MessageIDTuple{
+				MsgID: batch[i].ID,
+				MsgError: derrors.Dejaror{
+					Severity:         derrors.SeverityError,
 					Message:          "failed",
-					Module:           errors.ModuleStorage,
+					Module:           derrors.ModuleStorage,
 					Operation:        "Insert",
 					Kind:             0,
 					Details:          nil,
-					WrappedErr:       err,
+					WrappedErr:       nil,
 					ShouldRetry:      true,
 					ClientShouldSync: false,
 				},
@@ -115,7 +113,8 @@ func (c *CRClient) Insert(ctx context.Context, timelineID []byte, messages []tim
 
 		txn, err := c.db.Begin()
 		if err != nil {
-			log.Fatal(err)
+			addFailedBatch(err)
+			continue
 		}
 
 		//https://godoc.org/github.com/lib/pq#hdr-Bulk_imports
@@ -230,7 +229,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 		//sql.Named("limit", limit),
 	)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed preparing stmt %w", err)
+		return nil, false, c.externalErr(ctx, err, "getAndLease")
 	}
 	defer rows.Close()
 
@@ -242,7 +241,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			log.Fatal(err)
+			return nil, false, c.externalErr(ctx, err, "getAndLease")
 		}
 		//https://www.cockroachlabs.com/docs/v19.2/bytes.html#main-content
 		msgIDs = append(msgIDs, id)
@@ -259,6 +258,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 		return nil, false, nil
 	}
 
+	//TODO Prepare does notwork in IN statements, do a manual escape for sql injections
 	querySelect := fmt.Sprintf(`SELECT 
 		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id, topic.version, bodies.body
 		FROM "%s" AS topic INNER JOIN "%s" AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
@@ -267,7 +267,7 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	sel, err := c.db.PrepareContext(ctx, querySelect)
 	if err != nil {
 		//TODO revert the leases
-		return nil, false, err
+		return nil, false, c.externalErr(ctx, err, "getAndLease")
 	}
 	defer sel.Close()
 
@@ -289,7 +289,8 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 		if err := rowsSelect.Scan(
 			&id, &lease.ExpirationTimestampMS, &lease.Message.BucketID, &lease.Message.TimestampMS, &producerID, &lease.Message.Version, &body,
 		); err != nil {
-			log.Fatal(err)
+			//TODO revert the leases
+			return nil, true, c.externalErr(ctx, err, "getAndLease")
 		}
 		lease.Message.ID = []byte(id)
 		lease.Message.ProducerGroupID = []byte(producerID)
@@ -300,37 +301,38 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 
 	if len(result) != len(msgIDs) {
 		//TODO revert the leases
-		return result, true, errors.NewDejaror("missing leased IDs (BUG)", "fetch")
+		return result, true, c.externalErr(ctx, err, "getAndLease")
 	}
 	//we do not know if there are more rows, just assume
 	return result, len(result) == limit, nil
 }
 
-func (c *CRClient) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []errors.MessageIDTuple) {
+func (c *CRClient) Lookup(ctx context.Context, timelineID []byte, messageIDs [][]byte) ([]timeline.Message, []derrors.MessageIDTuple) {
 	panic("implement me")
 }
 
-func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) []errors.MessageIDTuple {
+func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) []derrors.MessageIDTuple {
 	batchSize := 25
-	var batch [][]byte
-	result := make([]errors.MessageIDTuple, 0)
-	ids := make([][]byte, len(request.Messages))
+	var batch []string
+	result := make([]derrors.MessageIDTuple, 0)
+	ids := make([]string, len(request.Messages))
 	for i := range request.Messages {
-		ids[i] = request.Messages[i].MessageID
+		ids[i] = request.Messages[i].GetMessageID()
 	}
 
 	failBatch := func(err error) {
+		c.logger.WithError(err).Error("delete batch failed")
 		for i := range batch {
-			result = append(result, errors.MessageIDTuple{
-				MessageID: batch[i],
-				Error: errors.Dejaror{
-					Severity:         errors.SeverityError,
+			result = append(result, derrors.MessageIDTuple{
+				MsgID: *(*[]byte)(unsafe.Pointer(&batch[i])),
+				MsgError: derrors.Dejaror{
+					Severity:         derrors.SeverityError,
 					Message:          "failed",
-					Module:           errors.ModuleStorage,
+					Module:           derrors.ModuleStorage,
 					Operation:        "Delete",
 					Kind:             0,
 					Details:          nil,
-					WrappedErr:       err,
+					WrappedErr:       nil,
 					ShouldRetry:      true,
 					ClientShouldSync: false,
 				},
@@ -343,33 +345,59 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 		batch = ids[:max]
 		ids = ids[max:]
 
-		holders := strings.Split(strings.Repeat("?", max), "")
-		//the same queries works for bodies as well
-		query := fmt.Sprintf(`DELETE * FROM "$TABLE" WHERE id IN (%s) LIMIT %d;`, strings.Join(holders, ","), len(batch))
-
-		args := make([]interface{}, len(batch))
+		//questionMarks := generateQuestionMarks(max)
+		idsAsText := make([]interface{}, len(batch))
+		params := make([]string, len(batch))
 		for i := range batch {
-			args[i] = batch[i]
+			idsAsText[i] = batch[i]
+			params[i] = fmt.Sprintf("$%d", i+1)
 		}
+		//the same queries works for bodies as well
+
+		//TODO Prepare does notwork in IN statements, do a manual escape for sql injections
+		queryPattern := fmt.Sprintf(`DELETE FROM "$TABLE" WHERE id IN (%s) LIMIT %d RETURNING NOTHING;`, strings.Join(params, ","), len(batch))
+
+		//args := make([]interface{}, len(batch))
+		//for i := range batch {
+		//	args[i] = batch[i]
+		//}
 
 		txn, err := c.db.Begin()
 		if err != nil {
 			failBatch(err)
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", table(request.GetTimelineID()), -1), args...)
+		query := strings.Replace(queryPattern, "$TABLE", table(request.GetTimelineID()), -1)
+		stmt, err := txn.PrepareContext(ctx, query)
 		if err != nil {
+			c.logger.Debugf(query)
 			failBatch(err)
 			txn.Rollback()
 			continue
 		}
-		_, err = txn.ExecContext(ctx, strings.Replace(query, "$TABLE", tableBodies(request.GetTimelineID()), -1), args...)
+		_, err = stmt.ExecContext(ctx, idsAsText...)
 		if err != nil {
+			c.logger.Debugf(query)
 			failBatch(err)
 			txn.Rollback()
 			continue
 		}
 
+		query = strings.Replace(queryPattern, "$TABLE", tableBodies(request.GetTimelineID()), -1)
+		stmt, err = txn.PrepareContext(ctx, query)
+		if err != nil {
+			c.logger.Debugf(query)
+			failBatch(err)
+			txn.Rollback()
+			continue
+		}
+		_, err = stmt.ExecContext(ctx, idsAsText...)
+		if err != nil {
+			c.logger.Debugf(query)
+			failBatch(err)
+			txn.Rollback()
+			continue
+		}
 		err = txn.Commit()
 		if err != nil {
 			failBatch(err)
@@ -379,6 +407,14 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessages) 
 	}
 
 	return result
+}
+
+func generateIncParams(start, end int) string {
+	params := []string{}
+	for i := start; i <= end; i++ {
+		params = append(params, fmt.Sprintf("$%d", i))
+	}
+	return strings.Join(params, ",")
 }
 
 func (c *CRClient) CountByRange(ctx context.Context, timelineID []byte, a, b uint64) uint64 {
@@ -399,4 +435,23 @@ func (c *CRClient) SelectByConsumer(ctx context.Context, timelineID []byte, cons
 
 func (c *CRClient) SelectByProducer(ctx context.Context, timelineID []byte, producrID []byte) []timeline.Message {
 	panic("implement me")
+}
+
+func (c *CRClient) externalErr(ctx context.Context, sql error, operation string) derrors.Dejaror {
+	//keep the implementation details from leaving the storage context
+	c.logger.WithError(sql).Error("sql failed")
+
+	//TODO calculate this and other scenarios
+	var isTimeout bool
+	return derrors.Dejaror{
+		Severity:         derrors.SeverityError,
+		Message:          "failed",
+		Module:           derrors.ModuleStorage,
+		Operation:        derrors.Op(operation),
+		Kind:             0,
+		Details:          nil,
+		WrappedErr:       nil,
+		ShouldRetry:      isTimeout,
+		ClientShouldSync: false,
+	}
 }
