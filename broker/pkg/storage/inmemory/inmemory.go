@@ -227,7 +227,7 @@ func (m *Memory) GetAndLease(
 				results = append(results, timeline.Lease{
 					ExpirationTimestampMS: endLeaseMS,
 					ConsumerID:            consumerID,
-					Message:               timeline.NewLeaseMessage(m.topics[stringTimelineID].buckets[int(bucketID)].messages[i].data),
+					Message:               newLeaseMessage(m.topics[stringTimelineID].buckets[int(bucketID)].messages[i].data),
 				})
 				limit--
 			}
@@ -427,5 +427,16 @@ func insertMsgToMsg(i timeline.InsertMessagesRequestItem, producerGroupID string
 		LockConsumerID:  nil,
 		BucketID:        i.BucketID,
 		Version:         i.Version,
+	}
+}
+
+func newLeaseMessage(msg timeline.Message) timeline.MessageLease {
+	return timeline.MessageLease{
+		ID:              msg.ID,
+		TimestampMS:     msg.TimestampMS,
+		ProducerGroupID: msg.ProducerGroupID,
+		Version:         msg.Version,
+		Body:            msg.Body,
+		BucketID:        msg.BucketID,
 	}
 }

@@ -19,16 +19,10 @@ type BrokerClient interface{
   	opts... grpc.CallOption) (* TimelineConsumerHandshakeResponse, error)  
   TimelineCreate(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (* Error, error)  
-  TimelineCount(ctx context.Context, in *flatbuffers.Builder, 
-  	opts... grpc.CallOption) (* TimelineCountResponse, error)  
   TimelineConsume(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_TimelineConsumeClient, error)  
   TimelineCreateMessages(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_TimelineCreateMessagesClient, error)  
-  TimelineExtendLease(ctx context.Context, 
-  	opts... grpc.CallOption) (Broker_TimelineExtendLeaseClient, error)  
-  TimelineRelease(ctx context.Context, 
-  	opts... grpc.CallOption) (Broker_TimelineReleaseClient, error)  
   TimelineDelete(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_TimelineDeleteClient, error)  
 }
@@ -61,14 +55,6 @@ func (c *brokerClient) TimelineCreate(ctx context.Context, in *flatbuffers.Build
 	opts... grpc.CallOption) (* Error, error) {
   out := new(Error)
   err := grpc.Invoke(ctx, "/DejaQ.Broker/TimelineCreate", in, out, c.cc, opts...)
-  if err != nil { return nil, err }
-  return out, nil
-}
-
-func (c *brokerClient) TimelineCount(ctx context.Context, in *flatbuffers.Builder, 
-	opts... grpc.CallOption) (* TimelineCountResponse, error) {
-  out := new(TimelineCountResponse)
-  err := grpc.Invoke(ctx, "/DejaQ.Broker/TimelineCount", in, out, c.cc, opts...)
   if err != nil { return nil, err }
   return out, nil
 }
@@ -130,67 +116,9 @@ func (x *brokerTimelineCreateMessagesClient) CloseAndRecv() (*TimelineResponse, 
   return m, nil
 }
 
-func (c *brokerClient) TimelineExtendLease(ctx context.Context, 
-	opts... grpc.CallOption) (Broker_TimelineExtendLeaseClient, error) {
-  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[2], c.cc, "/DejaQ.Broker/TimelineExtendLease", opts...)
-  if err != nil { return nil, err }
-  x := &brokerTimelineExtendLeaseClient{stream}
-  return x,nil
-}
-
-type Broker_TimelineExtendLeaseClient interface {
-  Send(*flatbuffers.Builder) error
-  CloseAndRecv() (*TimelineResponse, error)
-  grpc.ClientStream
-}
-
-type brokerTimelineExtendLeaseClient struct{
-  grpc.ClientStream
-}
-
-func (x *brokerTimelineExtendLeaseClient) Send(m *flatbuffers.Builder) error {
-  return x.ClientStream.SendMsg(m)
-}
-
-func (x *brokerTimelineExtendLeaseClient) CloseAndRecv() (*TimelineResponse, error) {
-  if err := x.ClientStream.CloseSend(); err != nil { return nil, err }
-  m := new (TimelineResponse)
-  if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
-  return m, nil
-}
-
-func (c *brokerClient) TimelineRelease(ctx context.Context, 
-	opts... grpc.CallOption) (Broker_TimelineReleaseClient, error) {
-  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[3], c.cc, "/DejaQ.Broker/TimelineRelease", opts...)
-  if err != nil { return nil, err }
-  x := &brokerTimelineReleaseClient{stream}
-  return x,nil
-}
-
-type Broker_TimelineReleaseClient interface {
-  Send(*flatbuffers.Builder) error
-  CloseAndRecv() (*TimelineResponse, error)
-  grpc.ClientStream
-}
-
-type brokerTimelineReleaseClient struct{
-  grpc.ClientStream
-}
-
-func (x *brokerTimelineReleaseClient) Send(m *flatbuffers.Builder) error {
-  return x.ClientStream.SendMsg(m)
-}
-
-func (x *brokerTimelineReleaseClient) CloseAndRecv() (*TimelineResponse, error) {
-  if err := x.ClientStream.CloseSend(); err != nil { return nil, err }
-  m := new (TimelineResponse)
-  if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
-  return m, nil
-}
-
 func (c *brokerClient) TimelineDelete(ctx context.Context, 
 	opts... grpc.CallOption) (Broker_TimelineDeleteClient, error) {
-  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[4], c.cc, "/DejaQ.Broker/TimelineDelete", opts...)
+  stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[2], c.cc, "/DejaQ.Broker/TimelineDelete", opts...)
   if err != nil { return nil, err }
   x := &brokerTimelineDeleteClient{stream}
   return x,nil
@@ -222,11 +150,8 @@ type BrokerServer interface {
   TimelineProducerHandshake(context.Context, *TimelineProducerHandshakeRequest) (*flatbuffers.Builder, error)  
   TimelineConsumerHandshake(context.Context, *TimelineConsumerHandshakeRequest) (*flatbuffers.Builder, error)  
   TimelineCreate(context.Context, *TimelineCreateRequest) (*flatbuffers.Builder, error)  
-  TimelineCount(context.Context, *TimelineCountRequest) (*flatbuffers.Builder, error)  
   TimelineConsume(Broker_TimelineConsumeServer) error  
   TimelineCreateMessages(Broker_TimelineCreateMessagesServer) error  
-  TimelineExtendLease(Broker_TimelineExtendLeaseServer) error  
-  TimelineRelease(Broker_TimelineReleaseServer) error  
   TimelineDelete(Broker_TimelineDeleteServer) error  
 }
 
@@ -285,23 +210,6 @@ func _Broker_TimelineCreate_Handler(srv interface{}, ctx context.Context,
 }
 
 
-func _Broker_TimelineCount_Handler(srv interface{}, ctx context.Context,
-	dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-  in := new(TimelineCountRequest)
-  if err := dec(in); err != nil { return nil, err }
-  if interceptor == nil { return srv.(BrokerServer).TimelineCount(ctx, in) }
-  info := &grpc.UnaryServerInfo{
-    Server: srv,
-    FullMethod: "/DejaQ.Broker/TimelineCount",
-  }
-  
-  handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-    return srv.(BrokerServer).TimelineCount(ctx, req.(* TimelineCountRequest))
-  }
-  return interceptor(ctx, in, info, handler)
-}
-
-
 func _Broker_TimelineConsume_Handler(srv interface{}, stream grpc.ServerStream) error {
   return srv.(BrokerServer).TimelineConsume(&brokerTimelineConsumeServer{stream})
 }
@@ -352,56 +260,6 @@ func (x *brokerTimelineCreateMessagesServer) SendAndClose(m *flatbuffers.Builder
 }
 
 
-func _Broker_TimelineExtendLease_Handler(srv interface{}, stream grpc.ServerStream) error {
-  return srv.(BrokerServer).TimelineExtendLease(&brokerTimelineExtendLeaseServer{stream})
-}
-
-type Broker_TimelineExtendLeaseServer interface { 
-  Recv() (* TimelineExtendLeaseRequest, error)
-  SendAndClose(* flatbuffers.Builder) error
-  grpc.ServerStream
-}
-
-type brokerTimelineExtendLeaseServer struct {
-  grpc.ServerStream
-}
-
-func (x *brokerTimelineExtendLeaseServer) Recv() (*TimelineExtendLeaseRequest, error) {
-  m := new(TimelineExtendLeaseRequest)
-  if err := x.ServerStream.RecvMsg(m); err != nil { return nil, err }
-  return m, nil
-}
-
-func (x *brokerTimelineExtendLeaseServer) SendAndClose(m *flatbuffers.Builder) error {
-  return x.ServerStream.SendMsg(m)
-}
-
-
-func _Broker_TimelineRelease_Handler(srv interface{}, stream grpc.ServerStream) error {
-  return srv.(BrokerServer).TimelineRelease(&brokerTimelineReleaseServer{stream})
-}
-
-type Broker_TimelineReleaseServer interface { 
-  Recv() (* TimelineReleaseRequest, error)
-  SendAndClose(* flatbuffers.Builder) error
-  grpc.ServerStream
-}
-
-type brokerTimelineReleaseServer struct {
-  grpc.ServerStream
-}
-
-func (x *brokerTimelineReleaseServer) Recv() (*TimelineReleaseRequest, error) {
-  m := new(TimelineReleaseRequest)
-  if err := x.ServerStream.RecvMsg(m); err != nil { return nil, err }
-  return m, nil
-}
-
-func (x *brokerTimelineReleaseServer) SendAndClose(m *flatbuffers.Builder) error {
-  return x.ServerStream.SendMsg(m)
-}
-
-
 func _Broker_TimelineDelete_Handler(srv interface{}, stream grpc.ServerStream) error {
   return srv.(BrokerServer).TimelineDelete(&brokerTimelineDeleteServer{stream})
 }
@@ -443,10 +301,6 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
       MethodName: "TimelineCreate",
       Handler: _Broker_TimelineCreate_Handler, 
     },
-    {
-      MethodName: "TimelineCount",
-      Handler: _Broker_TimelineCount_Handler, 
-    },
   },
   Streams: []grpc.StreamDesc{
     {
@@ -458,16 +312,6 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
     {
       StreamName: "TimelineCreateMessages",
       Handler: _Broker_TimelineCreateMessages_Handler, 
-      ClientStreams: true,
-    },
-    {
-      StreamName: "TimelineExtendLease",
-      Handler: _Broker_TimelineExtendLease_Handler, 
-      ClientStreams: true,
-    },
-    {
-      StreamName: "TimelineRelease",
-      Handler: _Broker_TimelineRelease_Handler, 
       ClientStreams: true,
     },
     {

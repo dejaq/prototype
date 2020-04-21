@@ -190,17 +190,11 @@ func (c *Loader) hydrateOneConsumer(ctx context.Context, limit int, tuple *Consu
 			return sent, nil
 		}
 
-		for i := range pushLeaseMessages {
-			select {
-			case <-ctx.Done():
-				return sent, fmt.Errorf("hydrateOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
-			case <-tuple.Connected:
-				return sent, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
-			case tuple.Pipeline <- pushLeaseMessages[i]:
-				//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
-				sent++
-			}
+		batchSent, err := pushLeasesToPipeline(ctx, pushLeaseMessages, tuple)
+		if err != nil {
+			return sent, err
 		}
+		sent += batchSent
 	}
 	return sent, nil
 }
@@ -225,16 +219,10 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 				break
 			}
 
-			for i := range pushLeaseMessages {
-				select {
-				case <-ctx.Done():
-					return sent, true, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
-				case <-tuple.Connected:
-					return sent, true, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
-				case tuple.Pipeline <- pushLeaseMessages[i]:
-					//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
-					sent++
-				}
+			batchSent, err := pushLeasesToPipeline(ctx, pushLeaseMessages, tuple)
+			sent += batchSent
+			if err != nil {
+				return sent, false, err
 			}
 			tuple.C.AddAvailableBufferSize(-uint32(len(pushLeaseMessages)))
 		}
@@ -242,42 +230,18 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 	return sent, true, nil
 }
 
-// LoaderTimerConfig contains the settings for the interval between 2 ticks of the Loader
-type LoaderTimerConfig struct {
-	// the minimum wait time between 2 ticks, will be used when consumers have not consumed all their messages
-	// for the last few ticks
-	Min time.Duration
-	// will reach this state when consumers are up to date, most likely no traffic is done
-	Max time.Duration
-	// each step the tick wait time is adjusted with this value
-	Step time.Duration
-}
-type loaderTimer struct {
-	conf    LoaderTimerConfig
-	Current time.Duration
-}
-
-func newTimer(conf LoaderTimerConfig) *loaderTimer {
-	return &loaderTimer{
-		conf:    conf,
-		Current: conf.Min,
+func pushLeasesToPipeline(ctx context.Context, pushLeaseMessages []timeline.Lease, tuple *ConsumerPipelineTuple) (int, error) {
+	sent := 0
+	for i := range pushLeaseMessages {
+		select {
+		case <-ctx.Done():
+			return sent, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
+		case <-tuple.Connected:
+			return sent, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
+		case tuple.Pipeline <- pushLeaseMessages[i]:
+			//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
+			sent++
+		}
 	}
-}
-
-func (t *loaderTimer) GetNextDuration() time.Duration {
-	return t.Current
-}
-
-func (t *loaderTimer) Decrease() {
-	t.Current = t.Current - t.conf.Step
-	if t.Current < t.conf.Min {
-		t.Current = t.conf.Min
-	}
-}
-
-func (t *loaderTimer) Increase() {
-	t.Current = t.Current + t.conf.Step
-	if t.Current > t.conf.Max {
-		t.Current = t.conf.Max
-	}
+	return sent, nil
 }

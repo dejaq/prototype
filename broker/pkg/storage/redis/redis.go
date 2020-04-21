@@ -273,7 +273,7 @@ func (c *Client) GetAndLease(
 		results = append(results, timeline.Lease{
 			ExpirationTimestampMS: endLeaseMS,
 			ConsumerID:            consumerId,
-			Message:               timeline.NewLeaseMessage(timelineMessage),
+			Message:               newLeaseMessage(timelineMessage),
 		})
 	}
 
@@ -488,12 +488,20 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 		results = append(results, timeline.Lease{
 			ExpirationTimestampMS: endLeaseMS,
 			ConsumerID:            consumerID,
-			Message:               timeline.NewLeaseMessage(timelineMessage),
+			Message:               newLeaseMessage(timelineMessage),
 		})
 	}
 
 	return results, false, nil
 }
 
-type LeaseLu struct {
+func newLeaseMessage(msg timeline.Message) timeline.MessageLease {
+	return timeline.MessageLease{
+		ID:              msg.ID,
+		TimestampMS:     msg.TimestampMS,
+		ProducerGroupID: msg.ProducerGroupID,
+		Version:         msg.Version,
+		Body:            msg.Body,
+		BucketID:        msg.BucketID,
+	}
 }

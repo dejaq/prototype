@@ -8,11 +8,6 @@ import (
 	"github.com/dejaq/prototype/common/timeline"
 )
 
-type MsgTime struct {
-	MessageID    []byte
-	NewTimestamp uint64
-}
-
 // The representation of a Timeline storage.
 // See the architecture docs on the design principles and for what actions are responsible it has.
 type Repository interface {

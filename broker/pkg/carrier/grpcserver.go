@@ -237,6 +237,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var errGet error
 	var producer *Producer
 	var replyError derrors.Dejaror
+	var emptyIDError *derrors.MessageIDTuple
 
 	//gather all the messages from the client
 	for err == nil {
@@ -268,6 +269,13 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 			}
 		}
 
+		if len(request.IdBytes()) == 0 {
+			if emptyIDError == nil {
+				emptyIDError = &derrors.MessageIDTuple{MsgID: nil, MsgError: derrors.Dejaror{Message: "at least one message was missing the ID"}}
+			}
+			continue
+		}
+
 		storageRequest.Messages = append(storageRequest.Messages, timeline.InsertMessagesRequestItem{
 			ID:          request.IdBytes(),
 			TimestampMS: request.TimeoutMS(),
@@ -289,19 +297,29 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	var messagesErrors derrors.MessageIDTupleList
 
 	if replyError.Message == "" {
-		storageRequest.ProducerGroupID = producer.GroupID
-		storageRequest.TimelineID = producer.Topic
+		if len(storageRequest.Messages) == 0 {
+			if emptyIDError == nil {
+				//no messages were sent, nothing to do
+				return nil
+			}
 
-		storageError := s.listeners.CreateMessagesListener(stream.Context(), storageRequest)
-		switch v := storageError.(type) {
-		case derrors.Dejaror:
-			replyError = v
-		case derrors.MessageIDTupleList:
-			messagesErrors = v
-		default:
-			replyError = derrors.Dejaror{
-				Severity: derrors.SeverityError,
-				Message:  v.Error(),
+			//we let the client knowns that all its messages were missing the ID
+			replyError = emptyIDError.MsgError
+		} else {
+			storageRequest.ProducerGroupID = producer.GroupID
+			storageRequest.TimelineID = producer.Topic
+
+			storageError := s.listeners.CreateMessagesListener(stream.Context(), storageRequest)
+			switch v := storageError.(type) {
+			case derrors.Dejaror:
+				replyError = v
+			case derrors.MessageIDTupleList:
+				messagesErrors = v
+			default:
+				replyError = derrors.Dejaror{
+					Severity: derrors.SeverityError,
+					Message:  v.Error(),
+				}
 			}
 		}
 	}
@@ -315,12 +333,7 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 
 	return nil
 }
-func (s *GRPCServer) TimelineExtendLease(grpc.Broker_TimelineExtendLeaseServer) error {
-	return nil
-}
-func (s *GRPCServer) TimelineRelease(grpc.Broker_TimelineReleaseServer) error {
-	return nil
-}
+
 func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) error {
 	//TODO check the sessionID
 
@@ -399,9 +412,6 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 	rootPosition := writeTimelineResponse(replyError, messagesErrors, builder)
 	builder.Finish(rootPosition)
 	return stream.SendAndClose(builder)
-}
-func (s *GRPCServer) TimelineCount(context.Context, *grpc.TimelineCountRequest) (*flatbuffers.Builder, error) {
-	return nil, nil
 }
 
 // writes a TimelineResponse message and returns its root

@@ -120,11 +120,6 @@ func (w *Cassandra) Select(ctx context.Context, timelineID []byte, buckets []dom
 	return nil, false, nil
 }
 
-// UPDATE timestamp BY TimelineID, MessageIDs (map[msgID]newTimestamp])  map[msgID]error (for extend/release)
-func (w *Cassandra) Update(ctx context.Context, timelineID []byte, messageTimestamps []storage.MsgTime) []derrors.MessageIDTuple {
-	return nil
-}
-
 func (w *Cassandra) UpdateLeases(ctx context.Context, timelineID []byte, msgs []timeline.Message) []derrors.MessageIDTuple {
 	return nil
 }
