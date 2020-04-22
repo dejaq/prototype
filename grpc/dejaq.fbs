@@ -113,22 +113,6 @@ table TimelineConsumerStatus {
     lagNOMessages:uint;
 }
 
-table TimelineExtendLeaseRequest {
-    traceID:string;
-    timeoutMS:ulong;
-    sessionID:string;
-    messageID:[ubyte];
-}
-
-table TimelineReleaseRequest {
-    traceID:string;
-    timeoutMS:ulong;
-    sessionID:string;
-    messageID:[ubyte];
-    timestampMS:ulong;
-    version:ushort;
-}
-
 table TimelineDeleteRequest {
     traceID:string;
     timeoutMS:ulong;
@@ -138,27 +122,12 @@ table TimelineDeleteRequest {
     bucketID:ushort;
 }
 
-table TimelineCountRequest {
-    traceID:string;
-    timeoutMS:ulong;
-    status:ubyte;
-    timeStart:ulong;
-    timeEnd:ulong;
-}
-
-table TimelineCountResponse {
-    result:ulong;
-    err:Error;
-}
-
 // https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
     //overseeer
     TimelineProducerHandshake(TimelineProducerHandshakeRequest):TimelineProducerHandshakeResponse;
     TimelineConsumerHandshake(TimelineConsumerHandshakeRequest):TimelineConsumerHandshakeResponse;
     TimelineCreate(TimelineCreateRequest):Error;
-    TimelineCount(TimelineCountRequest):TimelineCountResponse;
-
 
     //carrier
 
@@ -167,8 +136,6 @@ rpc_service Broker {
 
     //client pushes data, expect one bulk response
     TimelineCreateMessages(TimelineCreateMessageRequest):TimelineResponse (streaming: "client");
-    TimelineExtendLease(TimelineExtendLeaseRequest):TimelineResponse (streaming: "client");
-    TimelineRelease(TimelineReleaseRequest):TimelineResponse (streaming: "client");
     TimelineDelete(TimelineDeleteRequest):TimelineResponse (streaming: "client");
 
 }

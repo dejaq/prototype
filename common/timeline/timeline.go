@@ -80,14 +80,3 @@ func (m MessageLease) GetProducerGroupID() string {
 func (m MessageLease) String() string {
 	return "{Message [id:" + m.GetID() + "]"
 }
-
-func NewLeaseMessage(msg Message) MessageLease {
-	return MessageLease{
-		ID:              msg.ID,
-		TimestampMS:     msg.TimestampMS,
-		ProducerGroupID: msg.ProducerGroupID,
-		Version:         msg.Version,
-		Body:            msg.Body,
-		BucketID:        msg.BucketID,
-	}
-}

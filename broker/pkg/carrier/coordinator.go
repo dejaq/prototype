@@ -2,7 +2,6 @@ package carrier
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -30,7 +29,7 @@ var (
 	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
 	ErrUnknownDeleteRequester = derrors.Dejaror{
 		Severity:  derrors.SeverityError,
-		Message:   "unknown client",
+		Message:   "unknown client, handshake required",
 		Module:    derrors.ModuleBroker,
 		Operation: "deleteMessage",
 	}
@@ -97,10 +96,6 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 			return topic, nil
 		},
 	})
-}
-
-func (c *Coordinator) getConsumer(ctx context.Context, sessionID string) (*Consumer, error) {
-	return c.greeter.GetConsumer(sessionID)
 }
 
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
@@ -238,9 +233,6 @@ func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req ti
 	}
 	for i := range req.Messages {
 		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
-		if req.Messages[i].GetID() == "" {
-			logrus.Fatalf("coordinator received empty messageID")
-		}
 	}
 	return c.storage.Insert(ctx, req)
 }
@@ -254,13 +246,7 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 		req.CallerType = timeline.DeleteCallerProducer
 		req.CallerID = producer.GroupID
 	} else {
-		return derrors.Dejaror{
-			Severity:  derrors.SeverityError,
-			Message:   fmt.Sprintf("handshake required, coordinator not able to find delete requester with sessionID: %s", sessionID),
-			Module:    0,
-			Operation: "deleteMessageListener",
-			Kind:      derrors.KindNotFound,
-		}
+		return ErrUnknownDeleteRequester
 	}
 
 	return c.storage.Delete(ctx, req)
