@@ -26,16 +26,19 @@ import (
 )
 
 type Config struct {
-	Host         string `env:"HOST" env-default:"127.0.0.1:9000"`
-	OverseerSeed string `env:"OVERSEER" env-default:"localhost:9000"`
-	StorageType  string `env:"STORAGE_TYPE" env-default:"memory"`
-	StorageHost  string `env:"STORAGE_HOST"`
+	BindingAddress string `env:"HOST" env-default:"127.0.0.1:9000"`
+	StorageType    string `env:"STORAGE_TYPE" env-default:"memory"`
+	StorageHost    string `env:"STORAGE_HOST"`
 
-	TopicCount        int `env:"TOPIC_COUNT"`
-	ConsumersPerTopic int `env:"CONSUMERS_PER_TOPIC"`
-	ProducersPerTopic int `env:"PRODUCERS_PER_TOPIC"`
+	MaxConnectionsLimit       int    `env:"CONNECTIONS_LIMIT" env-default:"1000"`
+	ConnectionTimeoutDuration string `env:"CONNECTION_TIMEOUT" env-default:"120s"`
 
-	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`
+	TimeoutDuration string `env:"TIMEOUT"`
+}
+
+func (c *Config) durationConnectionTimeout() time.Duration {
+	r, _ := time.ParseDuration(c.ConnectionTimeoutDuration)
+	return r
 }
 
 func (c *Config) durationTimeout() time.Duration {
@@ -50,17 +53,18 @@ func (c *Config) IsValid() error {
 		}
 	}
 
-	if c.TopicCount < 1 {
-		return errors.New("TopicCount should be > 0")
+	if c.MaxConnectionsLimit < 1 {
+		return errors.New("MaxConnectionsLimit should be > 0")
 	}
-	if c.ConsumersPerTopic < 1 {
-		return errors.New("ConsumersPerTopic should be > 0")
+
+	if _, err := time.ParseDuration(c.ConnectionTimeoutDuration); err != nil {
+		return fmt.Errorf("connection timeout provided but wrong value %s", err.Error())
 	}
-	if c.ProducersPerTopic < 1 {
-		return errors.New("ProducersPerTopic should be > 0")
-	}
-	if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
-		return fmt.Errorf("timeout provided but wrong value %s", err.Error())
+
+	if c.TimeoutDuration != "" {
+		if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
+			return fmt.Errorf("timeout provided but wrong value %s", err.Error())
+		}
 	}
 
 	return nil
@@ -90,14 +94,14 @@ func main() {
 	}
 
 	greeter := carrier.NewGreeter()
-	lis, err := net.Listen("tcp", c.Host)
+	lis, err := net.Listen("tcp", c.BindingAddress)
 	if err != nil {
 		logger.Fatalf("failed to listen: %w", err)
 	}
 	ser := grpc.NewServer(
 		grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}),
-		grpc.ConnectionTimeout(time.Second*120),
-		grpc.MaxConcurrentStreams(uint32(c.TopicCount*(c.ConsumersPerTopic+c.ProducersPerTopic))),
+		grpc.ConnectionTimeout(c.durationConnectionTimeout()),
+		grpc.MaxConcurrentStreams(uint32(c.MaxConnectionsLimit)),
 	)
 	grpServer := carrier.NewGRPCServer(nil)
 	coordinatorConfig := carrier.Config{}
