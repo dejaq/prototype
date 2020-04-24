@@ -56,14 +56,16 @@ I don't think such a framework exists so my idea is to use an already built syst
 
 We can take an open source solution that allows defining flows (but in our case they will be test scenarios).
 Examples (need to research more): 
-https://nifi.apache.org/ 
-https://streamsets.com/ (is not so free)
-https://airflow.apache.org/
+
+* https://nifi.apache.org/ 
+* https://streamsets.com/ (is not so free)
+* https://airflow.apache.org/
 
 ## take an existing UI from visual CI/CD systems
 
 Another type of tool that allow visual flows/pipelines are the CI ones.
-https://argoproj.github.io/
+
+* https://argoproj.github.io/
 
 
 ## take a system and build the UI
@@ -75,12 +77,12 @@ The last resort is to take an existing similar system and build our own UI over 
 
 All the distributed systems have the same problem as DejaQ, here are a few already made frameworks that we can use or inspire from
 
-https://github.com/kyma-incubator/octopus/blob/master/README.md (https://kyma-project.io/blog/2020/1/16/integration-testing-in-k8s)
-https://coreos.com/blog/new-functional-testing-in-etcd.html
-https://github.com/jepsen-io/jepsen
-https://wiki.crdb.io/wiki/spaces/CRDB/pages/73138579/Testing+CockroachDB 
-https://cassandra.apache.org/doc/latest/development/testing.html#dtests created dtest framework
-https://www.confluent.io/blog/apache-kafka-tested/ created ducktape 
-https://github.com/RedisLabsModules/RLTest
-https://github.com/bloomberg/powerfulseal
+* https://github.com/kyma-incubator/octopus/blob/master/README.md (https://kyma-project.io/blog/2020/1/16/integration-testing-in-k8s)
+* https://coreos.com/blog/new-functional-testing-in-etcd.html
+* https://github.com/jepsen-io/jepsen
+* https://wiki.crdb.io/wiki/spaces/CRDB/pages/73138579/Testing+CockroachDB 
+* https://cassandra.apache.org/doc/latest/development/testing.html#dtests created dtest framework
+* https://www.confluent.io/blog/apache-kafka-tested/ created ducktape 
+* https://github.com/RedisLabsModules/RLTest
+* https://github.com/bloomberg/powerfulseal
 
