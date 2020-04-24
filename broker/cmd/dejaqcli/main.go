@@ -376,21 +376,28 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 	for ci := 0; ci < config.consumersCount; ci++ {
 		go func(consumerID string, counter *atomic.Int64) {
 			logger = logger.WithField("sync_consumer", consumerID)
+			cons := client.NewConsumer(&consumer.Config{
+				ConsumerID:             consumerID,
+				Topic:                  config.topic,
+				Cluster:                "",
+				MaxBufferSize:          config.consumersBufferSize,
+				LeaseDuration:          time.Minute, // TODO extract to config
+				UpdatePreloadStatsTick: time.Second,
+			})
 			cc := sync_consume.SyncConsumeConfig{
-				Consumer: client.NewConsumer(&consumer.Config{
-					ConsumerID:             consumerID,
-					Topic:                  config.topic,
-					Cluster:                "",
-					MaxBufferSize:          config.consumersBufferSize,
-					LeaseDuration:          time.Minute, // TODO extract to config
-					UpdatePreloadStatsTick: time.Second,
-				}),
+				Strategy:        sync_consume.StrategyStopAfter,
+				StopAfterCount:  -1,
+				DeleteMessages:  true,
+				DecreaseCounter: msgCounter,
 			}
-			avgFullRoundTripNs, err := sync_consume.Consume(consumersCtx, counter, &cc, logger)
+			result, err := sync_consume.Consume(consumersCtx, logger, cons, &cc)
 			if err != nil {
-				logger.WithError(err).Error("sync consuming failed")
+				//this is not an error since we consumed all messages
+				if !strings.Contains(err.Error(), context.Canceled.Error()) {
+					logger.WithError(err).Error("sync consuming failed")
+				}
 			}
-			logger.Infof("avg round trip was %s", time.Duration(avgFullRoundTripNs).String())
+			logger.Infof("avg round trip was %s", result.AvgMsgLatency.String())
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
 	}
 

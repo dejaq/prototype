@@ -141,3 +141,22 @@ func flush(ctx context.Context, batch []timeline.Message, p *producer.Producer) 
 	batch = batch[:0]
 	return batch, nil
 }
+
+func ExtractLatencyFromBody(body []byte) (time.Duration, error) {
+	//retrieve the time when it was created, so we can see how long it took to process it
+	parts := bytes.SplitN(body[:25], []byte{'|'}, 2)
+	if len(parts) != 2 || len(parts[0]) == 0 {
+		return 0, errors.New("malformed body (ts for latency not found)")
+	}
+
+	createdNs, err := strconv.Atoi(string(parts[0]))
+	if err != nil {
+		return 0, errors.Wrap(err, "malformed lateny ts, not an int")
+	}
+
+	currentNs := time.Now().UTC().UnixNano()
+	if currentNs <= int64(createdNs) {
+		return 0, errors.New("we invented a time machine")
+	}
+	return time.Duration(currentNs - int64(createdNs)), nil
+}
