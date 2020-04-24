@@ -69,3 +69,18 @@ https://argoproj.github.io/
 ## take a system and build the UI
 
 The last resort is to take an existing similar system and build our own UI over it.
+
+
+# other examples
+
+All the distributed systems have the same problem as DejaQ, here are a few already made frameworks that we can use or inspire from
+
+https://github.com/kyma-incubator/octopus/blob/master/README.md (https://kyma-project.io/blog/2020/1/16/integration-testing-in-k8s)
+https://coreos.com/blog/new-functional-testing-in-etcd.html
+https://github.com/jepsen-io/jepsen
+https://wiki.crdb.io/wiki/spaces/CRDB/pages/73138579/Testing+CockroachDB 
+https://cassandra.apache.org/doc/latest/development/testing.html#dtests created dtest framework
+https://www.confluent.io/blog/apache-kafka-tested/ created ducktape 
+https://github.com/RedisLabsModules/RLTest
+https://github.com/bloomberg/powerfulseal
+
