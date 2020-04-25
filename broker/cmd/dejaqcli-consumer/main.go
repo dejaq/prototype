@@ -26,7 +26,7 @@ type Config struct {
 	ConsumerID string `env:"CONSUMER_ID"`
 
 	// the max amount of messages to prefetch/stored in buffer
-	MaxBufferSize int `env:"MAX_BUFFER_SIZE" env-default:"100"`
+	MaxBufferSize int `env:"MAX_BUFFER_SIZE" env-default:"3000"`
 	// the time to own the leases
 	LeaseDuration string `env:"LEASE_DURATION" env-default:"1m"`
 	// consumer will send info to broker at specific duration
