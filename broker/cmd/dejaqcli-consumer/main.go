@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"os"
 	"os/signal"
 	"time"
@@ -16,6 +17,10 @@ import (
 	"github.com/dejaq/prototype/client/timeline/consumer"
 	"github.com/dejaq/prototype/client/timeline/sync_consume"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	subsystemConsumer = "consumer"
 )
 
 type Config struct {
@@ -76,7 +81,9 @@ func (c *Config) durationTimeout() time.Duration {
 }
 
 func main() {
-	logger := logrus.New().WithField("component", "consumer")
+	go exporter.SetupStandardMetricsExporter(subsystemConsumer)
+
+	logger := logrus.New().WithField("component", subsystemConsumer)
 
 	c := &Config{}
 	err := cleanenv.ReadEnv(c)
