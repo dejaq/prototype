@@ -47,7 +47,7 @@ type Config struct {
 	// stop after consume n messages, -1 will run continuously
 	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
 	// If false the messages will be served to another consumer after this ones lease expires
-	DeleteMessages bool `env:"STOP_AFTER" env-default:"true"`
+	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
 
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`

@@ -1,0 +1,34 @@
+version: "3"
+
+services:
+  broker:
+    image: dejaq/testbroker:latest
+    ports:
+      - 2112:2112
+      - 9000:9000
+
+  producer1:
+    image: dejaq/testsyncproducer:latest
+    depends_on:
+      - broker
+    environment:
+      OVERSEER: 'broker:9000'
+      TOPIC: 'compose1'
+      NAME: 'c1-producer1'
+      TIMEOUT: ''
+      CONSTANT_TICK_DURATION: '1s'
+      CONSTANT_TICK_COUNT: 1000
+      BATCH_SIZE: 1000
+      BODY_SIZE: 12000
+
+  consumer1:
+    image: dejaq/testsyncconsumer:latest
+    depends_on:
+      - broker
+      - producer1
+    environment:
+      OVERSEER: 'broker:9000'
+      TOPIC: 'compose1'
+      TIMEOUT: ''
+      CONSUMER_ID: 'c1-consumer1'
+      MAX_BUFFER_SIZE: 1000
