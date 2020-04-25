@@ -56,6 +56,7 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 	defer c.Stop()
 	var lease timeline.Lease
 
+	lastTime := time.Now().UTC()
 	for {
 		lease, err = c.ReadLease(ctx)
 		if err != nil {
@@ -94,7 +95,11 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 		}
 
 		if r.PartialInfoReceived%100 == 0 {
-			logger.Infof("consumed messages: %d avg latency: %s", r.Received, avg.Get().String())
+			currentTime := time.Now().UTC()
+			diff := currentTime.Sub(lastTime)
+			lastTime = currentTime
+			throughPut := (100 * time.Second) / diff
+			logger.Infof("consumed messages: %d throughput/s: %d", r.Received, throughPut)
 			r.PartialInfoReceived = 0
 		}
 
