@@ -3,7 +3,6 @@ package carrier
 import (
 	"context"
 	"errors"
-	"log"
 	"math/rand"
 	"sync"
 
@@ -95,16 +94,11 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	defer s.opMutex.Unlock()
 
 	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.GetTopic()); exists {
-		return "", errors.New("handshake already exists")
+		s.logger.Errorf("consumer %s on topic %s already has a handshake, removing the old one", c.GetID(), c.topic)
 	}
 
 	sessionID := randomSessionID()
-	if _, duplicateSessionID := s.consumerSessionsIDs[sessionID]; duplicateSessionID {
-		log.Fatal("duplicate random sessionID")
-	}
-	if c, ok := s.consumerSessionsIDs[sessionID]; ok {
-		c.SetHydrateStatus(protocol.Hydration_None)
-	}
+	c.SetHydrateStatus(protocol.Hydration_None)
 	s.consumerIDsAndSessionIDs.Set(c.GetID(), c.GetTopic(), sessionID)
 	s.consumerSessionIDAndID[sessionID] = c.GetID()
 	s.consumerSessionsIDs[sessionID] = c
