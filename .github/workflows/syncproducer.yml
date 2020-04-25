@@ -14,6 +14,6 @@ jobs:
     - name: Login to DockerHub Registry
       run: echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
     - name: Build the Docker image
-      run: docker build . --file producer.dockerfile --tag dejaq/testsyncproducer:latest
+      run: docker build . --file ./broker/producer.dockerfile --tag dejaq/testsyncproducer:latest
     - name: Push the image
       run: docker push dejaq/testsyncproducer:latest
