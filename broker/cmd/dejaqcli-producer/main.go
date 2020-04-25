@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"os"
 	"os/signal"
 	"time"
@@ -16,6 +17,10 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	subsystemProducer = "producer"
 )
 
 type Config struct {
@@ -111,7 +116,9 @@ func (c *Config) durationTimeout() time.Duration {
 }
 
 func main() {
-	logger := logrus.New().WithField("component", "producer")
+	go exporter.SetupStandardMetricsExporter(subsystemProducer)
+
+	logger := logrus.New().WithField("component", subsystemProducer)
 
 	c := &Config{}
 	err := cleanenv.ReadEnv(c)

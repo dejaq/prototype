@@ -7,13 +7,18 @@ import (
 	"time"
 
 	"github.com/dejaq/prototype/broker/domain"
-
-	"github.com/sirupsen/logrus"
-
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"github.com/dejaq/prototype/common/protocol"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
+)
+
+var (
+	metricMessagesCounter = exporter.GetAndRegisterCounterVec("topic_messages_count", []string{"operation", "topic"})
+	topicLeasesCounter    = exporter.GetAndRegisterGaugeVec("topic_leases_count", []string{"operation", "topic"})
 )
 
 type LoaderConfig struct {
@@ -218,6 +223,8 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
+
+			topicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Add(float64(len(pushLeaseMessages)))
 
 			batchSent, err := pushLeasesToPipeline(ctx, pushLeaseMessages, tuple)
 			sent += batchSent

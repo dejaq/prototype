@@ -66,13 +66,10 @@ func (c *Config) RunTimeout() (time.Duration, error) {
 
 const (
 	subsystem         = "common"
-	subsystemBroker   = "broker"
-	subsystemProducer = "producer"
-	subsystemConsumer = "consumer"
 )
 
 func main() {
-	go exporter.SetupStandardMetricsExporter(subsystem) // TODO use fine grained subsystems after switching to dedicated service starting code (broker, producer, consumer)
+	go exporter.SetupStandardMetricsExporter(subsystem)
 	run()
 }
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"net"
 	"os"
 	"os/signal"
@@ -23,6 +24,10 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+)
+
+const(
+	subsystemBroker   = "broker"
 )
 
 type Config struct {
@@ -77,7 +82,9 @@ func (c *Config) IsValid() error {
 }
 
 func main() {
-	logger := logrus.New().WithField("component", "broker")
+	go exporter.SetupStandardMetricsExporter(subsystemBroker)
+
+	logger := logrus.New().WithField("component", subsystemBroker)
 
 	c := &Config{}
 	err := cleanenv.ReadEnv(c)

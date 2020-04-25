@@ -2,6 +2,7 @@ package carrier
 
 import (
 	"context"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"math/rand"
 	"sync"
 	"time"
@@ -13,20 +14,16 @@ import (
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
-	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	numberOfTopics    = "topics"
-	numberOfTimelines = "timelines"
-	numberOfMessages  = "messages"
+var (
+	metricTopicsCounter = exporter.GetAndRegisterCounterVec("topic_commands_count", []string{"operation"})
 )
 
 var (
-	metricTopicsCounter       = metrics.NewRegisteredCounter(numberOfTopics, nil)
-	metricMessagesCounter     = metrics.NewRegisteredCounter(numberOfMessages, nil)
 	ErrUnknownDeleteRequester = derrors.Dejaror{
 		Severity:  derrors.SeverityError,
 		Message:   "unknown client, handshake required",
@@ -144,7 +141,7 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 		c.loaders[consumer.GetTopic()] = NewLoader(&LoaderConfig{
 			PrefetchMaxNoMsgs:       1000,
 			PrefetchMaxMilliseconds: 0,
-			Topic:                   &topic.Topic,
+			Topic: &topic.Topic,
 			Timers: LoaderTimerConfig{
 				Min:  time.Millisecond * 5,
 				Max:  time.Millisecond * 200,
@@ -221,12 +218,11 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 	if err != nil {
 		return errors.Wrap(err, "storage failed")
 	}
-	metricTopicsCounter.Inc(1)
+	metricTopicsCounter.With(prometheus.Labels{"operation":"create"}).Inc()
 	return nil
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req timeline.InsertMessagesRequest) error {
-	metricMessagesCounter.Inc(int64(len(req.Messages)))
 	topic, err := c.catalog.GetTopic(ctx, req.GetTimelineID())
 	if err != nil {
 		return err
@@ -234,6 +230,7 @@ func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req ti
 	for i := range req.Messages {
 		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
 	}
+	metricMessagesCounter.With(prometheus.Labels{"operation":"create", "topic": req.GetTimelineID()}).Add(float64(len(req.Messages)))
 	return c.storage.Insert(ctx, req)
 }
 
