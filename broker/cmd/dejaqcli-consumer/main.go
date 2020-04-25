@@ -34,7 +34,8 @@ type Config struct {
 	// stop after consume n messages, -1 will run continuously
 	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
 	// If false the messages will be served to another consumer after this ones lease expires
-	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
+	DeleteMessages          bool `env:"DELETE_MESSAGES" env-default:"true"`
+	DeleteMessagesBatchSize int  `env:"DELETE_MESSAGES_BATCH_SIZE" env-default:"100"`
 
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
@@ -56,6 +57,9 @@ func (c *Config) IsValid() error {
 	}
 	if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
 		return fmt.Errorf("timeout provided but wrong value %s", err.Error())
+	}
+	if c.DeleteMessagesBatchSize < 1 {
+		c.DeleteMessagesBatchSize = 1
 	}
 	return nil
 }
@@ -132,6 +136,7 @@ func main() {
 		StopAfterCount:  c.StopAfterCount,
 		DeleteMessages:  c.DeleteMessages,
 		DecreaseCounter: nil,
+		DeleteBatchSize: c.DeleteMessagesBatchSize,
 	}
 
 	go func() {
