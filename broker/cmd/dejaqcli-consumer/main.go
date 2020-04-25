@@ -28,7 +28,8 @@ type Config struct {
 	// consumer will send info to broker at specific duration
 	UpdatePreloadStatsTick string `env:"PRELOAD_STATS_TICK" env-default:"1s"`
 	// stop after consume n messages, -1 will run continuously
-	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
+	StopAfterCount int  `env:"STOP_AFTER" env-default:"-1"`
+	DeleteMessages bool `env:"STOP_AFTER" env-default:"true"`
 
 	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`
 	strategy        sync_consume.Strategy
@@ -116,17 +117,22 @@ func main() {
 	}
 
 	c.strategy = sync_consume.StrategyContinuous
+	info := "strategy: StrategyContinuous"
 	if c.StopAfterCount > 0 {
+		info = fmt.Sprintf("strategy: StrategyStopAfter %d", c.StopAfterCount)
 		c.strategy = sync_consume.StrategyStopAfter
 	}
+	logger.Info(info)
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
 		StopAfterCount:  c.StopAfterCount,
-		DeleteMessages:  true,
+		DeleteMessages:  c.DeleteMessages,
 		DecreaseCounter: nil,
 	}
 
 	go func() {
+		defer shutdownEverything() //propagate trough the context
+
 		result, err := sync_consume.Consume(ctx, logger, cons, &cc)
 		if err != nil {
 			// TODO check wat returns here
@@ -142,7 +148,6 @@ func main() {
 		}
 
 		logger.Infof("received: %d avg round trip %s", result.Received, result.AvgMsgLatency.String())
-		shutdownEverything() //propagate trough the context
 	}()
 
 	go func() {
