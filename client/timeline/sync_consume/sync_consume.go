@@ -25,6 +25,8 @@ type Result struct {
 	AvgMsgLatency time.Duration
 	Received      int
 }
+
+//go:generate stringer -type=Strategy
 type Strategy uint8
 
 const (

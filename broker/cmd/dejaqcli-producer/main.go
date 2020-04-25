@@ -24,21 +24,28 @@ type Config struct {
 	TopicBuckets  int    `env:"TOPIC_BUCKETS" env-default:"100"`
 	ProducerGroup string `env:"NAME"`
 
-	TimeoutDuration        string `env:"TIMEOUT" env-default:"10s"`
-	SingleBurstEventsCount int    `env:"SINGLE_BURST_EVENTS"`
+	// after this duration the process wil close
+	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
+	// the process will close after it sends this amount of messages
+	SingleBurstEventsCount int `env:"SINGLE_BURST_EVENTS"`
 
+	// as alternative to SINGLE_BURST_EVENTS, set these to keep writing messages indefinately
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION"`
 	ConstantBurstsTickEventsCount int    `env:"CONSTANT_TICK_COUNT"`
 
-	BatchSize     int `env:"BATCH_SIZE" env-default:"3000"`
+	// the number of events to be sent in a single GRPC call
+	BatchSize int `env:"BATCH_SIZE" env-default:"3000"`
+	// the size of the messages
 	BodySizeBytes int `env:"BODY_SIZE" env-default:"12000"`
 	// The event timestamp will be determined with a Time.Now() + Rand(-MinDelta,MaxDelta)
 	//set MaxDelta = 0 to have all the events in the past
 	//set MinDelta > 0 to have all of them in the future
 	EventTimelineMinDelta string `env:"EVENT_TIME_MIN_DELTA" env-default:"3s"`
 	EventTimelineMaxDelta string `env:"EVENT_TIME_MAX_DELTA" env-default:"0s"`
-	DeterministicEventID  bool   `env:"DETERMINISTIC_ID"`
-	strategy              sync_produce.Strategy
+
+	// messages will have a deterministic ID for debuging purposes
+	DeterministicEventID bool `env:"DETERMINISTIC_ID"`
+	strategy             sync_produce.Strategy
 }
 
 func (c *Config) IsValid() error {
@@ -165,11 +172,7 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
-	strategy := "StrategySingleBurst"
-	if c.strategy == sync_produce.StrategyConstantBursts {
-		strategy = "StrategyConstantBursts"
-	}
-	logger.Info(fmt.Sprintf("strategy: %s", strategy))
+	logger.Info(fmt.Sprintf("strategy: %v", c.strategy))
 	pc := sync_produce.SyncProduceConfig{
 		Strategy:                      c.strategy,
 		SingleBurstEventsCount:        c.SingleBurstEventsCount,

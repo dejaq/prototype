@@ -19,19 +19,25 @@ import (
 )
 
 type Config struct {
+	// the broker address
 	OverseerSeed string `env:"OVERSEER" env-default:"localhost:9000"`
 	Topic        string `env:"TOPIC"`
-	ConsumerID   string `env:"CONSUMER_ID"`
+	// this consumer instance
+	ConsumerID string `env:"CONSUMER_ID"`
 
-	MaxBufferSize int    `env:"MAX_BUFFER_SIZE" env-default:"100"`
+	// the max amount of messages to prefetch/stored in buffer
+	MaxBufferSize int `env:"MAX_BUFFER_SIZE" env-default:"100"`
+	// the time to own the leases
 	LeaseDuration string `env:"LEASE_DURATION" env-default:"1m"`
 	// consumer will send info to broker at specific duration
 	UpdatePreloadStatsTick string `env:"PRELOAD_STATS_TICK" env-default:"1s"`
 	// stop after consume n messages, -1 will run continuously
-	StopAfterCount int  `env:"STOP_AFTER" env-default:"-1"`
-	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
+	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
+	// If false the messages will be served to another consumer after this ones lease expires
+	DeleteMessages bool `env:"STOP_AFTER" env-default:"true"`
 
-	TimeoutDuration string `env:"TIMEOUT" env-default:"20s"`
+	// the process will close after this
+	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
 	strategy        sync_consume.Strategy
 }
 
@@ -117,12 +123,10 @@ func main() {
 	}
 
 	c.strategy = sync_consume.StrategyContinuous
-	info := "strategy: StrategyContinuous"
 	if c.StopAfterCount > 0 {
-		info = fmt.Sprintf("strategy: StrategyStopAfter %d", c.StopAfterCount)
 		c.strategy = sync_consume.StrategyStopAfter
 	}
-	logger.Info(info)
+	logger.Info(fmt.Sprintf("strategy: %v", c.strategy))
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
 		StopAfterCount:  c.StopAfterCount,
