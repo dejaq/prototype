@@ -26,7 +26,8 @@ import (
 )
 
 type Config struct {
-	BindingAddress string `env:"BINDING_ADDRESS" env-default:"127.0.0.1:9000"`
+	//default listens on all interfaces, this is standard for containers
+	BindingAddress string `env:"BINDING_ADDRESS" env-default:"0.0.0.0:9000"`
 	StorageType    string `env:"STORAGE_TYPE" env-default:"memory"`
 	StorageHost    string `env:"STORAGE_HOST"`
 
