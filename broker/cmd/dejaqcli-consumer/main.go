@@ -29,9 +29,9 @@ type Config struct {
 	UpdatePreloadStatsTick string `env:"PRELOAD_STATS_TICK" env-default:"1s"`
 	// stop after consume n messages, -1 will run continuously
 	StopAfterCount int  `env:"STOP_AFTER" env-default:"-1"`
-	DeleteMessages bool `env:"STOP_AFTER" env-default:"true"`
+	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
 
-	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`
+	TimeoutDuration string `env:"TIMEOUT" env-default:"20s"`
 	strategy        sync_consume.Strategy
 }
 

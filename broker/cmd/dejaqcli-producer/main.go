@@ -24,7 +24,7 @@ type Config struct {
 	TopicBuckets  int    `env:"TOPIC_BUCKETS" env-default:"100"`
 	ProducerGroup string `env:"NAME"`
 
-	TimeoutDuration        string `env:"TIMEOUT" env-default:"3s"`
+	TimeoutDuration        string `env:"TIMEOUT" env-default:"10s"`
 	SingleBurstEventsCount int    `env:"SINGLE_BURST_EVENTS"`
 
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION"`
@@ -165,6 +165,11 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
+	strategy := "StrategySingleBurst"
+	if c.strategy == sync_produce.StrategyConstantBursts {
+		strategy = "StrategyConstantBursts"
+	}
+	logger.Info(fmt.Sprintf("strategy: %s", strategy))
 	pc := sync_produce.SyncProduceConfig{
 		Strategy:                      c.strategy,
 		SingleBurstEventsCount:        c.SingleBurstEventsCount,
