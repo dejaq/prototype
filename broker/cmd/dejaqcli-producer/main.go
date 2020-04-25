@@ -172,7 +172,7 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
-	logger.Info(fmt.Sprintf("strategy: %v", c.strategy))
+	logger.Infof("strategy: %s", c.strategy.String())
 	pc := sync_produce.SyncProduceConfig{
 		Strategy:                      c.strategy,
 		SingleBurstEventsCount:        c.SingleBurstEventsCount,

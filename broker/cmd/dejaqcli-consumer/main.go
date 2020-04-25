@@ -126,7 +126,7 @@ func main() {
 	if c.StopAfterCount > 0 {
 		c.strategy = sync_consume.StrategyStopAfter
 	}
-	logger.Info(fmt.Sprintf("strategy: %v", c.strategy))
+	logger.Infof("strategy: %s", c.strategy.String())
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
 		StopAfterCount:  c.StopAfterCount,
