@@ -64,7 +64,7 @@ func (c *Config) IsValid() error {
 			return fmt.Errorf("timeout provided but wrong value %s", err.Error())
 		}
 		if c.SingleBurstEventsCount < 1 {
-			return errors.New("SingleBurstEventsCount has to be > 1")
+			return errors.New("SingleBurstEventsCount has to be > 0")
 		}
 	}
 	if _, err := time.ParseDuration(c.EventTimelineMinDelta); err != nil {
