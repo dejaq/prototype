@@ -22,8 +22,9 @@ type SyncConsumeConfig struct {
 }
 
 type Result struct {
-	AvgMsgLatency time.Duration
-	Received      int
+	AvgMsgLatency       time.Duration
+	Received            int
+	PartialInfoReceived int
 }
 
 //go:generate stringer -type=Strategy
@@ -71,6 +72,7 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 
 		//process the message
 		r.Received++
+		r.PartialInfoReceived++
 
 		latency, merr := sync_produce.ExtractLatencyFromBody(lease.Message.Body)
 		if merr != nil {
@@ -89,6 +91,11 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 			if err != nil {
 				break
 			}
+		}
+
+		if r.PartialInfoReceived%100 == 0 {
+			logger.Infof("consumed messages: %d avg latency: %s", r.Received, avg.Get().String())
+			r.PartialInfoReceived = 0
 		}
 
 		if config.DecreaseCounter != nil {
