@@ -34,10 +34,10 @@ type Config struct {
 	// stop after consume n messages, -1 will run continuously
 	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
 	// If false the messages will be served to another consumer after this ones lease expires
-	DeleteMessages bool `env:"STOP_AFTER" env-default:"true"`
+	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
 
 	// the process will close after this
-	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`
+	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
 	strategy        sync_consume.Strategy
 }
 
@@ -123,12 +123,10 @@ func main() {
 	}
 
 	c.strategy = sync_consume.StrategyContinuous
-	info := "strategy: StrategyContinuous"
 	if c.StopAfterCount > 0 {
-		info = fmt.Sprintf("strategy: StrategyStopAfter %d", c.StopAfterCount)
 		c.strategy = sync_consume.StrategyStopAfter
 	}
-	logger.Info(info)
+	logger.Infof("strategy: %s", c.strategy.String())
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
 		StopAfterCount:  c.StopAfterCount,

@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+//go:generate stringer -type=Strategy
 type Strategy uint8
 
 const (

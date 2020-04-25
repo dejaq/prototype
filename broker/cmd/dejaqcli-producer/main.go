@@ -25,7 +25,7 @@ type Config struct {
 	ProducerGroup string `env:"NAME"`
 
 	// after this duration the process wil close
-	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`
+	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
 	// the process will close after it sends this amount of messages
 	SingleBurstEventsCount int `env:"SINGLE_BURST_EVENTS"`
 
@@ -172,6 +172,7 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
+	logger.Infof("strategy: %s", c.strategy.String())
 	pc := sync_produce.SyncProduceConfig{
 		Strategy:                      c.strategy,
 		SingleBurstEventsCount:        c.SingleBurstEventsCount,
