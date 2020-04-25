@@ -13,6 +13,8 @@ jobs:
     steps:
     - name: Login to DockerHub Registry
       run: echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+    - name: Fetch the repo
+      uses: actions/checkout@v2
     - name: Build the Producer Docker image
       run: docker build . --file producer.dockerfile --tag dejaq/testsyncproducer:latest
     - name: Push the Producer image
@@ -22,6 +24,6 @@ jobs:
     - name: Push the Consumer image
       run: docker push dejaq/testsyncconsumer:latest
     - name: Build the Broker Docker image
-      run: docker build . --file broker.dockerfile --tag dejaq/testsyncbroker:latest
+      run: docker build . --file broker.dockerfile --tag dejaq/testbroker:latest
     - name: Push the Broker image
-      run: docker push dejaq/testsyncbroker:latest
+      run: docker push dejaq/testbroker:latest
