@@ -194,11 +194,6 @@ func run() {
 		<-c
 	}
 	logger.Info("all topics finished, closing everything")
-	for {
-		select{
-
-		}
-	}
 	cancel() //propagate trough the context
 }
 
