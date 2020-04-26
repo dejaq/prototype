@@ -94,12 +94,16 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 		}
 
 		if r.PartialInfoReceived%10000 == 0 {
-			logger.Infof("consumed messages: %d avg latency: %s", r.Received, avg.Get().String())
+			logger.Infof("consumed messages: %d avg latency: %s removed: %d", r.Received, avg.Get().String(), r.Deleted)
 			r.PartialInfoReceived = 0
 		}
 
 		if config.DecreaseCounter != nil {
-			config.DecreaseCounter.Dec()
+			if config.DeleteMessages {
+				config.DecreaseCounter.Sub(int64(deleted))
+			} else {
+				config.DecreaseCounter.Dec()
+			}
 		}
 
 		if config.Strategy == StrategyStopAfter && config.StopAfterCount > 0 && r.Received >= config.StopAfterCount {
@@ -109,8 +113,14 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 
 	//if we are finished and some events are still in batch
 	if err != nil && config.DeleteMessages {
-		deleted, err = deleteBatcher.flush(ctx)
+		deleted, deleteEerr := deleteBatcher.flush(ctx)
+		if deleteEerr != nil {
+			logger.WithError(deleteEerr).Error("delete failed")
+		}
 		r.Deleted += deleted
+		if config.DeleteMessages {
+			config.DecreaseCounter.Sub(int64(deleted))
+		}
 	}
 
 	r.AvgMsgLatency = avg.Get()

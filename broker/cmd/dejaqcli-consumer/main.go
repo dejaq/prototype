@@ -43,6 +43,11 @@ type Config struct {
 }
 
 func (c *Config) IsValid() error {
+	c.strategy = sync_consume.StrategyContinuous
+	if c.StopAfterCount > 0 {
+		c.strategy = sync_consume.StrategyStopAfter
+	}
+
 	if c.OverseerSeed == "" || c.Topic == "" || c.ConsumerID == "" {
 		return errors.New("topic, overseerSeed and consumer ID are mandatory values")
 	}
@@ -60,6 +65,9 @@ func (c *Config) IsValid() error {
 	}
 	if c.DeleteMessagesBatchSize < 1 {
 		c.DeleteMessagesBatchSize = 1
+	}
+	if c.strategy == sync_consume.StrategyStopAfter && c.DeleteMessagesBatchSize > 1 {
+		return errors.New("DELETE_MESSAGES_BATCH_SIZE must be 1 for  STOP AFTER strategy")
 	}
 	return nil
 }
@@ -126,10 +134,6 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
-	c.strategy = sync_consume.StrategyContinuous
-	if c.StopAfterCount > 0 {
-		c.strategy = sync_consume.StrategyStopAfter
-	}
 	logger.Infof("strategy: %s", c.strategy.String())
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
