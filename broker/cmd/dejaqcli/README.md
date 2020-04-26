@@ -1,6 +1,6 @@
-# Base command
+# Base command (deprecated)
 
-A simple tool we are using to jump start a broker and test how fast can we insert and consume messages.
+A simple tool we are using to jump start a broker and test that all systems are functional.
 
 ## Config
 
@@ -20,16 +20,4 @@ go run main.go
 
 ## Different processes
 
-To start each component in its own process, for more advanced setups and tests.
-The default will read the config from `./config.yml`, where the timeouts, topics and count of messages are provided.
-
-```bash
-#start the broker, this will also create the topics, wait for 1hour then close
-SEED=singlerun RUN_TIMEOUT_MS=3600000 START_PRODUCERS=false START_CONSUMERS=false go run main.go
-
-#start the producers, they will stop after inserting messages_per_topic count of message, for all topics
-SEED=singlerun START_BROKER=false START_CONSUMERS=false go run main.go
-
-#start the consumers, they will stop after consuming the required messages from all topics
-SEED=singlerun START_BROKER=false START_PRODUCERS=false go run main.go
-```
+To start each component in its own process see dejaq-{broker,producer,consumer} binaries.

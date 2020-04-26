@@ -287,7 +287,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 	}
 }
 
-func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
+func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 	sessionID := c.getSessionID()
 
 	stream, err := c.carrier.TimelineDelete(ctx)
@@ -298,16 +298,16 @@ func (c *Consumer) Delete(ctx context.Context, msgs []timeline.Message) error {
 	var builder *flatbuffers.Builder
 	builder = flatbuffers.NewBuilder(128)
 
-	for i := range msgs {
+	for i := range leases {
 		builder.Reset()
 
-		msgIDPosition := builder.CreateByteVector(msgs[i].ID)
+		msgIDPosition := builder.CreateByteVector(leases[i].Message.ID)
 		sessionIDPosition := builder.CreateString(sessionID)
 		dejaq.TimelineDeleteRequestStart(builder)
 		dejaq.TimelineDeleteRequestAddMessageID(builder, msgIDPosition)
 		dejaq.TimelineDeleteRequestAddSessionID(builder, sessionIDPosition)
-		dejaq.TimelineDeleteRequestAddBucketID(builder, msgs[i].BucketID)
-		dejaq.TimelineDeleteRequestAddVersion(builder, msgs[i].Version)
+		dejaq.TimelineDeleteRequestAddBucketID(builder, leases[i].Message.BucketID)
+		dejaq.TimelineDeleteRequestAddVersion(builder, leases[i].Message.Version)
 		rootPosition := dejaq.TimelineDeleteRequestEnd(builder)
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
