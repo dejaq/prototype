@@ -1,11 +1,12 @@
 package exporter
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -14,14 +15,40 @@ const (
 )
 
 var (
-	_subsystem  = ""
 	hostname, _ = os.Hostname()
+
+	registries = sync.Map{}
 )
 
-func GetAndRegisterCounterVec(metricName string, labelNames []string) *prometheus.CounterVec {
-	return promauto.NewCounterVec(prometheus.CounterOpts{
+func GetBrokerCounter(metricName string, labelNames []string) *prometheus.CounterVec {
+	return getAndRegisterCounterVec("broker", metricName, labelNames)
+}
+
+func GetConsumerCounter(metricName string, labelNames []string) *prometheus.CounterVec {
+	return getAndRegisterCounterVec("consumer", metricName, labelNames)
+}
+
+func GetProducerCounter(metricName string, labelNames []string) *prometheus.CounterVec {
+	return getAndRegisterCounterVec("producer", metricName, labelNames)
+}
+
+func GetBrokerGauge(metricName string, labelNames []string) *prometheus.GaugeVec {
+	return getAndRegisterGaugeVec("broker", metricName, labelNames)
+}
+
+func GetConsumerGauge(metricName string, labelNames []string) *prometheus.GaugeVec {
+	return getAndRegisterGaugeVec("consumer", metricName, labelNames)
+}
+
+func GetProducerGauge(metricName string, labelNames []string) *prometheus.GaugeVec {
+	return getAndRegisterGaugeVec("producer", metricName, labelNames)
+}
+
+func getAndRegisterCounterVec(subsystem, metricName string, labelNames []string) *prometheus.CounterVec {
+
+	counter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name:      metricName,
-		Subsystem: _subsystem,
+		Subsystem: subsystem,
 		Namespace: namespace,
 		ConstLabels: prometheus.Labels{
 			"hostname": hostname,
@@ -29,12 +56,17 @@ func GetAndRegisterCounterVec(metricName string, labelNames []string) *prometheu
 	},
 		labelNames,
 	)
+	prometheus.MustRegister()
+
+	registry, _ := registries.LoadOrStore(subsystem, prometheus.NewRegistry())
+	registry.(*prometheus.Registry).MustRegister(counter)
+	return counter
 }
 
-func GetAndRegisterGaugeVec(metricName string, labelNames []string) *prometheus.GaugeVec{
-	return promauto.NewGaugeVec(prometheus.GaugeOpts{
+func getAndRegisterGaugeVec(subsystem, metricName string, labelNames []string) *prometheus.GaugeVec{
+	gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name:      metricName,
-		Subsystem: _subsystem,
+		Subsystem: subsystem,
 		Namespace: namespace,
 		ConstLabels: prometheus.Labels{
 			"hostname": hostname,
@@ -42,11 +74,30 @@ func GetAndRegisterGaugeVec(metricName string, labelNames []string) *prometheus.
 	},
 		labelNames,
 	)
+
+	registry, _ := registries.LoadOrStore(subsystem, prometheus.NewRegistry())
+	registry.(*prometheus.Registry).MustRegister(gauge)
+	return gauge
 }
 
-func SetupStandardMetricsExporter(subsystem string) {
-	_subsystem = subsystem
+func mergedMetrics(subsystem string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		promhttp.Handler().ServeHTTP(w, r)
+		registry, _ := registries.LoadOrStore(subsystem, prometheus.NewRegistry())
+		customHandler := promhttp.HandlerFor(registry.(*prometheus.Registry), promhttp.HandlerOpts{})
+		customHandler.ServeHTTP(w, r)
+	})
+}
 
-	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":2112", nil)
+func GetDefaultExporter(port string) {
+	server := http.NewServeMux()
+	server.Handle("/metrics", promhttp.Handler())
+	http.ListenAndServe(fmt.Sprintf(":%s", port), server)
+}
+
+func GetMetricsExporter(subsystem, port string) {
+	server := http.NewServeMux()
+	registry, _ := registries.LoadOrStore(subsystem, prometheus.NewRegistry())
+	server.Handle("/metrics", promhttp.InstrumentMetricHandler(registry.(*prometheus.Registry), promhttp.HandlerFor(registry.(*prometheus.Registry), promhttp.HandlerOpts{})))
+	http.ListenAndServe(fmt.Sprintf(":%s", port), server)
 }

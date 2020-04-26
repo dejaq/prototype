@@ -2,6 +2,8 @@ package producer
 
 import (
 	"context"
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"sync"
 
@@ -11,6 +13,11 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
+)
+
+var (
+	metricTopicMessagesCounter = exporter.GetProducerCounter("topic_messages_count", []string{"operation", "topic"})
+	metricTopicMessagesErrors = exporter.GetProducerCounter("topic_messages_errors", []string{"operation", "topic"})
 )
 
 type Config struct {
@@ -105,15 +112,23 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		err = stream.Send(builder)
 		//TODO if err is invalid/expired sessionID do a handshake automatically
 		if err != nil {
+			metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 			return errors.Wrap(err, "failed stream")
 		}
+		metricTopicMessagesCounter.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 	}
 
 	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 		return errors.Wrap(err, "failed to send the events")
 	}
-	return derror.ParseTimelineResponse(response)
+	err = derror.ParseTimelineResponse(response)
+	if err != nil {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
+		return err
+	}
+	return nil
 }
 
 func (c *Producer) GetProducerGroupID() string {

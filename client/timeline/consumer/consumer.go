@@ -3,6 +3,8 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"strings"
 	"sync"
@@ -16,6 +18,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+)
+
+var (
+	metricTopicLeasesCounter = exporter.GetConsumerCounter("topic_leases_count", []string{"operation", "topic"})
+	metricTopicLeasesErrors = exporter.GetConsumerCounter("topic_leases_errors", []string{"operation", "topic"})
 )
 
 var ErrMissingHandshake = errors.New("handshake is not node or session expired")
@@ -92,6 +99,7 @@ func (c *Consumer) Start() error {
 		//the session expired or the brokers lost it
 		if strings.Contains(derror.ErrConsumerNotSubscribed.Error(), err.Error()) ||
 			strings.Contains("session", err.Error()) {
+
 			c.resetSession()
 			err = ErrMissingHandshake
 		}
@@ -242,11 +250,13 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 		if err != nil {
 			//TODO find out why errors.Is is not working
 			if !strings.Contains(err.Error(), context.Canceled.Error()) {
+				metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
 				c.logger.WithError(err).Error("stream received an error")
 			}
 			break
 		}
 		if response == nil { //empty msg ?!?!?! TODO log this as a warning
+			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
 			c.logger.Error("empty response received from grpc in consumer")
 			continue
 		}
@@ -254,6 +264,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 		msg := response.Message(nil)
 
 		if msg == nil {
+			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
 			c.logger.Error("empty message received from grpc in consumer")
 			continue
 		}
@@ -269,6 +280,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 				BucketID:        msg.BucketID(),
 			},
 		}
+		metricTopicLeasesCounter.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
 	}
 
 	//terminate the session
@@ -292,6 +304,7 @@ func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 
 	stream, err := c.carrier.TimelineDelete(ctx)
 	if err != nil {
+		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
 		return fmt.Errorf("cannot create gRPC stream: %w", err)
 	}
 
@@ -312,15 +325,24 @@ func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
 		if err != nil {
+			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
 			return fmt.Errorf("upstream failed: %w", err)
 		}
 	}
 
 	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
+		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
 		return err
 	}
-	return derror.ParseTimelineResponse(response)
+
+	err = derror.ParseTimelineResponse(response)
+	if err != nil {
+		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
+		return err
+	}
+	metricTopicLeasesCounter.With(prometheus.Labels{"operation":"deleted", "topic":c.GetTopicID()}).Inc()
+	return nil
 }
 
 func (c *Consumer) GetConsumerID() string {
