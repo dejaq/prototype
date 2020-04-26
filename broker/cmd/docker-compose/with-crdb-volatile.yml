@@ -1,0 +1,37 @@
+version: "3"
+
+
+services:
+  crdb1:
+    image: cockroachdb/cockroach:v19.2.6
+    hostname: "crdb1"
+    #TODO add a provision script to  INIT a cluster and create the DB and user
+    command: start --insecure  --advertise-addr=crdb1 #--logtostderr=info
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+  crdb2:
+    image: cockroachdb/cockroach:v19.2.6
+    hostname: "crdb2"
+    command: start --insecure --join=crdb1 --advertise-addr=crdb2
+    depends_on:
+      - crdb1
+  crdb3:
+    image: cockroachdb/cockroach:v19.2.6
+    hostname: "crdb3"
+    command: start --insecure --join=crdb1,crdb2 --advertise-addr=crdb3
+    depends_on:
+      - crdb2
+  broker:
+    depends_on:
+      - crdb1
+      - crdb2
+      - crdb3
+    environment:
+      STORAGE_TYPE: "cockroach"
+      STORAGE_HOST: "crdb1:26257"
+  producer1:
+    environment:
+      #for now CRDB is very slow
+      CONSTANT_TICK_DURATION: '1s'
+      CONSTANT_TICK_COUNT: 30

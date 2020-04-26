@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"strconv"
+	"strings"
+)
+
 // Client represents a client entity from the server perspective
 type Client struct {
 	ID       string
@@ -15,6 +20,19 @@ type Client struct {
 type BucketRange struct {
 	Start uint16
 	End   uint16
+}
+
+// CSV returns an ordered comma separated list of buckets
+func (b BucketRange) CSV() string {
+	result := strings.Builder{}
+	result.Grow(b.Size() * 3)
+	for i := b.Min(); i <= b.Max(); i++ {
+		result.WriteString(strconv.Itoa(int(i)))
+		if i < b.Max() {
+			result.WriteRune(',')
+		}
+	}
+	return result.String()
 }
 
 func (b BucketRange) ASC() BucketRange {
