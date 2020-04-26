@@ -56,7 +56,6 @@ func getAndRegisterCounterVec(subsystem, metricName string, labelNames []string)
 	},
 		labelNames,
 	)
-	prometheus.MustRegister()
 
 	registry, _ := registries.LoadOrStore(subsystem, prometheus.NewRegistry())
 	registry.(*prometheus.Registry).MustRegister(counter)

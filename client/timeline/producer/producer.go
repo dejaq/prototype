@@ -115,7 +115,6 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 			metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 			return errors.Wrap(err, "failed stream")
 		}
-		metricTopicMessagesCounter.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 	}
 
 	response, err := stream.CloseAndRecv()
@@ -128,6 +127,7 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
 		return err
 	}
+	metricTopicMessagesCounter.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Add(float64(len(msgs)))
 	return nil
 }
 

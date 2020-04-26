@@ -83,7 +83,7 @@ func (c *Config) IsValid() error {
 
 func main() {
 	go exporter.GetMetricsExporter(subsystemBroker, "2112")
-	go exporter.GetDefaultExporter("2113")
+	//go exporter.GetDefaultExporter("2113")
 
 	logger := logrus.New().WithField("component", subsystemBroker)
 

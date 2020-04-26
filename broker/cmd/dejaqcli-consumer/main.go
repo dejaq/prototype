@@ -96,7 +96,7 @@ func (c *Config) durationTimeout() time.Duration {
 
 func main() {
 	go exporter.GetMetricsExporter(subsystemConsumer, "2111")
-	go exporter.GetDefaultExporter("2113")
+	//go exporter.GetDefaultExporter("2113")
 
 	logger := logrus.New().WithField("component", subsystemConsumer)
 

@@ -341,7 +341,7 @@ func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
 		return err
 	}
-	metricTopicLeasesCounter.With(prometheus.Labels{"operation":"deleted", "topic":c.GetTopicID()}).Inc()
+	metricTopicLeasesCounter.With(prometheus.Labels{"operation":"deleted", "topic":c.GetTopicID()}).Add(float64(len(leases)))
 	return nil
 }
 
