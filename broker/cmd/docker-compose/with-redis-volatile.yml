@@ -1,0 +1,15 @@
+version: "3"
+
+
+services:
+  redis:
+    image: redis:5.0.9-alpine
+    hostname: "redis"
+    ports:
+      - "6379:6379"
+  broker:
+    depends_on:
+      - redis
+    environment:
+      STORAGE_TYPE: "redis"
+      STORAGE_HOST: "redis:6379"
