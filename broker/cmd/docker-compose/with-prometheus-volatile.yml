@@ -1,0 +1,30 @@
+version: "3"
+
+#adds a base prometheus that scrapes its own data and brokers metrics
+# it is volatile since the volume with data is not durable
+
+volumes:
+  prometheus_config:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
+
+services:
+  config-concat:
+    image: deanwilson/promconf-concat:0.1.0
+    volumes:
+      - prometheus_config:/fragments/
+      - ${PWD}/prometheus-server/config/base_prometheus.yml:/base_prometheus.yml
+
+  prometheus:
+    image: prom/prometheus:v2.17.2
+    ports:
+      - 9090:9090
+    volumes:
+      - prometheus_config:/fragments/
+      - ${PWD}/prometheus-server/config/targets/prometheus.json:/etc/prometheus/targets/prometheus.json
+      - ${PWD}/prometheus-server/config/targets/base.json:/etc/prometheus/targets/base.json
+    command:
+      - '--config.file=/fragments/complete/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
