@@ -65,11 +65,16 @@ func (c *Config) RunTimeout() (time.Duration, error) {
 }
 
 const (
-	subsystem         = "common"
+	subsystemProducer = "producer"
+	subsystemConsumer = "consumer"
+	subsystemBroker   = "broker"
 )
 
 func main() {
-	go exporter.SetupStandardMetricsExporter(subsystem)
+	go exporter.GetMetricsExporter(subsystemProducer, "2110")
+	go exporter.GetMetricsExporter(subsystemConsumer, "2111")
+	go exporter.GetMetricsExporter(subsystemBroker, "2112")
+	go exporter.GetDefaultExporter("2113")
 	run()
 }
 

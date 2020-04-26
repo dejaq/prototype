@@ -20,7 +20,9 @@ import (
 )
 
 var (
-	metricTopicsCounter = exporter.GetAndRegisterCounterVec("topic_commands_count", []string{"operation"})
+	metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
+	metricTopicCommandsErrors = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
+	metricTopicMessagesErrors = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
 )
 
 var (
@@ -211,27 +213,34 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 
 	err := c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
+		metricTopicCommandsErrors.With(prometheus.Labels{"operation":"create", "topic":topic}).Inc()
 		return errors.Wrap(err, "catalog failed")
 	}
 
 	err = c.storage.CreateTopic(ctx, topic)
 	if err != nil {
+		metricTopicCommandsErrors.With(prometheus.Labels{"operation":"create", "topic":topic}).Inc()
 		return errors.Wrap(err, "storage failed")
 	}
-	metricTopicsCounter.With(prometheus.Labels{"operation":"create"}).Inc()
+	metricTopicCommandsCounter.With(prometheus.Labels{"operation":"create"}).Inc()
 	return nil
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	topic, err := c.catalog.GetTopic(ctx, req.GetTimelineID())
 	if err != nil {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"create", "topic":req.GetTimelineID()}).Inc()
 		return err
 	}
 	for i := range req.Messages {
 		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
 	}
 	metricMessagesCounter.With(prometheus.Labels{"operation":"create", "topic": req.GetTimelineID()}).Add(float64(len(req.Messages)))
-	return c.storage.Insert(ctx, req)
+	err = c.storage.Insert(ctx, req)
+	if err != nil {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"create", "topic":req.GetTimelineID()}).Inc()
+	}
+	return err
 }
 
 func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessionID string, req timeline.DeleteMessagesRequest) error {
@@ -243,8 +252,13 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 		req.CallerType = timeline.DeleteCallerProducer
 		req.CallerID = producer.GroupID
 	} else {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"delete", "topic":req.GetTimelineID()}).Inc()
 		return ErrUnknownDeleteRequester
 	}
 
-	return c.storage.Delete(ctx, req)
+	err := c.storage.Delete(ctx, req)
+	if err != nil {
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"delete", "topic":req.GetTimelineID()}).Inc()
+	}
+	return err
 }
