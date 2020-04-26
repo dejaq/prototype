@@ -65,8 +65,10 @@ func (c *Config) IsValid() error {
 	if _, err := time.ParseDuration(c.UpdatePreloadStatsTick); err != nil {
 		return fmt.Errorf("UpdatePreloadStatsTick provided but wrong value %s", err.Error())
 	}
-	if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
-		return fmt.Errorf("timeout provided but wrong value %s", err.Error())
+	if c.TimeoutDuration != "" {
+		if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
+			return fmt.Errorf("timeout provided but wrong value %s", err.Error())
+		}
 	}
 	if c.DeleteMessagesBatchSize < 1 {
 		c.DeleteMessagesBatchSize = 1
