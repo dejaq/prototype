@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	"github.com/dejaq/prototype/common/timeline"
 
@@ -38,8 +39,9 @@ type Config struct {
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION"`
 	ConstantBurstsTickEventsCount int    `env:"CONSTANT_TICK_COUNT"`
 
-	// the number of events to be sent in a single GRPC call
-	BatchSize int `env:"BATCH_SIZE" env-default:"3000"`
+	// the max number of events to be sent in a single GRPC call
+	BatchMaxCount  int `env:"BATCH_MAX_COUNT" env-default:"3000"`
+	BatchBytesSize int `env:"BATCH_MAX_BYTES" env-default:"1024"`
 	// the size of the messages
 	BodySizeBytes int `env:"BODY_SIZE" env-default:"12000"`
 	// The event timestamp will be determined with a Time.Now() + Rand(-MinDelta,MaxDelta)
@@ -85,11 +87,15 @@ func (c *Config) IsValid() error {
 	if _, err := time.ParseDuration(c.EventTimelineMaxDelta); err != nil {
 		return fmt.Errorf("EventTimelineMaxDelta provided but wrong value %s", err.Error())
 	}
-	if c.BatchSize < 1 {
+	if c.BatchMaxCount < 1 {
 		return errors.New("batch size must be >= 1")
 	}
 	if c.BodySizeBytes < 1 {
 		return errors.New("body size must be >= 1")
+	}
+	if c.BodySizeBytes > 14*1024 {
+		//TODO I think we are encoding it wrong https://github.com/google/flatbuffers/issues/3938
+		return errors.New("body size is limited at 14kb")
 	}
 
 	if c.OverseerSeed == "" || c.Topic == "" || c.ProducerGroup == "" {
@@ -186,7 +192,8 @@ func main() {
 		SingleBurstEventsCount:        c.SingleBurstEventsCount,
 		ConstantBurstsTickDuration:    c.durationConstantBursts(),
 		ConstantBurstsTickEventsCount: c.ConstantBurstsTickEventsCount,
-		BatchSize:                     c.BatchSize,
+		BatchMaxCount:                 c.BatchMaxCount,
+		BatchMaxBytesSize:             c.BodySizeBytes,
 		EventTimelineMinDelta:         c.durationMinDelta(),
 		EventTimelineMaxDelta:         c.durationMaxDelta(),
 		BodySizeBytes:                 c.BodySizeBytes,

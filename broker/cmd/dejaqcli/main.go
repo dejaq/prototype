@@ -344,10 +344,10 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 			pc := sync_produce.SyncProduceConfig{
 				Strategy:               sync_produce.StrategySingleBurst,
 				SingleBurstEventsCount: toProduce,
-				BatchSize:              config.batchSize,
+				BatchMaxCount:          config.batchSize,
 				EventTimelineMinDelta:  config.produceDeltaMin,
 				EventTimelineMaxDelta:  config.produceDeltaMax,
-				BodySizeBytes:          12 * 1024,
+				BodySizeBytes:          14 * 1024,
 				DeterministicEventID:   true,
 			}
 

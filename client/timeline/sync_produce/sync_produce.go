@@ -32,7 +32,8 @@ type SyncProduceConfig struct {
 	SingleBurstEventsCount        int
 	ConstantBurstsTickDuration    time.Duration
 	ConstantBurstsTickEventsCount int
-	BatchSize                     int
+	BatchMaxCount                 int
+	BatchMaxBytesSize             int
 	BodySizeBytes                 int
 	// The event timestamp will be determined with a Time.Now() + Rand(-MinDelta,MaxDelta)
 	EventTimelineMinDelta,
@@ -89,6 +90,7 @@ func constantBursts(ctx context.Context, config *SyncProduceConfig, p *producer.
 func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Producer, toSendCount int, logger logrus.FieldLogger) error {
 	left := toSendCount
 	var batch []timeline.Message
+	var batchBytesSize int
 
 	body := getBodyOfSize(config.BodySizeBytes)
 	var msgID string
@@ -104,10 +106,13 @@ func singleBurst(ctx context.Context, config *SyncProduceConfig, p *producer.Pro
 		}
 
 		batch = append(batch, newMsg(p, msgID, body, config))
-		if len(batch) >= config.BatchSize {
+		batchBytesSize += config.BodySizeBytes
+		if len(batch) >= config.BatchMaxCount ||
+			(config.BatchMaxBytesSize > 0 && batchBytesSize >= config.BatchMaxBytesSize) {
 			if batch, err = flush(ctx, batch, p); err != nil {
 				return err
 			}
+			batchBytesSize = 0
 		}
 	}
 	if batch, err = flush(ctx, batch, p); err != nil {

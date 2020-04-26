@@ -93,7 +93,7 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 			}
 		}
 
-		if r.PartialInfoReceived%100000 == 0 {
+		if r.PartialInfoReceived%10000 == 0 {
 			logger.Infof("consumed messages: %d avg latency: %s removed: %d", r.Received, avg.Get().String(), r.Deleted)
 			r.PartialInfoReceived = 0
 		}

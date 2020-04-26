@@ -4,12 +4,13 @@ version: "3"
 services:
   producer1:
     environment:
+      CONSTANT_TICK_DURATION: 1s
       CONSTANT_TICK_COUNT: 15000
-      BATCH_SIZE: 2500
+      BATCH_SIZE: 5000
 
   consumer1:
     environment:
-      MAX_BUFFER_SIZE: 2500
+      MAX_BUFFER_SIZE: 5000
 
   consumer2:
     image: dejaq/testsyncconsumer:latest
@@ -21,7 +22,7 @@ services:
       TOPIC: 'compose1'
       TIMEOUT: ''
       CONSUMER_ID: 'c1-consumer2'
-      MAX_BUFFER_SIZE: 2500
+      MAX_BUFFER_SIZE: 5000
 
   consumer3:
     image: dejaq/testsyncconsumer:latest
@@ -33,4 +34,4 @@ services:
       TOPIC: 'compose1'
       TIMEOUT: ''
       CONSUMER_ID: 'c1-consumer3'
-      MAX_BUFFER_SIZE: 2500
+      MAX_BUFFER_SIZE: 5000

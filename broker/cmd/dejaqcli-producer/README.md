@@ -47,7 +47,8 @@ type Config struct {
 	ConstantBurstsTickEventsCount int    `env:"CONSTANT_TICK_COUNT"`
 
 	// the number of events to be sent in a single GRPC call
-	BatchSize int `env:"BATCH_SIZE" env-default:"3000"`
+	BatchMaxCount  int `env:"BATCH_MAX_COUNT" env-default:"3000"`
+	BatchBytesSize int `env:"BATCH_MAX_BYTES" env-default:"1024"`
 	// the size of the messages
 	BodySizeBytes int `env:"BODY_SIZE" env-default:"12000"`
 	// The event timestamp will be determined with a Time.Now() + Rand(-MinDelta,MaxDelta)
