@@ -18,8 +18,9 @@ services:
       TIMEOUT: ''
       CONSTANT_TICK_DURATION: '1s'
       CONSTANT_TICK_COUNT: 1000
-      BATCH_SIZE: 1000
-      BODY_SIZE: 12000
+      BATCH_MAX_COUNT: 1000
+      #1024 for 1kb messages
+      BODY_SIZE: 2048
 
   consumer1:
     image: dejaq/testsyncconsumer:latest
