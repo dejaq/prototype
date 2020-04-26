@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"net"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	"github.com/ilyakaznacheev/cleanenv"
 
@@ -26,8 +27,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-const(
-	subsystemBroker   = "broker"
+const (
+	subsystemBroker = "broker"
 )
 
 type Config struct {
@@ -162,7 +163,9 @@ func NewStorage(ctx context.Context, config *Config, catalog *overseer.Catalog, 
 		return redis.New(config.StorageHost)
 	case "cockroach":
 		// @Adrian can we move those inside cockroach client ?
-		db, err := sql.Open("postgres", config.StorageHost) //&binary_parameters
+		//TODO provision the user in dockercompose to avoid using root
+		addr := fmt.Sprintf("postgresql://root@%s?sslmode=disable", config.StorageHost)
+		db, err := sql.Open("postgres", addr) //&binary_parameters
 		if err != nil {
 			return nil, err
 		}

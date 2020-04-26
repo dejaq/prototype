@@ -72,6 +72,7 @@ func (c *CRClient) CreateTopic(ctx context.Context, timelineID string) error {
 	if err != nil {
 		return c.externalErr(ctx, err, "createTopic")
 	}
+	c.logger.Infof("created topic=%s", timelineID)
 	return nil
 }
 
