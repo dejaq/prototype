@@ -66,13 +66,10 @@ func (c *Config) RunTimeout() (time.Duration, error) {
 
 const (
 	subsystem         = "common"
-	subsystemBroker   = "broker"
-	subsystemProducer = "producer"
-	subsystemConsumer = "consumer"
 )
 
 func main() {
-	go exporter.SetupStandardMetricsExporter(subsystem) // TODO use fine grained subsystems after switching to dedicated service starting code (broker, producer, consumer)
+	go exporter.SetupStandardMetricsExporter(subsystem)
 	run()
 }
 
@@ -384,11 +381,13 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 				LeaseDuration:          time.Minute, // TODO extract to config
 				UpdatePreloadStatsTick: time.Second,
 			})
+
 			cc := sync_consume.SyncConsumeConfig{
 				Strategy:        sync_consume.StrategyStopAfter,
 				StopAfterCount:  -1,
 				DeleteMessages:  true,
 				DecreaseCounter: msgCounter,
+				DeleteBatchSize: 1,
 			}
 			result, err := sync_consume.Consume(consumersCtx, logger, cons, &cc)
 			if err != nil {
@@ -397,7 +396,7 @@ func runConsumers(ctx context.Context, client brokerClient.Client, logger logrus
 					logger.WithError(err).Error("sync consuming failed")
 				}
 			}
-			logger.Infof("avg round trip was %s", result.AvgMsgLatency.String())
+			logger.Infof("avg round trip was %s received=%d deleted=%d", result.AvgMsgLatency.String(), result.Received, result.Deleted)
 		}(fmt.Sprintf("consumer_%d", ci), msgCounter)
 	}
 

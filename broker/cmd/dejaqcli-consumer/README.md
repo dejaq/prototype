@@ -48,6 +48,7 @@ type Config struct {
 	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
 	// If false the messages will be served to another consumer after this ones lease expires
 	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
+	DeleteMessagesBatcheSize int  `env:"DELETE_MESSAGES_BATCH_SIZE" env-default:"100"`
 
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"3s"`

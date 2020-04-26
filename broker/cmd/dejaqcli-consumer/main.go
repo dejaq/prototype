@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dejaq/prototype/common/metrics/exporter"
 	"os"
 	"os/signal"
 	"time"
@@ -16,6 +17,10 @@ import (
 	"github.com/dejaq/prototype/client/timeline/consumer"
 	"github.com/dejaq/prototype/client/timeline/sync_consume"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	subsystemConsumer = "consumer"
 )
 
 type Config struct {
@@ -34,7 +39,8 @@ type Config struct {
 	// stop after consume n messages, -1 will run continuously
 	StopAfterCount int `env:"STOP_AFTER" env-default:"-1"`
 	// If false the messages will be served to another consumer after this ones lease expires
-	DeleteMessages bool `env:"DELETE_MESSAGES" env-default:"true"`
+	DeleteMessages          bool `env:"DELETE_MESSAGES" env-default:"true"`
+	DeleteMessagesBatchSize int  `env:"DELETE_MESSAGES_BATCH_SIZE" env-default:"100"`
 
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
@@ -42,6 +48,11 @@ type Config struct {
 }
 
 func (c *Config) IsValid() error {
+	c.strategy = sync_consume.StrategyContinuous
+	if c.StopAfterCount > 0 {
+		c.strategy = sync_consume.StrategyStopAfter
+	}
+
 	if c.OverseerSeed == "" || c.Topic == "" || c.ConsumerID == "" {
 		return errors.New("topic, overseerSeed and consumer ID are mandatory values")
 	}
@@ -58,6 +69,12 @@ func (c *Config) IsValid() error {
 		if _, err := time.ParseDuration(c.TimeoutDuration); err != nil {
 			return fmt.Errorf("timeout provided but wrong value %s", err.Error())
 		}
+	}
+	if c.DeleteMessagesBatchSize < 1 {
+		c.DeleteMessagesBatchSize = 1
+	}
+	if c.strategy == sync_consume.StrategyStopAfter && c.DeleteMessagesBatchSize > 1 {
+		return errors.New("DELETE_MESSAGES_BATCH_SIZE must be 1 for  STOP AFTER strategy")
 	}
 	return nil
 }
@@ -78,7 +95,9 @@ func (c *Config) durationTimeout() time.Duration {
 }
 
 func main() {
-	logger := logrus.New().WithField("component", "consumer")
+	go exporter.SetupStandardMetricsExporter(subsystemConsumer)
+
+	logger := logrus.New().WithField("component", subsystemConsumer)
 
 	c := &Config{}
 	err := cleanenv.ReadEnv(c)
@@ -124,16 +143,13 @@ func main() {
 		logger.WithError(err).Fatal("cannot handshake")
 	}
 
-	c.strategy = sync_consume.StrategyContinuous
-	if c.StopAfterCount > 0 {
-		c.strategy = sync_consume.StrategyStopAfter
-	}
 	logger.Infof("strategy: %s", c.strategy.String())
 	cc := sync_consume.SyncConsumeConfig{
 		Strategy:        c.strategy,
 		StopAfterCount:  c.StopAfterCount,
 		DeleteMessages:  c.DeleteMessages,
 		DecreaseCounter: nil,
+		DeleteBatchSize: c.DeleteMessagesBatchSize,
 	}
 
 	go func() {

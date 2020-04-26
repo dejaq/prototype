@@ -19,11 +19,13 @@ type SyncConsumeConfig struct {
 	DeleteMessages bool
 	//Deprecated for old main
 	DecreaseCounter *atomic.Int64
+	DeleteBatchSize int
 }
 
 type Result struct {
 	AvgMsgLatency       time.Duration
 	Received            int
+	Deleted             int
 	PartialInfoReceived int
 }
 
@@ -40,6 +42,8 @@ const (
 func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consumer, config *SyncConsumeConfig) (Result, error) {
 	avg := Average{}
 	r := Result{}
+	deleteBatcher := batcher{consumer: c, maxBatchSize: config.DeleteBatchSize}
+	var deleted int
 
 	handshakeAndStart := func() error {
 		err := c.Handshake(ctx)
@@ -82,28 +86,40 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 		}
 
 		if config.DeleteMessages {
-			err = c.Delete(ctx, []timeline.Message{{
-				ID:          lease.Message.ID,
-				TimestampMS: lease.Message.TimestampMS,
-				BucketID:    lease.Message.BucketID,
-				Version:     lease.Message.Version,
-			}})
+			deleted, err = deleteBatcher.delete(ctx, lease)
+			r.Deleted += deleted
 			if err != nil {
 				break
 			}
 		}
 
-		if r.PartialInfoReceived%100 == 0 {
-			logger.Infof("consumed messages: %d avg latency: %s", r.Received, avg.Get().String())
+		if r.PartialInfoReceived%10000 == 0 {
+			logger.Infof("consumed messages: %d avg latency: %s removed: %d", r.Received, avg.Get().String(), r.Deleted)
 			r.PartialInfoReceived = 0
 		}
 
 		if config.DecreaseCounter != nil {
-			config.DecreaseCounter.Dec()
+			if config.DeleteMessages {
+				config.DecreaseCounter.Sub(int64(deleted))
+			} else {
+				config.DecreaseCounter.Dec()
+			}
 		}
 
 		if config.Strategy == StrategyStopAfter && config.StopAfterCount > 0 && r.Received >= config.StopAfterCount {
 			break
+		}
+	}
+
+	//if we are finished and some events are still in batch
+	if err != nil && config.DeleteMessages {
+		deleted, deleteEerr := deleteBatcher.flush(ctx)
+		if deleteEerr != nil {
+			logger.WithError(deleteEerr).Error("delete failed")
+		}
+		r.Deleted += deleted
+		if config.DeleteMessages {
+			config.DecreaseCounter.Sub(int64(deleted))
 		}
 	}
 
