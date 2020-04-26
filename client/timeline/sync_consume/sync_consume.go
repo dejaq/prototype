@@ -112,10 +112,10 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 	}
 
 	//if we are finished and some events are still in batch
-	if err != nil && config.DeleteMessages {
-		deleted, deleteEerr := deleteBatcher.flush(ctx)
-		if deleteEerr != nil {
-			logger.WithError(deleteEerr).Error("delete failed")
+	if err == nil && config.DeleteMessages {
+		deleted, err = deleteBatcher.flush(ctx)
+		if err != nil {
+			logger.WithError(err).Error("delete failed")
 		}
 		r.Deleted += deleted
 		if config.DeleteMessages {
