@@ -1,0 +1,25 @@
+version: "3"
+
+
+services:
+  crdb1:
+    image: cockroachdb/cockroach:v19.2.6
+    hostname: "crdb1"
+    command: start --insecure --join=crdb2:26258
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+  crdb2:
+    image: cockroachdb/cockroach:v19.2.6
+    hostname: "crdb2"
+    command: start --insecure --join=crdb1:26257
+    depends_on:
+      - crdb1
+    ports:
+      - "26258:26257"
+  broker:
+    depends_on:
+      - crdb2
+    environment:
+      STORAGE_TYPE: "cockroach"
+      STORAGE_HOST: "crdb1:26257"

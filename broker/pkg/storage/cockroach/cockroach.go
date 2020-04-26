@@ -30,9 +30,10 @@ CREATE TABLE  IF NOT EXISTS "$TOPIC" (
 	body_id STRING NOT NULL,
 	version INT NOT NULL,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC),
-	INDEX $TOPIC_index_ts (ts ASC),
-	INDEX $TOPIC_index_bucket (bucket_id ASC),
-	INDEX $TOPIC_index_consumerID (consumer_id ASC),    
+	/* used by GetAndLease */
+	INDEX $TOPIC_index_timeline_bucket (timeline, bucket_id ASC),
+	/*used by SelectByConsumerID */
+	INDEX $TOPIC_index_consumerID_bucket (consumer_id, bucket_id ASC),    
 	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
  	FAMILY mutable (timeline, consumer_id, version)
 );
@@ -210,10 +211,11 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 	//https://www.cockroachlabs.com/docs/v19.2/update.html#update-and-return-values
 	queryUpdate := strings.Replace(`UPDATE "$TOPIC" SET timeline = GREATEST($1, timeline) + $2, consumer_id = $3 WHERE 
 		( timeline <= $1 OR (timeline > $1 AND timeline <= $4 AND consumer_id = NULL )) 
-		AND bucket_id >= $5 AND bucket_id <= $6
-		LIMIT $7
+		AND bucket_id IN ($BUCKETS)
+		LIMIT $5
 		RETURNING id;
 	`, "$TOPIC", table(string(timelineID)), -1)
+	queryUpdate = strings.Replace(queryUpdate, "$BUCKETS", buckets.CSV(), 1)
 	//Note: the server will automatically do some retries https://www.cockroachlabs.com/docs/stable/transactions.html#automatic-retries
 
 	st, err := c.db.PrepareContext(ctx, queryUpdate)
@@ -223,14 +225,13 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 
 	consumerStr := *(*string)(unsafe.Pointer(&consumerId))
 	rows, err := st.Query(
-		dtime.TimeToMS(time.Now()), leaseMs, consumerStr, maxTimestamp, buckets.Min(), buckets.Max(), limit,
+		dtime.TimeToMS(time.Now()), leaseMs, consumerStr,
+		maxTimestamp, limit,
 		//TODO make the named parameter work :/ or file a bug report
 		//sql.Named("now", dtime.TimeToMS(time.Now())),
 		//sql.Named("lease", leaseMs),
 		//sql.Named("consumerid", []byte(consumerId)),
 		//sql.Named("maxts", maxTimestamp),
-		//sql.Named("bmin", buckets.Min()),
-		//sql.Named("bmax", buckets.Max()),
 		//sql.Named("limit", limit),
 	)
 	if err != nil {
