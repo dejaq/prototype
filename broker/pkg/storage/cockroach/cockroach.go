@@ -27,30 +27,26 @@ CREATE TABLE  IF NOT EXISTS "$TOPIC" (
 	ts INT NOT NULL,
 	producer_group_id STRING NOT NULL,
 	consumer_id STRING,
-	body_id STRING NOT NULL,
+	body STRING,
 	version INT NOT NULL,
 	CONSTRAINT "primary" PRIMARY KEY (id ASC),
 	/* used by GetAndLease */
 	INDEX $TOPIC_index_timeline_bucket (timeline, bucket_id ASC),
 	/*used by SelectByConsumerID */
 	INDEX $TOPIC_index_consumerID_bucket (consumer_id, bucket_id ASC),    
-	FAMILY stable (id, ts, bucket_id, producer_group_id, body_id),  
+	FAMILY stable (id, ts, bucket_id, producer_group_id, body),  
  	FAMILY mutable (timeline, consumer_id, version)
 );
-
-CREATE TABLE IF NOT EXISTS "$BODY"  (
-	id STRING NOT NULL,
-	body STRING,
-	CONSTRAINT "primary" PRIMARY KEY (id ASC)
-);
 `
-) //https://www.cockroachlabs.com/docs/stable/foreign-key.html
+)
 
 var _ = storageTimeline.Repository(&CRClient{})
 
 type CRClient struct {
-	db     *sql.DB
-	logger logrus.FieldLogger
+	db                 *sql.DB
+	logger             logrus.FieldLogger
+	InsertBatchMaxSize int
+	DeleteBatchMaxSize int
 }
 
 func New(db *sql.DB, logger logrus.FieldLogger) *CRClient {
@@ -60,14 +56,10 @@ func New(db *sql.DB, logger logrus.FieldLogger) *CRClient {
 func table(topicID string) string {
 	return fmt.Sprintf("dejaq_timeline_%s", topicID)
 }
-func tableBodies(topicID string) string {
-	return fmt.Sprintf("dejaq_timeline_%s_bodies", topicID)
-}
 
 func (c *CRClient) CreateTopic(ctx context.Context, timelineID string) error {
 	//table and column names cannot be prepared
 	replaced := strings.Replace(stmtTopic, "$TOPIC", table(timelineID), -1)
-	replaced = strings.Replace(replaced, "$BODY", tableBodies(timelineID), -1)
 	_, err := c.db.ExecContext(ctx, replaced)
 	if err != nil {
 		return c.externalErr(ctx, err, "createTopic")
@@ -84,7 +76,6 @@ func min(a, b int) int {
 }
 
 func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
-	batchSize := 25
 	var batch []timeline.InsertMessagesRequestItem
 	result := make(derrors.MessageIDTupleList, 0)
 
@@ -114,7 +105,7 @@ func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesReques
 	}
 
 	for len(messages) > 0 {
-		max := min(len(messages), batchSize)
+		max := min(len(messages), c.InsertBatchMaxSize)
 		batch = messages[:max]
 		messages = messages[max:]
 
@@ -131,7 +122,7 @@ func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesReques
 			"ts",
 			"timeline",
 			"producer_group_id",
-			"body_id",
+			"body",
 			"version"))
 		if err != nil {
 			addFailedBatch(err)
@@ -147,7 +138,7 @@ func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesReques
 				batch[i].TimestampMS,
 				batch[i].TimestampMS,
 				req.GetProducerGroupID(),
-				batch[i].GetID(), //body_id same as msg_id
+				batch[i].Body,
 				batch[i].Version)
 			if err != nil {
 				failedSt = true
@@ -161,36 +152,6 @@ func (c *CRClient) Insert(ctx context.Context, req timeline.InsertMessagesReques
 			continue
 		}
 		err = stmt.Close()
-		if err != nil {
-			addFailedBatch(err)
-			txn.Rollback()
-			continue
-		}
-
-		stmtBodies, err := txn.PrepareContext(ctx, pq.CopyIn(tableBodies(req.GetTimelineID()), "id", "body"))
-		if err != nil {
-			addFailedBatch(err)
-			txn.Rollback()
-			continue
-		}
-		for i := range batch {
-			_, err = stmtBodies.Exec(
-				batch[i].GetID(),
-				//TODO check if we can use RawBytes to remove memory allocations on the driver side
-				batch[i].GetBody())
-			if err != nil {
-				failedSt = true
-				break
-			}
-		}
-
-		if failedSt {
-			addFailedBatch(err)
-			txn.Rollback()
-			continue
-		}
-
-		err = stmtBodies.Close()
 		if err != nil {
 			addFailedBatch(err)
 			txn.Rollback()
@@ -267,9 +228,9 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 
 	//TODO Prepare does notwork in IN statements, do a manual escape for sql injections
 	querySelect := fmt.Sprintf(`SELECT 
-		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id, topic.version, bodies.body
-		FROM "%s" AS topic INNER JOIN "%s" AS bodies ON bodies.id = topic.body_id WHERE topic.id IN (%s);`,
-		table(string(timelineID)), tableBodies(string(timelineID)), strings.Join(params, ","))
+		topic.id, topic.timeline, topic.bucket_id, topic.ts, topic.producer_group_id, topic.version, topic.body
+		FROM "%s" AS topic WHERE topic.id IN (%s);`,
+		table(string(timelineID)), strings.Join(params, ","))
 
 	sel, err := c.db.PrepareContext(ctx, querySelect)
 	if err != nil {
@@ -315,7 +276,6 @@ func (c *CRClient) GetAndLease(ctx context.Context, timelineID []byte, buckets d
 }
 
 func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessagesRequest) error {
-	batchSize := 25
 	var batch []string
 	result := make(derrors.MessageIDTupleList, 0)
 	ids := make([]string, len(request.Messages))
@@ -344,7 +304,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessagesRe
 	}
 
 	for len(ids) > 0 {
-		max := min(len(ids), batchSize)
+		max := min(len(ids), c.DeleteBatchMaxSize)
 		batch = ids[:max]
 		ids = ids[max:]
 
@@ -357,7 +317,7 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessagesRe
 		}
 		//the same queries works for bodies as well
 
-		//TODO Prepare does notwork in IN statements, do a manual escape for sql injections
+		//TODO Prepare does not work in IN statements, do a manual escape for sql injections
 		queryPattern := fmt.Sprintf(`DELETE FROM "$TABLE" WHERE id IN (%s) LIMIT %d RETURNING NOTHING;`, strings.Join(params, ","), len(batch))
 
 		//args := make([]interface{}, len(batch))
@@ -386,21 +346,6 @@ func (c *CRClient) Delete(ctx context.Context, request timeline.DeleteMessagesRe
 			continue
 		}
 
-		query = strings.Replace(queryPattern, "$TABLE", tableBodies(request.GetTimelineID()), -1)
-		stmt, err = txn.PrepareContext(ctx, query)
-		if err != nil {
-			c.logger.Debugf(query)
-			failBatch(err)
-			txn.Rollback()
-			continue
-		}
-		_, err = stmt.ExecContext(ctx, idsAsText...)
-		if err != nil {
-			c.logger.Debugf(query)
-			failBatch(err)
-			txn.Rollback()
-			continue
-		}
 		err = txn.Commit()
 		if err != nil {
 			failBatch(err)

@@ -17,9 +17,9 @@ import (
 )
 
 var (
-	metricMessagesCounter = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
-	metricTopicLeasesCounter    = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
-	metricTopicLeasesErrors = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
+	metricMessagesCounter    = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
+	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
+	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
 )
 
 type LoaderConfig struct {
@@ -27,6 +27,7 @@ type LoaderConfig struct {
 	PrefetchMaxMilliseconds uint64
 	Topic                   *timeline.Topic
 	Timers                  LoaderTimerConfig
+	MaxBatchSize            int
 }
 
 // Loader is in charge of pushing the messages to all active consumers.
@@ -114,7 +115,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 			}()
 
 			tuple.C.SetHydrateStatus(protocol.Hydration_InProgress)
-			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, 100, tuple)
+			msgsSent, err := c.hydrateOneConsumer(newHydrateCtx, c.conf.MaxBatchSize, tuple)
 			if err != nil {
 				logrus.Error(err)
 				return
@@ -144,7 +145,7 @@ func (c *Loader) loadMessages(ctx context.Context) bool {
 			go func(tuple *ConsumerPipelineTuple) {
 				defer wg.Done()
 
-				msgsSent, sentAllMessages, err := c.loadOneConsumer(ctx, 100, tuple)
+				msgsSent, sentAllMessages, err := c.loadOneConsumer(ctx, c.conf.MaxBatchSize, tuple)
 				//fmt.Printf("Loader sent: %d\n", msgsSent)
 				if err != nil {
 					logrus.WithError(err).Error("loadOneConsumer failed")

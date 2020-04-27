@@ -2,10 +2,11 @@ package carrier
 
 import (
 	"context"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
@@ -21,8 +22,8 @@ import (
 
 var (
 	metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
-	metricTopicCommandsErrors = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
-	metricTopicMessagesErrors = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
+	metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
+	metricTopicMessagesErrors  = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
 )
 
 var (
@@ -53,6 +54,7 @@ type Coordinator struct {
 }
 
 type Config struct {
+	LoaderMaxBatchSize int
 }
 
 func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, catalog synchronization.Catalog, greeter *Greeter, dealer Dealer) *Coordinator {
@@ -143,12 +145,13 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 		c.loaders[consumer.GetTopic()] = NewLoader(&LoaderConfig{
 			PrefetchMaxNoMsgs:       1000,
 			PrefetchMaxMilliseconds: 0,
-			Topic: &topic.Topic,
+			Topic:                   &topic.Topic,
 			Timers: LoaderTimerConfig{
 				Min:  time.Millisecond * 5,
 				Max:  time.Millisecond * 200,
 				Step: time.Millisecond * 25,
 			},
+			MaxBatchSize: c.conf.LoaderMaxBatchSize,
 		}, c.storage, c.dealer, c.greeter)
 		c.loaders[consumer.GetTopic()].Start(c.baseCtx)
 		logrus.Infof("started consumer loader for topic: %s", consumer.GetTopic())
@@ -213,32 +216,32 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 
 	err := c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
-		metricTopicCommandsErrors.With(prometheus.Labels{"operation":"create", "topic":topic}).Inc()
+		metricTopicCommandsErrors.With(prometheus.Labels{"operation": "create", "topic": topic}).Inc()
 		return errors.Wrap(err, "catalog failed")
 	}
 
 	err = c.storage.CreateTopic(ctx, topic)
 	if err != nil {
-		metricTopicCommandsErrors.With(prometheus.Labels{"operation":"create", "topic":topic}).Inc()
+		metricTopicCommandsErrors.With(prometheus.Labels{"operation": "create", "topic": topic}).Inc()
 		return errors.Wrap(err, "storage failed")
 	}
-	metricTopicCommandsCounter.With(prometheus.Labels{"operation":"create"}).Inc()
+	metricTopicCommandsCounter.With(prometheus.Labels{"operation": "create"}).Inc()
 	return nil
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	topic, err := c.catalog.GetTopic(ctx, req.GetTimelineID())
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"create", "topic":req.GetTimelineID()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Inc()
 		return err
 	}
 	for i := range req.Messages {
 		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
 	}
-	metricMessagesCounter.With(prometheus.Labels{"operation":"create", "topic": req.GetTimelineID()}).Add(float64(len(req.Messages)))
+	metricMessagesCounter.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Add(float64(len(req.Messages)))
 	err = c.storage.Insert(ctx, req)
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"create", "topic":req.GetTimelineID()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Inc()
 	}
 	return err
 }
@@ -252,13 +255,13 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 		req.CallerType = timeline.DeleteCallerProducer
 		req.CallerID = producer.GroupID
 	} else {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"delete", "topic":req.GetTimelineID()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "delete", "topic": req.GetTimelineID()}).Inc()
 		return ErrUnknownDeleteRequester
 	}
 
 	err := c.storage.Delete(ctx, req)
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"delete", "topic":req.GetTimelineID()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "delete", "topic": req.GetTimelineID()}).Inc()
 	}
 	return err
 }

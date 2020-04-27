@@ -39,6 +39,9 @@ type Config struct {
 	// used to connect to redis or cockroach
 	StorageHost string `env:"STORAGE_HOST"`
 
+	//max no of messages for insert and delete
+	CockroachMaxBatchSize int `env:"STORAGE_CRDB_MAXBATCH_COUNT" env-default:"10"`
+
 	// max amount of concurrent GRPC streams
 	MaxConnectionsLimit int `env:"CONNECTIONS_LIMIT" env-default:"1000"`
 	// timeout for a GRPC idle connection
@@ -46,5 +49,7 @@ type Config struct {
 
 	// after this timeout the process will close automatically
 	TimeoutDuration string `env:"TIMEOUT"`
+	//max amount of leases to be fetched from the DB and sent to a consumer
+	LoaderMaxBatchSize int `env:"LOADER_MAX_BATCH_SIZE" env-default:"100"`
 }
 ```
