@@ -39,6 +39,7 @@ var (
 )
 
 type Memory struct {
+	mu             sync.Mutex
 	topics         map[string]topic
 	catalog        synchronization.Catalog
 	deleteReqCount atomic.Int64
@@ -79,6 +80,9 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	if bucketCount < 1 {
 		return ErrBucketCountLessThanOne
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if _, ok := m.topics[timelineID]; ok {
 		return ErrTopicAlreadyExists
 	}
@@ -266,7 +270,7 @@ func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 
 func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesRequest) []derrors.MessageIDTuple {
 	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
-	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
+	//fmt.Printf("-- Requested messages to delete %d\n", mu.deleteReqCount)
 
 	stringTimelineID := string(deleteMessages.TimelineID)
 	var errs []derrors.MessageIDTuple
