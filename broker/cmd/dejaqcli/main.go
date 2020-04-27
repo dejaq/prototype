@@ -274,7 +274,10 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 		if err != nil {
 			return fmt.Errorf("error connecting to the database: %w", err)
 		}
-		storageClient = cockroach.New(db, logger)
+		crClient := cockroach.New(db, logger)
+		crClient.DeleteBatchMaxSize = 10
+		crClient.InsertBatchMaxSize = 10
+		storageClient = crClient
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -294,7 +297,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 		grpc.ConnectionTimeout(time.Second*120),
 		grpc.MaxConcurrentStreams(uint32(cfg.TopicCount*(cfg.ConsumersPerTopic+cfg.ProducersPerTopic))))
 	grpServer := carrier.NewGRPCServer(nil)
-	coordinatorConfig := carrier.Config{}
+	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: 35}
 	dealer := carrier.NewExclusiveDealer()
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
@@ -347,7 +350,7 @@ func runProducers(ctx context.Context, client brokerClient.Client, logger logrus
 				BatchMaxCount:          config.batchSize,
 				EventTimelineMinDelta:  config.produceDeltaMin,
 				EventTimelineMaxDelta:  config.produceDeltaMax,
-				BodySizeBytes:          14 * 1024,
+				BodySizeBytes:          2 * 1024,
 				DeterministicEventID:   true,
 			}
 

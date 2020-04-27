@@ -39,6 +39,9 @@ type Config struct {
 	// used to connect to redis or cockroach
 	StorageHost string `env:"STORAGE_HOST"`
 
+	//max no of messages for insert and delete
+	CockroachMaxBatchSize int `env:"STORAGE_CRDB_MAXBATCH_COUNT" env-default:"10"`
+
 	// max amount of concurrent GRPC streams
 	MaxConnectionsLimit int `env:"CONNECTIONS_LIMIT" env-default:"1000"`
 	// timeout for a GRPC idle connection
@@ -46,6 +49,8 @@ type Config struct {
 
 	// after this timeout the process will close automatically
 	TimeoutDuration string `env:"TIMEOUT"`
+	//max amount of leases to be fetched from the DB and sent to a consumer
+	LoaderMaxBatchSize int `env:"LOADER_MAX_BATCH_SIZE" env-default:"100"`
 }
 
 func (c *Config) durationConnectionTimeout() time.Duration {
@@ -79,6 +84,12 @@ func (c *Config) IsValid() error {
 		}
 	}
 
+	if c.LoaderMaxBatchSize < 1 {
+		c.LoaderMaxBatchSize = 100
+	}
+	if c.CockroachMaxBatchSize < 1 {
+		c.CockroachMaxBatchSize = 10
+	}
 	return nil
 }
 
@@ -119,7 +130,7 @@ func main() {
 		grpc.MaxConcurrentStreams(uint32(c.MaxConnectionsLimit)),
 	)
 	grpServer := carrier.NewGRPCServer(nil)
-	coordinatorConfig := carrier.Config{}
+	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: c.LoaderMaxBatchSize}
 	dealer := carrier.NewExclusiveDealer()
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storage, catalog, greeter, dealer)
 	supervisor.AttachToServer(grpServer)
@@ -175,7 +186,11 @@ func NewStorage(ctx context.Context, config *Config, catalog *overseer.Catalog, 
 				db.Close()
 			}
 		}()
-		return cockroach.New(db, logger), nil
+
+		crClient := cockroach.New(db, logger)
+		crClient.DeleteBatchMaxSize = config.CockroachMaxBatchSize
+		crClient.InsertBatchMaxSize = config.CockroachMaxBatchSize
+		return crClient, nil
 	default:
 		return nil, errors.New("unknown storage")
 	}

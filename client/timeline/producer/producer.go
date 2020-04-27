@@ -2,10 +2,11 @@ package producer
 
 import (
 	"context"
-	"github.com/dejaq/prototype/common/metrics/exporter"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"sync"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/prometheus/client_golang/prometheus"
 
 	derror "github.com/dejaq/prototype/common/errors"
 	"github.com/dejaq/prototype/common/timeline"
@@ -17,7 +18,7 @@ import (
 
 var (
 	metricTopicMessagesCounter = exporter.GetProducerCounter("topic_messages_count", []string{"operation", "topic"})
-	metricTopicMessagesErrors = exporter.GetProducerCounter("topic_messages_errors", []string{"operation", "topic"})
+	metricTopicMessagesErrors  = exporter.GetProducerCounter("topic_messages_errors", []string{"operation", "topic"})
 )
 
 type Config struct {
@@ -112,22 +113,22 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		err = stream.Send(builder)
 		//TODO if err is invalid/expired sessionID do a handshake automatically
 		if err != nil {
-			metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
+			metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
 			return errors.Wrap(err, "failed stream")
 		}
 	}
 
 	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
 		return errors.Wrap(err, "failed to send the events")
 	}
 	err = derror.ParseTimelineResponse(response)
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Inc()
+		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
 		return err
 	}
-	metricTopicMessagesCounter.With(prometheus.Labels{"operation":"insert", "topic":c.GetTopic()}).Add(float64(len(msgs)))
+	metricTopicMessagesCounter.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Add(float64(len(msgs)))
 	return nil
 }
 

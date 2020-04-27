@@ -30,6 +30,7 @@ services:
     environment:
       STORAGE_TYPE: "cockroach"
       STORAGE_HOST: "crdb1:26257"
+      LOADER_MAX_BATCH_SIZE: 35
   producer1:
     environment:
       #for now CRDB is very slow
