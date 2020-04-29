@@ -101,6 +101,9 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	errs := make(derrors.MessageIDTupleList, 0)
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// check if topic exists
 	if _, ok := m.topics[req.GetTimelineID()]; !ok {
 		var derror derrors.Dejaror
