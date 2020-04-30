@@ -40,7 +40,7 @@ var (
 
 type Memory struct {
 	mu             sync.Mutex
-	topics         map[string]topic
+	topics         map[string]*topic
 	catalog        synchronization.Catalog
 	deleteReqCount atomic.Int64
 }
@@ -64,12 +64,12 @@ type message struct {
 
 func New(catalog synchronization.Catalog) *Memory {
 	return &Memory{
-		topics:  make(map[string]topic),
+		topics:  make(map[string]*topic),
 		catalog: catalog,
 	}
 }
 
-func (m *Memory) getTopic(timelineID string) (topic, bool) {
+func (m *Memory) getTopic(timelineID string) (*topic, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,7 +98,7 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	for i := 0; i < int(bucketCount); i++ {
 		buckets = append(buckets, bucket{})
 	}
-	m.topics[timelineID] = topic{
+	m.topics[timelineID] = &topic{
 		id:      timelineID,
 		buckets: buckets,
 	}
@@ -408,11 +408,6 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesReques
 		// delete message
 		bucket.messages = removeMessage(bucket.messages, indexToDelete)
 		bucket.m.Unlock()
-
-		//fmt.Printf("Delete message: %s from: %d\n",
-		//	deleteMessage.MsgID,
-		//	len(bucket.messages),
-		//)
 	}
 
 	return errs
