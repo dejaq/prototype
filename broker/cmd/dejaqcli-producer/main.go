@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
+	"sync"
 	"time"
 
 	"github.com/dejaq/prototype/common/metrics/exporter"
@@ -50,6 +52,9 @@ type Config struct {
 	//set MinDelta > 0 to have all of them in the future
 	EventTimelineMinDelta string `env:"EVENT_TIME_MIN_DELTA" env-default:"3s"`
 	EventTimelineMaxDelta string `env:"EVENT_TIME_MAX_DELTA" env-default:"0s"`
+
+	// number of concurrent consumers
+	Workers int `env:"WORKERS_COUNT" env-default:"1"`
 
 	// messages will have a deterministic ID for debuging purposes
 	DeterministicEventID bool `env:"DETERMINISTIC_ID"`
@@ -101,6 +106,14 @@ func (c *Config) IsValid() error {
 
 	if c.OverseerSeed == "" || c.Topic == "" || c.ProducerGroup == "" {
 		return errors.New("topic, overseerSeed and producer groups are mandatory values")
+	}
+
+	if c.Workers < 1 {
+		c.Workers = 1
+	}
+	cores := runtime.GOMAXPROCS(-1)
+	if c.Workers > cores {
+		logrus.Warnf("there will be more consumers than CPUs workers=%d cpus=%d", c.Workers, cores)
 	}
 	return nil
 }
@@ -176,43 +189,53 @@ func main() {
 		return
 	}
 
-	p := client.NewProducer(&producer.Config{
-		Cluster:         "",
-		Topic:           c.Topic,
-		ProducerGroupID: c.ProducerGroup,
-		ProducerID:      c.ProducerGroup + "_singleton",
-	})
-	err = p.Handshake(ctx)
-	if err != nil {
-		logger.WithError(err).Fatal("cannot handshake")
-	}
+	wg := sync.WaitGroup{}
+	wg.Add(c.Workers)
 
-	logger.Infof("strategy: %s", c.strategy.String())
-	pc := sync_produce.SyncProduceConfig{
-		Strategy:                      c.strategy,
-		SingleBurstEventsCount:        c.SingleBurstEventsCount,
-		ConstantBurstsTickDuration:    c.durationConstantBursts(),
-		ConstantBurstsTickEventsCount: c.ConstantBurstsTickEventsCount,
-		BatchMaxCount:                 c.BatchMaxCount,
-		BatchMaxBytesSize:             c.BodySizeBytes,
-		EventTimelineMinDelta:         c.durationMinDelta(),
-		EventTimelineMaxDelta:         c.durationMaxDelta(),
-		BodySizeBytes:                 c.BodySizeBytes,
-		DeterministicEventID:          c.DeterministicEventID,
+	for i := 0; i < c.Workers; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			p := client.NewProducer(&producer.Config{
+				Cluster:         "",
+				Topic:           c.Topic,
+				ProducerGroupID: c.ProducerGroup,
+				ProducerID:      c.ProducerGroup + "_singleton",
+			})
+			err = p.Handshake(ctx)
+			if err != nil {
+				logger.WithError(err).Fatal("cannot handshake")
+			}
+
+			logger.Infof("strategy: %s", c.strategy.String())
+			pc := sync_produce.SyncProduceConfig{
+				Strategy:                      c.strategy,
+				SingleBurstEventsCount:        c.SingleBurstEventsCount,
+				ConstantBurstsTickDuration:    c.durationConstantBursts(),
+				ConstantBurstsTickEventsCount: c.ConstantBurstsTickEventsCount,
+				BatchMaxCount:                 c.BatchMaxCount,
+				BatchMaxBytesSize:             c.BodySizeBytes,
+				EventTimelineMinDelta:         c.durationMinDelta(),
+				EventTimelineMaxDelta:         c.durationMaxDelta(),
+				BodySizeBytes:                 c.BodySizeBytes,
+				DeterministicEventID:          c.DeterministicEventID,
+			}
+			err = sync_produce.Produce(ctx, &pc, p, logger)
+			if err != nil {
+				switch v := err.(type) {
+				case derror.MessageIDTupleList:
+					for _, ve := range v {
+						logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
+					}
+				default:
+					logger.Error(err.Error())
+				}
+			}
+		}(i)
 	}
 
 	go func() {
-		err = sync_produce.Produce(ctx, &pc, p, logger)
-		if err != nil {
-			switch v := err.(type) {
-			case derror.MessageIDTupleList:
-				for _, ve := range v {
-					logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
-				}
-			default:
-				logger.Error(err.Error())
-			}
-		}
+		wg.Wait()
 		shutdownEverything() //propagate trough the context
 	}()
 

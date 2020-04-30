@@ -6,16 +6,19 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
+	"sync"
 	"time"
 
-	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/dejaq/prototype/client/timeline/consumer"
 
 	derror "github.com/dejaq/prototype/common/errors"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	"github.com/ilyakaznacheev/cleanenv"
 
 	"github.com/dejaq/prototype/client/satellite"
-	"github.com/dejaq/prototype/client/timeline/consumer"
 	"github.com/dejaq/prototype/client/timeline/sync_consume"
 	"github.com/sirupsen/logrus"
 )
@@ -42,6 +45,8 @@ type Config struct {
 	// If false the messages will be served to another consumer after this ones lease expires
 	DeleteMessages          bool `env:"DELETE_MESSAGES" env-default:"true"`
 	DeleteMessagesBatchSize int  `env:"DELETE_MESSAGES_BATCH_SIZE" env-default:"100"`
+	// number of concurrent consumers
+	Workers int `env:"WORKERS_COUNT" env-default:"1"`
 
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
@@ -76,6 +81,13 @@ func (c *Config) IsValid() error {
 	}
 	if c.strategy == sync_consume.StrategyStopAfter && c.DeleteMessagesBatchSize > 1 {
 		return errors.New("DELETE_MESSAGES_BATCH_SIZE must be 1 for  STOP AFTER strategy")
+	}
+	if c.Workers < 1 {
+		c.Workers = 1
+	}
+	cores := runtime.GOMAXPROCS(-1)
+	if c.Workers > cores {
+		logrus.Warnf("there will be more consumers than CPUs workers=%d cpus=%d", c.Workers, cores)
 	}
 	return nil
 }
@@ -132,46 +144,57 @@ func main() {
 		logger.Fatal("The connection to the broker cannot be established in time.")
 	}
 
-	cons := client.NewConsumer(&consumer.Config{
-		ConsumerID:             c.ConsumerID,
-		Topic:                  c.Topic,
-		Cluster:                "",
-		MaxBufferSize:          int64(c.MaxBufferSize),
-		LeaseDuration:          c.durationLease(),
-		UpdatePreloadStatsTick: c.durationPreloadStatsTick(),
-	})
-	err = cons.Handshake(ctx)
-	if err != nil {
-		logger.WithError(err).Fatal("cannot handshake")
-	}
+	wg := sync.WaitGroup{}
+	wg.Add(c.Workers)
 
-	logger.Infof("strategy: %s", c.strategy.String())
-	cc := sync_consume.SyncConsumeConfig{
-		Strategy:        c.strategy,
-		StopAfterCount:  c.StopAfterCount,
-		DeleteMessages:  c.DeleteMessages,
-		DecreaseCounter: nil,
-		DeleteBatchSize: c.DeleteMessagesBatchSize,
+	for i := 0; i < c.Workers; i++ {
+		go func(id int) {
+			defer wg.Done()
+
+			cons := client.NewConsumer(&consumer.Config{
+				ConsumerID:             fmt.Sprintf("%s_%d", c.ConsumerID, id),
+				Topic:                  c.Topic,
+				Cluster:                "",
+				MaxBufferSize:          int64(c.MaxBufferSize),
+				LeaseDuration:          c.durationLease(),
+				UpdatePreloadStatsTick: c.durationPreloadStatsTick(),
+			})
+			err = cons.Handshake(ctx)
+			if err != nil {
+				logger.WithError(err).Error("cannot handshake")
+				return
+			}
+
+			logger.Infof("strategy: %s", c.strategy.String())
+			cc := sync_consume.SyncConsumeConfig{
+				Strategy:        c.strategy,
+				StopAfterCount:  c.StopAfterCount,
+				DeleteMessages:  c.DeleteMessages,
+				DecreaseCounter: nil,
+				DeleteBatchSize: c.DeleteMessagesBatchSize,
+			}
+
+			result, err := sync_consume.Consume(ctx, logger, cons, &cc)
+			if err != nil {
+				// TODO check wat returns here
+				switch v := err.(type) {
+				case derror.MessageIDTupleList:
+					for _, ve := range v {
+						logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
+					}
+				default:
+					logger.Error(err.Error())
+				}
+				return
+			}
+
+			logger.Infof("received: %d avg round trip %s", result.Received, result.AvgMsgLatency.String())
+		}(i)
 	}
 
 	go func() {
-		defer shutdownEverything() //propagate trough the context
-
-		result, err := sync_consume.Consume(ctx, logger, cons, &cc)
-		if err != nil {
-			// TODO check wat returns here
-			switch v := err.(type) {
-			case derror.MessageIDTupleList:
-				for _, ve := range v {
-					logger.WithError(ve.MsgError).Errorf("message ID failed %s", string(ve.MsgID))
-				}
-			default:
-				logger.Error(err.Error())
-			}
-			return
-		}
-
-		logger.Infof("received: %d avg round trip %s", result.Received, result.AvgMsgLatency.String())
+		wg.Wait()
+		shutdownEverything() //propagate trough the context
 	}()
 
 	go func() {
