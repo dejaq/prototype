@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	derror "github.com/dejaq/prototype/common/errors"
 
@@ -118,7 +119,7 @@ func main() {
 		Cluster:        "",
 		OverseersSeeds: []string{c.OverseerSeed},
 	}
-	client, err := satellite.NewClient(ctx, logger, &clientConfig)
+	client, err := satellite.New(ctx, logger, &clientConfig)
 	if err != nil {
 		logger.WithError(err).Fatal("brokerClient")
 	}

@@ -146,7 +146,7 @@ func main() {
 		Cluster:        "",
 		OverseersSeeds: []string{c.OverseerSeed},
 	}
-	client, err := satellite.NewClient(ctx, logger, &clientConfig)
+	client, err := satellite.New(ctx, logger, &clientConfig)
 	if err != nil {
 		logger.WithError(err).Fatal("brokerClient")
 	}

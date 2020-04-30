@@ -122,7 +122,7 @@ func run() {
 	wg := sync.WaitGroup{}
 	for topicIndex := 0; topicIndex < cfg.TopicCount; topicIndex++ {
 		//each topic has its own gRPC client, producers and consumers
-		client, err := satellite.NewClient(ctx, logger, &clientConfig)
+		client, err := satellite.New(ctx, logger, &clientConfig)
 		if err != nil {
 			logger.WithError(err).Fatal("brokerClient")
 		}

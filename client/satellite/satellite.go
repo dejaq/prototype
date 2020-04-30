@@ -25,8 +25,16 @@ var _ = brokerClient.Client(&Satellite{})
 
 var ErrNoConnection = errors.New("no connections could be made to any broker seed")
 
-// NewClient constructs a satellite. Cancel the provided context and all the connections, consumers and producers will close.
-func NewClient(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*Satellite, error) {
+func newConnection(seed string) (*grpc.ClientConn, error) {
+	return grpc.Dial(seed,
+		grpc.WithInsecure(),
+		grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
+		grpc.WithReadBufferSize(64*1024),
+		grpc.WithWriteBufferSize(64*1024))
+}
+
+// New constructs a satellite. Cancel the provided context and all the connections, consumers and producers will close.
+func New(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*Satellite, error) {
 	result := &Satellite{
 		logger: logger,
 		conf:   conf,
@@ -35,11 +43,7 @@ func NewClient(ctx context.Context, logger logrus.FieldLogger, conf *Config) (*S
 	result.baseCtx, result.closeEverything = context.WithCancel(ctx)
 
 	for _, seed := range conf.OverseersSeeds {
-		conn, err := grpc.Dial(seed,
-			grpc.WithInsecure(),
-			grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
-			grpc.WithReadBufferSize(64*1024),
-			grpc.WithWriteBufferSize(64*1024))
+		conn, err := newConnection(seed)
 		if err != nil || conn == nil {
 			logger.WithError(err).Errorf("Failed to connect to: %s", seed)
 			continue
@@ -76,14 +80,22 @@ func (s *Satellite) NewConsumer(conf *consumer.Config) *consumer.Consumer {
 	//TODO to find the carrier we have to call the overseer
 	//with the topic, and get a list of overseers and send them
 	//to the consumer
-	return consumer.NewConsumer(s.overseers[0], s.logger, s.conns[0], conf)
+
+	//each new consumer should have its own carrier connection
+	conn, _ := newConnection(s.conf.OverseersSeeds[0])
+
+	return consumer.NewConsumer(s.overseers[0], s.logger, conn, conf)
 }
 
 func (s *Satellite) NewProducer(conf *producer.Config) *producer.Producer {
 	//TODO to find the carrier we have to call the overseer
 	//with the topic, and get a list of overseers and send them
 	//to the producer
-	return producer.NewProducer(s.overseers[0], s.conns[0], conf)
+
+	//each new consumer should have its own carrier connection
+	conn, _ := newConnection(s.conf.OverseersSeeds[0])
+
+	return producer.NewProducer(s.overseers[0], conn, conf)
 }
 
 func (s *Satellite) Close() {
