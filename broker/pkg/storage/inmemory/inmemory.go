@@ -39,6 +39,7 @@ var (
 )
 
 type Memory struct {
+	mu             sync.Mutex
 	topics         map[string]topic
 	catalog        synchronization.Catalog
 	deleteReqCount atomic.Int64
@@ -68,6 +69,14 @@ func New(catalog synchronization.Catalog) *Memory {
 	}
 }
 
+func (m *Memory) getTopic(timelineID string) (topic, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	topic, ok := m.topics[timelineID]
+	return topic, ok
+}
+
 func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	if timelineID == "" {
 		return ErrInvalidTopicName
@@ -79,6 +88,9 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	if bucketCount < 1 {
 		return ErrBucketCountLessThanOne
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if _, ok := m.topics[timelineID]; ok {
 		return ErrTopicAlreadyExists
 	}
@@ -97,8 +109,10 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	errs := make(derrors.MessageIDTupleList, 0)
 
+	topic, ok := m.getTopic(req.GetTimelineID())
+
 	// check if topic exists
-	if _, ok := m.topics[req.GetTimelineID()]; !ok {
+	if !ok {
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "insert"
@@ -111,7 +125,7 @@ func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest)
 	// iterate over messages and insert them
 	for _, msg := range req.Messages {
 		// check if bucket exists
-		if len(m.topics[req.GetTimelineID()].buckets)-1 < int(msg.BucketID) {
+		if len(topic.buckets)-1 < int(msg.BucketID) {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "insert"
@@ -123,7 +137,7 @@ func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest)
 
 		// TODO maybe check more details about a message, like ID, BucketID, maybe all details
 		// insert message
-		bucket := &m.topics[req.GetTimelineID()].buckets[int(msg.BucketID)]
+		bucket := &topic.buckets[int(msg.BucketID)]
 
 		bucket.m.Lock()
 		// raise error if message with same id already exists
@@ -173,8 +187,10 @@ func (m *Memory) GetAndLease(
 	stringTimelineID := string(timelineID)
 	var results []timeline.Lease
 
+	topic, ok := m.getTopic(stringTimelineID)
+
 	// check if topic exists
-	if _, ok := m.topics[stringTimelineID]; !ok {
+	if !ok {
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "getAndLease"
@@ -197,7 +213,7 @@ func (m *Memory) GetAndLease(
 			return results, false, derror
 		}
 
-		bucket := &m.topics[stringTimelineID].buckets[int(bucketID)]
+		bucket := &topic.buckets[int(bucketID)]
 
 		// TODO issue, always will get messages from lower buckets which brake time priority, because of limit could not rich high priority messages
 		// get available messages
@@ -266,13 +282,15 @@ func (m *Memory) Delete(ctx context.Context, deleteMessages timeline.DeleteMessa
 
 func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesRequest) []derrors.MessageIDTuple {
 	m.deleteReqCount.Add(int64(len(deleteMessages.Messages)))
-	//fmt.Printf("-- Requested messages to delete %d\n", m.deleteReqCount)
+	//fmt.Printf("-- Requested messages to delete %d\n", mu.deleteReqCount)
 
 	stringTimelineID := string(deleteMessages.TimelineID)
 	var errs []derrors.MessageIDTuple
 
+	topic, ok := m.getTopic(stringTimelineID)
+
 	// check if topic exists
-	if _, ok := m.topics[stringTimelineID]; !ok {
+	if !ok {
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "delete"
@@ -284,7 +302,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesReques
 
 	for _, deleteMessage := range deleteMessages.Messages {
 		// check if bucket exists
-		if len(m.topics[stringTimelineID].buckets)-1 < int(deleteMessage.BucketID) {
+		if len(topic.buckets)-1 < int(deleteMessage.BucketID) {
 			var derror derrors.Dejaror
 			derror.Module = derrors.ModuleStorage
 			derror.Operation = "delete"
@@ -295,7 +313,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesReques
 		}
 
 		indexToDelete := -1
-		bucket := &m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)]
+		bucket := &topic.buckets[int(deleteMessage.BucketID)]
 		bucket.m.Lock()
 		for i, msg := range bucket.messages {
 			if !bytes.Equal(msg.data.ID, deleteMessage.MessageID) {
@@ -325,7 +343,7 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesReques
 			continue
 		}
 
-		msg := m.topics[stringTimelineID].buckets[int(deleteMessage.BucketID)].messages[indexToDelete]
+		msg := topic.buckets[int(deleteMessage.BucketID)].messages[indexToDelete]
 
 		// raise error if message does not belongs to consumer
 		if string(msg.data.LockConsumerID) != deleteMessages.CallerID {
