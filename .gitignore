@@ -2,3 +2,8 @@
 **/config.yaml
 /broker/cmd/base/config.yml
 /broker/cmd/dejaq-linux.zip
+
+# terraform
+**/*secrets.tf
+**/*.terraform*
+**/*terraform*
