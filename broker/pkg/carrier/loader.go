@@ -8,18 +8,10 @@ import (
 
 	"github.com/dejaq/prototype/broker/domain"
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
-	"github.com/dejaq/prototype/common/metrics/exporter"
 	"github.com/dejaq/prototype/common/protocol"
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	metricMessagesCounter    = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
-	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
-	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
 )
 
 type LoaderConfig struct {
@@ -191,18 +183,14 @@ func (c *Loader) hydrateOneConsumer(ctx context.Context, limit int, tuple *Consu
 	for hasMoreForThisBucket {
 		pushLeaseMessages, hasMoreForThisBucket, err = c.storage.SelectByConsumer(ctx, tuple.C.GetTopicAsBytes(), tuple.C.GetIDAsBytes(), fullRange, consumerLimit, dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 		if err != nil {
-			metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Inc()
 			return sent, err
 		}
 		if len(pushLeaseMessages) == 0 {
 			return sent, nil
 		}
 
-		metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Add(float64(len(pushLeaseMessages)))
-
 		batchSent, err := pushLeasesToPipeline(ctx, pushLeaseMessages, tuple)
 		if err != nil {
-			metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Inc()
 			return sent, err
 		}
 		sent += batchSent
@@ -235,18 +223,15 @@ func (c *Loader) loadOneConsumer(ctx context.Context, limit int, tuple *Consumer
 				dtime.TimeToMS(time.Now())+c.conf.PrefetchMaxMilliseconds)
 
 			if err != nil {
-				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Inc()
+				return sent, false, err
 			}
 			if len(pushLeaseMessages) == 0 {
 				break
 			}
 
-			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Add(float64(len(pushLeaseMessages)))
-
 			batchSent, err := pushLeasesToPipeline(ctx, pushLeaseMessages, tuple)
 			sent += batchSent
 			if err != nil {
-				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": tuple.C.GetTopic()}).Inc()
 				return sent, false, err
 			}
 			tuple.C.AddAvailableBufferSize(-uint32(len(pushLeaseMessages)))
