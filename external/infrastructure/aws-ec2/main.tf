@@ -21,7 +21,8 @@ resource "aws_key_pair" "dejaq" {
 
 resource "aws_default_vpc" "default" {
   tags = {
-    Name = "Default VPC"
+    name = "Default VPC"
+    project = "dejaq-test"
   }
 }
 
@@ -31,6 +32,9 @@ resource "aws_default_vpc" "default" {
 resource "aws_security_group" "ssh" {
   name = "ssh"
   description = "ingress for ssh on 22, egress for all"
+  tags = {
+    project = "dejaq-test"
+  }
   ingress {
     from_port = 22
     to_port = 22
@@ -48,6 +52,9 @@ resource "aws_security_group" "ssh" {
 resource "aws_security_group" "metrics" {
   name = "metrics"
   description = "ingress for metrics 2110, 2111, 2112"
+  tags = {
+    project = "dejaq-test"
+  }
   ingress {
     from_port = 2112
     to_port = 2112
@@ -70,6 +77,9 @@ resource "aws_security_group" "metrics" {
 resource "aws_security_group" "broker-grpc" {
   name = "broker-binding-address"
   description = "ingress on 9000 for broker grpc"
+  tags = {
+    project = "dejaq-test"
+  }
   ingress {
     from_port = 9000
     to_port = 9000
@@ -80,6 +90,9 @@ resource "aws_security_group" "broker-grpc" {
 resource "aws_security_group" "prometheus" {
   name = "prometheus"
   description = "ingress on 9090 for prometheus"
+  tags = {
+    project = "dejaq-test"
+  }
   ingress {
     from_port = 9090
     to_port = 9090
@@ -89,7 +102,7 @@ resource "aws_security_group" "prometheus" {
 }
 
 # --------------------------------------------
-# Instaces templates files
+# Ec2 templates files
 # --------------------------------------------
 data "template_file" "broker" {
   count = var.broker-count
