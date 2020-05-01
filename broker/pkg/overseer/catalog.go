@@ -25,7 +25,16 @@ func NewCatalog() *Catalog {
 		producers: make(map[string]synchronization.Producer),
 	}
 }
+func (c *Catalog) GetAllTopics(ctx context.Context) ([]synchronization.Topic, error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	result := make([]synchronization.Topic, 0, len(c.topics))
 
+	for _, topic := range c.topics {
+		result = append(result, topic)
+	}
+	return result, nil
+}
 func (c *Catalog) AddTopic(ctx context.Context, topic synchronization.Topic) error {
 	c.m.Lock()
 	defer c.m.Unlock()

@@ -351,6 +351,8 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 	metricsLabels := prometheus.Labels{"operation": "create"}
 	if producer != nil {
 		metricsLabels["topic"] = producer.Topic
+	} else {
+		metricsLabels["topic"] = ""
 	}
 	failedMsgs := len(messagesErrors)
 	if failedMsgs == 0 && replyError.Message != "" {

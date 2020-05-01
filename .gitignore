@@ -2,3 +2,4 @@
 **/config.yaml
 /broker/cmd/base/config.yml
 /broker/cmd/dejaq-linux.zip
+/external/aws/dejaq-linux.zip

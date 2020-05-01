@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/prometheus/client_golang/prometheus"
+
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	derrors "github.com/dejaq/prototype/common/errors"
@@ -13,7 +16,6 @@ import (
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 )
 
@@ -44,13 +46,14 @@ type Coordinator struct {
 	greeter      *Greeter
 	loadersMutex sync.Mutex
 	loaders      map[string]*Loader
+	logger       logrus.FieldLogger
 }
 
 type Config struct {
 	LoaderMaxBatchSize int
 }
 
-func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, catalog synchronization.Catalog, greeter *Greeter, dealer Dealer) *Coordinator {
+func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, catalog synchronization.Catalog, greeter *Greeter, dealer Dealer, logger logrus.FieldLogger) *Coordinator {
 	c := Coordinator{
 		baseCtx:      ctx,
 		conf:         config,
@@ -60,7 +63,10 @@ func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage
 		loadersMutex: sync.Mutex{},
 		loaders:      make(map[string]*Loader, 10),
 		dealer:       dealer,
+		logger:       logger,
 	}
+
+	go c.watchStorage()
 
 	return &c
 }
@@ -99,7 +105,6 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 	}
 	sessionID, err := c.greeter.ConsumerHandshake(consumer)
 	if err != nil {
-		log.Error(err)
 		return sessionID, err
 	}
 
@@ -114,7 +119,6 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 
 	err = c.catalog.AddConsumer(ctx, consumerSync)
 	if err != nil {
-		log.Error(err)
 		return sessionID, err
 	}
 
@@ -155,7 +159,6 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string) error {
 	consumer, err := c.greeter.GetConsumer(sessionID)
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 
@@ -176,7 +179,6 @@ func (c *Coordinator) consumerStatus(ctx context.Context, status protocol.Consum
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {
 	sessionID, err := c.greeter.ProducerHandshake(producer)
 	if err != nil {
-		log.Error(err)
 		return sessionID, err
 	}
 	producerSync := synchronization.Producer{
@@ -190,7 +192,6 @@ func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer)
 
 	err = c.catalog.AddProducer(ctx, producerSync)
 	if err != nil {
-		log.Error(err)
 		return sessionID, err
 	}
 	return sessionID, err
@@ -253,22 +254,22 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 func (c *Coordinator) watchStorage() {
 	t := time.NewTicker(time.Second)
 
-	metricTopicCOuntByStatus := exporter.GetBrokerCounter("topic_messages_count_by_status", []string{"status", "topic"})
+	metricTopicCountByStatus := exporter.GetBrokerCounter("topic_messages_count_by_status", []string{"status", "topic"})
 
 	for range t.C {
 		//this is the consumers lag basically
 		topics, err := c.catalog.GetAllTopics(c.baseCtx)
 		if err != nil {
-			//logrus.Logger.WithError(err).Error("failed fetching all topics")
+			c.logger.WithError(err).Error("failed fetching all topics")
 			continue
 		}
 		for _, t := range topics {
 			count, err := c.storage.CountByStatus(c.baseCtx, timeline.CountRequest{Type: timeline.StatusAvailable, TimelineID: t.ID})
 			if err != nil {
-				//logrus.logger.
+				c.logger.WithError(err).Error("failed c.storage.CountByStatus")
 				continue
 			}
-			metricTopicCOuntByStatus.With(prometheus.Labels{"status": "available", "topic": t.ID}).Add(float64(count))
+			metricTopicCountByStatus.With(prometheus.Labels{"status": "available", "topic": t.ID}).Add(float64(count))
 		}
 	}
 }
