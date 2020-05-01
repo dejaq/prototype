@@ -224,3 +224,7 @@ output "Consumer-Private-Ips" {
 output "Consumer-Public-Ips" {
   value = aws_instance.consumer.*.public_ip
 }
+
+output "Prometheus-Public-Ips" {
+  value = aws_instance.prometheus.public_ip
+}
