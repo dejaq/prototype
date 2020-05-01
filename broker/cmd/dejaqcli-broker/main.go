@@ -34,7 +34,7 @@ const (
 type Config struct {
 	//default listens on all interfaces, this is standard for containers
 	BindingAddress string `env:"BINDING_ADDRESS" env-default:"0.0.0.0:9000"`
-	// memory, redis or cockroach
+	// memory, redis or cockroach/
 	StorageType string `env:"STORAGE_TYPE" env-default:"memory"`
 	// used to connect to redis or cockroach
 	StorageHost string `env:"STORAGE_HOST"`
