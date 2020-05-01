@@ -15,7 +15,7 @@ resource "aws_key_pair" "dejaq" {
   key_name = "dejaq"
   public_key = var.public-key
   tags = {
-    project-dejaq = "dejaq-test"
+    project = "dejaq-test"
   }
 }
 
@@ -26,13 +26,11 @@ resource "aws_default_vpc" "default" {
 }
 
 # --------------------------------------------
-# SSH and Metrics
+# Security groups
 # --------------------------------------------
 resource "aws_security_group" "ssh-metrics" {
   name = "ssh-metrics"
   description = "allow ssh from outside and metrics"
-
-  # ssh from anyware
   ingress {
     from_port = 22
     to_port = 22
@@ -40,16 +38,24 @@ resource "aws_security_group" "ssh-metrics" {
     cidr_blocks = [
       "0.0.0.0/0"]
   }
-
-  # app metrics
   ingress {
     from_port = 2112
     to_port = 2112
     protocol = "tcp"
-    cidr_blocks = [
-      aws_default_vpc.default.cidr_block]
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
   }
-
+  ingress {
+    from_port = 2111
+    to_port = 2111
+    protocol = "tcp"
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
+  ingress {
+    from_port = 2110
+    to_port = 2110
+    protocol = "tcp"
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
   egress {
     from_port = 0
     to_port = 0
@@ -59,20 +65,14 @@ resource "aws_security_group" "ssh-metrics" {
   }
 }
 
-# --------------------------------------------
-# app binding address
-# --------------------------------------------
-resource "aws_security_group" "app-binding-addr" {
-  name = "app-binding-addr"
+resource "aws_security_group" "broker-grpc" {
+  name = "broker-binding-address"
   description = "allow access to app"
-
-  # app binding address
   ingress {
     from_port = 9000
     to_port = 9000
     protocol = "tcp"
-    cidr_blocks = [
-      aws_default_vpc.default.cidr_block]
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
   }
 }
 
@@ -109,9 +109,7 @@ resource "aws_instance" "broker" {
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [
-    aws_security_group.ssh-metrics.name,
-    aws_security_group.app-binding-addr.name]
+  security_groups = [aws_security_group.ssh-metrics.name, aws_security_group.broker-grpc.name]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.broker[count.index].rendered
@@ -127,8 +125,7 @@ resource "aws_instance" "producer" {
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [
-    aws_security_group.ssh-metrics.name]
+  security_groups = [aws_security_group.ssh-metrics.name]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.producer[count.index].rendered
@@ -144,8 +141,7 @@ resource "aws_instance" "consumer" {
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [
-    aws_security_group.ssh-metrics.name]
+  security_groups = [aws_security_group.ssh-metrics.name]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.consumer[count.index].rendered
