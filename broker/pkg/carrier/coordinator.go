@@ -248,3 +248,27 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 	err := c.storage.Delete(ctx, req)
 	return err
 }
+
+//TODO move this to its own component
+func (c *Coordinator) watchStorage() {
+	t := time.NewTicker(time.Second)
+
+	metricTopicCOuntByStatus := exporter.GetBrokerCounter("topic_messages_count_by_status", []string{"status", "topic"})
+
+	for range t.C {
+		//this is the consumers lag basically
+		topics, err := c.catalog.GetAllTopics(c.baseCtx)
+		if err != nil {
+			//logrus.Logger.WithError(err).Error("failed fetching all topics")
+			continue
+		}
+		for _, t := range topics {
+			count, err := c.storage.CountByStatus(c.baseCtx, timeline.CountRequest{Type: timeline.StatusAvailable, TimelineID: t.ID})
+			if err != nil {
+				//logrus.logger.
+				continue
+			}
+			metricTopicCOuntByStatus.With(prometheus.Labels{"status": "available", "topic": t.ID}).Add(float64(count))
+		}
+	}
+}

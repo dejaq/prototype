@@ -37,4 +37,5 @@ type Repository interface {
 	Delete(ctx context.Context, req timeline.DeleteMessagesRequest) error
 	// SelectByConsumer return consumer associated messages already leased
 	SelectByConsumer(ctx context.Context, timelineID []byte, consumerID []byte, buckets domain.BucketRange, limit int, maxTimestamp uint64) ([]timeline.Lease, bool, error)
+	CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error)
 }

@@ -271,6 +271,10 @@ func (w *Cassandra) GetMessagesCountByConsumerID(ctx context.Context, timeline s
 	return count, err
 }
 
+func (w *Cassandra) CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error) {
+	return 0, errors.New("not implemented")
+}
+
 //CREATE  KEYSPACE IF NOT EXISTS dejaq
 //WITH REPLICATION = {
 //'class' : 'SimpleStrategy', 'replication_factor' : 2 }

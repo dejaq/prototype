@@ -3,9 +3,13 @@ package cockroach
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
+
+	dtime "github.com/dejaq/prototype/common/time"
 
 	storageTimeline "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 
@@ -493,4 +497,41 @@ func (c *CRClient) externalErr(ctx context.Context, sql error, operation string)
 		ShouldRetry:      isTimeout,
 		ClientShouldSync: false,
 	}
+}
+
+func (c *CRClient) CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error) {
+	var query string
+
+	switch request.Type {
+	case timeline.StatusAvailable:
+		query = strings.Replace("SELECT COUNT(bucketid_msgid) FROM $TOPIC WHERE timeline <= $1", "$TOPIC", table(request.TimelineID), -1)
+	case timeline.StatusWaiting:
+		query = strings.Replace("SELECT COUNT(bucketid_msgid) FROM $TOPIC WHERE timeline > $1 AND consumer_id=NULL", "$TOPIC", table(request.TimelineID), -1)
+	case timeline.StatusProcessing:
+		query = strings.Replace("SELECT COUNT(bucketid_msgid) FROM $TOPIC WHERE timeline > $1 AND consumer_id != NULL", "$TOPIC", table(request.TimelineID), -1)
+	default:
+		return 0, errors.New("message status not implemented")
+	}
+
+	sel, err := c.db.PrepareContext(ctx, query)
+	if err != nil {
+		return 0, c.externalErr(ctx, err, "countbystatus")
+	}
+	rows, err := sel.Query(
+		dtime.TimeToMS(time.Now().UTC()), //$1
+	)
+	if err != nil || rows == nil {
+		return 0, c.externalErr(ctx, err, "countbystatus")
+	}
+
+	defer rows.Close()
+
+	//we only expect 1 row
+	for rows.Next() {
+		var result uint64
+		err = rows.Scan(&result)
+
+		return result, nil
+	}
+	return 0, derrors.Dejaror{Message: "count was empty"}
 }

@@ -495,6 +495,10 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 	return results, false, nil
 }
 
+func (c *Client) CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error) {
+	return 0, nil
+}
+
 func newLeaseMessage(msg timeline.Message) timeline.MessageLease {
 	return timeline.MessageLease{
 		ID:              msg.ID,
