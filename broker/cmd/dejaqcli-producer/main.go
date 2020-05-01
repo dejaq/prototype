@@ -200,7 +200,7 @@ func main() {
 				Cluster:         "",
 				Topic:           c.Topic,
 				ProducerGroupID: c.ProducerGroup,
-				ProducerID:      c.ProducerGroup + "_singleton",
+				ProducerID:      fmt.Sprintf("%s_%d", c.ProducerGroup, id),
 			})
 			err = p.Handshake(ctx)
 			if err != nil {

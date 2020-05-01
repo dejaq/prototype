@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dejaq/prototype/common/metrics/exporter"
-
 	storage "github.com/dejaq/prototype/broker/pkg/storage/timeline"
 	"github.com/dejaq/prototype/broker/pkg/synchronization"
 	derrors "github.com/dejaq/prototype/common/errors"
@@ -15,16 +13,11 @@ import (
 	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 )
 
-var (
-	metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
-	metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
-	metricTopicMessagesErrors  = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
-)
+var ()
 
 var (
 	ErrUnknownDeleteRequester = derrors.Dejaror{
@@ -128,7 +121,7 @@ func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer)
 	return sessionID, err
 }
 
-func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (chan timeline.Lease, error) {
+func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (*ConsumerPipelineTuple, error) {
 	//create the loader for it
 	consumer, err := c.greeter.GetConsumer(sessionID)
 	if err != nil {
@@ -216,32 +209,26 @@ func (c *Coordinator) createTopic(ctx context.Context, topic string, settings ti
 
 	err := c.catalog.AddTopic(ctx, syncTopic)
 	if err != nil {
-		metricTopicCommandsErrors.With(prometheus.Labels{"operation": "create", "topic": topic}).Inc()
 		return errors.Wrap(err, "catalog failed")
 	}
 
 	err = c.storage.CreateTopic(ctx, topic)
 	if err != nil {
-		metricTopicCommandsErrors.With(prometheus.Labels{"operation": "create", "topic": topic}).Inc()
 		return errors.Wrap(err, "storage failed")
 	}
-	metricTopicCommandsCounter.With(prometheus.Labels{"operation": "create"}).Inc()
 	return nil
 }
 
 func (c *Coordinator) listenerTimelineCreateMessages(ctx context.Context, req timeline.InsertMessagesRequest) error {
 	topic, err := c.catalog.GetTopic(ctx, req.GetTimelineID())
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Inc()
 		return err
 	}
 	for i := range req.Messages {
 		req.Messages[i].BucketID = uint16(rand.Intn(int(topic.Settings.BucketCount)))
 	}
-	metricMessagesCounter.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Add(float64(len(req.Messages)))
 	err = c.storage.Insert(ctx, req)
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "create", "topic": req.GetTimelineID()}).Inc()
 	}
 	return err
 }
@@ -255,13 +242,9 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 		req.CallerType = timeline.DeleteCallerProducer
 		req.CallerID = producer.GroupID
 	} else {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "delete", "topic": req.GetTimelineID()}).Inc()
 		return ErrUnknownDeleteRequester
 	}
 
 	err := c.storage.Delete(ctx, req)
-	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "delete", "topic": req.GetTimelineID()}).Inc()
-	}
 	return err
 }

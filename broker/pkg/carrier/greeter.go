@@ -126,7 +126,7 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	return sessionID, nil
 }
 
-func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.Lease, error) {
+func (s *Greeter) ConsumerConnected(sessionID string) (*ConsumerPipelineTuple, error) {
 	s.opMutex.Lock()
 	defer s.opMutex.Unlock()
 
@@ -141,7 +141,7 @@ func (s *Greeter) ConsumerConnected(sessionID string) (chan timeline.Lease, erro
 	s.consumerSessionsIDs[sessionID].SetHydrateStatus(protocol.Hydration_Requested)
 	s.consumerSessionIDsAndPipelines[sessionID].Pipeline = make(chan timeline.Lease) //not buffered!!!
 	s.consumerSessionIDsAndPipelines[sessionID].Connected = make(chan struct{})
-	return s.consumerSessionIDsAndPipelines[sessionID].Pipeline, nil
+	return s.consumerSessionIDsAndPipelines[sessionID], nil
 }
 
 func (s *Greeter) ConsumerDisconnected(sessionID string) {

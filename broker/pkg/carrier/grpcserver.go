@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
+
 	"github.com/dejaq/prototype/common/protocol"
 	"github.com/sirupsen/logrus"
 
@@ -19,7 +23,20 @@ import (
 
 var _ = grpc.BrokerServer(&GRPCServer{})
 
+var (
+	//metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
+	//metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
+
+	//count of messages that are created or removed
+	metricMessagesCounterSuccess = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
+	metricMessagesCounterError   = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
+	//number of leases (1 lease == 1 msg)
+	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
+	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
+)
+
 //TimelineListeners Coordinator can listen and react to these calls
+//TODO transform this in an interface!
 type TimelineListeners struct {
 	ProducerHandshake     func(context.Context, *Producer) (string, error)
 	CreateTimeline        func(context.Context, string, timeline.TopicSettings) error
@@ -29,7 +46,7 @@ type TimelineListeners struct {
 
 	ConsumerHandshake    func(context.Context, *Consumer) (string, error)
 	ConsumerStatus       func(context.Context, protocol.ConsumerStatus) error
-	ConsumerConnected    func(context.Context, string) (chan timeline.Lease, error)
+	ConsumerConnected    func(context.Context, string) (*ConsumerPipelineTuple, error)
 	ConsumerDisconnected func(context.Context, string) error
 
 	// Returns a Dejaror or a MessageIDTupleList (if only specific messages failed)
@@ -63,14 +80,17 @@ func (s *GRPCServer) TimelineProducerHandshake(ctx context.Context, req *grpc.Ti
 	p.ProducerID = string(req.ProducerID())
 
 	sessionID, err := s.listeners.ProducerHandshake(ctx, &p)
+	builder := flatbuffers.NewBuilder(128)
+	var errPosition flatbuffers.UOffsetT
 	if err != nil {
-		return nil, err
+		errPosition = writeError(err, builder)
 	}
 
-	builder := flatbuffers.NewBuilder(128)
 	sessionIDPos := builder.CreateString(sessionID)
 	grpc.TimelineProducerHandshakeResponseStart(builder)
-	//TODO transform err to gRPC error
+	if err != nil {
+		grpc.TimelineProducerHandshakeResponseAddErr(builder, errPosition)
+	}
 	grpc.TimelineProducerHandshakeResponseAddSessionID(builder, sessionIDPos)
 	root := grpc.TimelineProducerHandshakeResponseEnd(builder)
 	builder.Finish(root)
@@ -82,14 +102,17 @@ func (s *GRPCServer) TimelineConsumerHandshake(ctx context.Context, req *grpc.Ti
 	c := NewConsumer(req.ConsumerID(), string(req.TopicID()), string(req.Cluster()), req.LeaseTimeoutMS())
 
 	sessionID, err := s.listeners.ConsumerHandshake(ctx, c)
+	builder := flatbuffers.NewBuilder(128)
+	var errPosition flatbuffers.UOffsetT
 	if err != nil {
-		return nil, err
+		errPosition = writeError(err, builder)
 	}
 
-	builder := flatbuffers.NewBuilder(128)
 	sessionIDPos := builder.CreateString(sessionID)
 	grpc.TimelineConsumerHandshakeResponseStart(builder)
-	//TODO transform err to gRPC error
+	if err != nil {
+		grpc.TimelineProducerHandshakeResponseAddErr(builder, errPosition)
+	}
 	grpc.TimelineConsumerHandshakeResponseAddSessionID(builder, sessionIDPos)
 	root := grpc.TimelineConsumerHandshakeResponseEnd(builder)
 	builder.Finish(root)
@@ -145,7 +168,7 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 		return errors.New(msg)
 	}
 
-	pipeline, err := s.listeners.ConsumerConnected(stream.Context(), string(sessionID))
+	consumerTuple, err := s.listeners.ConsumerConnected(stream.Context(), string(sessionID))
 	if err != nil {
 		return err
 	}
@@ -160,7 +183,7 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case lease, ok := <-pipeline:
+		case lease, ok := <-consumerTuple.Pipeline:
 			if !ok {
 				return nil //channel closed
 			}
@@ -188,11 +211,12 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 			builder.Finish(rootPosition)
 			if err := stream.Send(builder); err != nil {
 				logrus.Errorf("loader failed: %s", err.Error())
+				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.topic}).Inc()
 				return err
 			}
+			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.topic}).Inc()
 		}
 	}
-	return nil
 }
 
 func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreateRequest) (*flatbuffers.Builder, error) {
@@ -226,7 +250,7 @@ func (s *GRPCServer) TimelineCreate(ctx context.Context, req *grpc.TimelineCreat
 		}
 	}
 
-	builder.Finish(writeError(derror, builder))
+	builder.Finish(writeDejaror(derror, builder))
 	return builder, nil
 }
 
@@ -324,6 +348,18 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 		}
 	}
 
+	metricsLabels := prometheus.Labels{"operation": "create"}
+	if producer != nil {
+		metricsLabels["topic"] = producer.Topic
+	}
+	failedMsgs := len(messagesErrors)
+	if failedMsgs == 0 && replyError.Message != "" {
+		//we presume all of them failed
+		failedMsgs = len(storageRequest.Messages)
+	}
+	metricMessagesCounterError.With(metricsLabels).Add(float64(len(messagesErrors)))
+	metricMessagesCounterSuccess.With(metricsLabels).Add(float64(len(storageRequest.Messages) - failedMsgs))
+
 	root := writeTimelineResponse(replyError, messagesErrors, builder)
 	builder.Finish(root)
 	err = stream.SendMsg(builder)
@@ -409,6 +445,18 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 		}
 	}
 
+	metricsLabels := prometheus.Labels{"operation": "delete"}
+	if storageRequest.TimelineID != "" {
+		metricsLabels["topic"] = storageRequest.TimelineID
+	}
+	failedMsgs := len(messagesErrors)
+	if failedMsgs == 0 && replyError.Message != "" {
+		//we presume all of them failed
+		failedMsgs = len(storageRequest.Messages)
+	}
+	metricMessagesCounterError.With(metricsLabels).Add(float64(len(messagesErrors)))
+	metricMessagesCounterSuccess.With(metricsLabels).Add(float64(len(storageRequest.Messages) - failedMsgs))
+
 	rootPosition := writeTimelineResponse(replyError, messagesErrors, builder)
 	builder.Finish(rootPosition)
 	return stream.SendAndClose(builder)
@@ -422,7 +470,7 @@ func writeTimelineResponse(mainError derrors.Dejaror, msgIndividualErrors []derr
 	if len(msgIndividualErrors) > 0 {
 		eachErrorOffset := make([]flatbuffers.UOffsetT, len(msgIndividualErrors))
 		for i := range msgIndividualErrors {
-			tupleError := writeError(msgIndividualErrors[i].MsgError, builder)
+			tupleError := writeDejaror(msgIndividualErrors[i].MsgError, builder)
 			messageIDRoot := builder.CreateByteVector(msgIndividualErrors[i].MsgID)
 			grpc.TimelineMessageIDErrorTupleStart(builder)
 			grpc.TimelineMessageIDErrorTupleAddMessgeID(builder, messageIDRoot)
@@ -439,7 +487,7 @@ func writeTimelineResponse(mainError derrors.Dejaror, msgIndividualErrors []derr
 	}
 
 	if mainError.Message != "" {
-		tmp := writeError(mainError, builder)
+		tmp := writeDejaror(mainError, builder)
 		rootMainErr = &tmp
 	}
 
@@ -453,7 +501,20 @@ func writeTimelineResponse(mainError derrors.Dejaror, msgIndividualErrors []derr
 	return grpc.TimelineResponseEnd(builder)
 }
 
-func writeError(err derrors.Dejaror, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func writeError(err error, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	var derr derrors.Dejaror
+	switch v := err.(type) {
+	case derrors.Dejaror:
+		derr = v
+	default:
+		derr = derrors.Dejaror{
+			Severity: derrors.SeverityError,
+			Message:  v.Error(),
+		}
+	}
+	return writeError(derr, builder)
+}
+func writeDejaror(err derrors.Dejaror, builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	//TODO first add the details tuples (map to tuples)
 
 	//no error
