@@ -28,16 +28,26 @@ resource "aws_default_vpc" "default" {
 # --------------------------------------------
 # Security groups
 # --------------------------------------------
-resource "aws_security_group" "ssh-metrics" {
-  name = "ssh-metrics"
-  description = "allow ssh from outside and metrics"
+resource "aws_security_group" "ssh" {
+  name = "ssh"
+  description = "ingress for ssh on 22, egress for all"
   ingress {
     from_port = 22
     to_port = 22
     protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
     cidr_blocks = [
       "0.0.0.0/0"]
   }
+}
+resource "aws_security_group" "metrics" {
+  name = "metrics"
+  description = "ingress for metrics 2110, 2111, 2112"
   ingress {
     from_port = 2112
     to_port = 2112
@@ -56,23 +66,25 @@ resource "aws_security_group" "ssh-metrics" {
     protocol = "tcp"
     cidr_blocks = [aws_default_vpc.default.cidr_block]
   }
-  egress {
-    from_port = 0
-    to_port = 0
-    protocol = "-1"
-    cidr_blocks = [
-      "0.0.0.0/0"]
-  }
 }
-
 resource "aws_security_group" "broker-grpc" {
   name = "broker-binding-address"
-  description = "allow access to app"
+  description = "ingress on 9000 for broker grpc"
   ingress {
     from_port = 9000
     to_port = 9000
     protocol = "tcp"
     cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
+}
+resource "aws_security_group" "prometheus" {
+  name = "prometheus"
+  description = "ingress on 9090 for prometheus"
+  ingress {
+    from_port = 9090
+    to_port = 9090
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -100,6 +112,12 @@ data "template_file" "consumer" {
     host_name = "consumer${count.index}"
   }
 }
+data "template_file" "prometheus" {
+  template = file("user-data/prometheus.sh")
+  vars = {
+    host_name = "prometheus"
+  }
+}
 
 # --------------------------------------------
 # EC2 instances
@@ -109,46 +127,71 @@ resource "aws_instance" "broker" {
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [aws_security_group.ssh-metrics.name, aws_security_group.broker-grpc.name]
+  security_groups = [
+    aws_security_group.ssh.name,
+    aws_security_group.metrics.name,
+    aws_security_group.broker-grpc.name
+  ]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.broker[count.index].rendered
 
   tags = {
     name = "broker${count.index}"
-    project-dejaq = "dejaq-test"
+    project = "dejaq-test"
   }
 }
-
 resource "aws_instance" "producer" {
   count = var.producer-count
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [aws_security_group.ssh-metrics.name]
+  security_groups = [
+    aws_security_group.ssh.name,
+    aws_security_group.metrics.name
+  ]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.producer[count.index].rendered
 
   tags = {
     name = "producer${count.index}"
-    project-dejaq = "dejaq-test"
+    project = "dejaq-test"
   }
 }
-
 resource "aws_instance" "consumer" {
   count = var.consumer-count
   ami = var.instance-ami
   instance_type = var.instance-type
   key_name = aws_key_pair.dejaq.key_name
-  security_groups = [aws_security_group.ssh-metrics.name]
+  security_groups = [
+    aws_security_group.ssh.name,
+    aws_security_group.metrics.name
+  ]
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.consumer[count.index].rendered
 
   tags = {
     name = "consumer${count.index}"
-    project-dejaq = "dejaq-test"
+    project = "dejaq-test"
+  }
+}
+resource "aws_instance" "prometheus" {
+  ami = var.instance-ami
+  instance_type = var.prometheus-instance-type
+  key_name = aws_key_pair.dejaq.key_name
+  security_groups = [
+    aws_security_group.ssh.name,
+    aws_security_group.prometheus.name
+  ]
+  source_dest_check = false
+  associate_public_ip_address = true
+  user_data = data.template_file.prometheus.rendered
+
+  tags = {
+    name = "prometheus"
+    project = "dejaq-test"
   }
 }
 
