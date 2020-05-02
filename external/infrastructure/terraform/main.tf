@@ -110,13 +110,18 @@ resource "aws_security_group" "prometheus" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-resource "aws_elasticache_security_group" "dejaqredis" {
+resource "aws_security_group" "redis" {
   name = "redis"
   description = "ingress on 6379 for redis"
   tags = {
     project = "dejaq-test"
   }
-  security_group_names = []
+  ingress {
+    from_port = 6379
+    to_port = 6379
+    protocol = "tcp"
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
 }
 
 # --------------------------------------------
@@ -245,7 +250,7 @@ resource "aws_elasticache_cluster" "redis" {
   port = 6379
   availability_zone = var.availability_zone
   subnet_group_name = aws_elasticache_subnet_group.dejaqsubnetgroup.name
-  security_group_ids = [aws_elasticache_security_group.dejaqredis.id]
+  security_group_ids = [aws_security_group.redis.id]
 
   tags = {
     name = "redis"
@@ -254,7 +259,7 @@ resource "aws_elasticache_cluster" "redis" {
 }
 
 output "Redis-Dns" {
-  value = aws_elasticache_cluster.redis.configuration_endpoint
+  value = aws_elasticache_cluster.redis.cache_nodes.*.address
 }
 
 output "Broker-Names" {
