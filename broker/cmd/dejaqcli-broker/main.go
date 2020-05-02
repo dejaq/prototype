@@ -132,7 +132,7 @@ func main() {
 	grpServer := carrier.NewGRPCServer(nil)
 	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: c.LoaderMaxBatchSize}
 	dealer := carrier.NewExclusiveDealer()
-	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storage, catalog, greeter, dealer)
+	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storage, catalog, greeter, dealer, logger)
 	supervisor.AttachToServer(grpServer)
 
 	go func() {

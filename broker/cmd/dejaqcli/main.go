@@ -299,7 +299,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 	grpServer := carrier.NewGRPCServer(nil)
 	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: 35}
 	dealer := carrier.NewExclusiveDealer()
-	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer)
+	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer, logger)
 	supervisor.AttachToServer(grpServer)
 	go func() {
 		defer logger.Info("closing SERVER goroutine")

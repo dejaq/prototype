@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
+
+	dtime "github.com/dejaq/prototype/common/time"
 
 	"go.uber.org/atomic"
 
@@ -25,7 +28,7 @@ import (
 var _ = storage.Repository(&Memory{})
 
 var (
-	ErrTopicNotExists                 = errors.New("topic not exists")
+	ErrTopicNotFound                  = errors.New("topic not exists")
 	ErrTopicAlreadyExists             = errors.New("topic already exists")
 	ErrInvalidTopicName               = errors.New("invalid topic name")
 	ErrBucketCountLessThanOne         = errors.New("buckets count should not be less than 1")
@@ -116,9 +119,9 @@ func (m *Memory) Insert(ctx context.Context, req timeline.InsertMessagesRequest)
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "insert"
-		derror.Message = ErrTopicNotExists.Error()
+		derror.Message = ErrTopicNotFound.Error()
 		derror.ShouldRetry = false
-		derror.WrappedErr = ErrTopicNotExists
+		derror.WrappedErr = ErrTopicNotFound
 		return append(errs, derrors.MessageIDTuple{MsgError: derror})
 	}
 
@@ -194,9 +197,9 @@ func (m *Memory) GetAndLease(
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "getAndLease"
-		derror.Message = ErrTopicNotExists.Error()
+		derror.Message = ErrTopicNotFound.Error()
 		derror.ShouldRetry = false
-		derror.WrappedErr = ErrTopicNotExists
+		derror.WrappedErr = ErrTopicNotFound
 		return results, false, derror
 	}
 
@@ -294,9 +297,9 @@ func (m *Memory) deleteByConsumerId(deleteMessages timeline.DeleteMessagesReques
 		var derror derrors.Dejaror
 		derror.Module = derrors.ModuleStorage
 		derror.Operation = "delete"
-		derror.Message = ErrTopicNotExists.Error()
+		derror.Message = ErrTopicNotFound.Error()
 		derror.ShouldRetry = false
-		derror.WrappedErr = ErrTopicNotExists
+		derror.WrappedErr = ErrTopicNotFound
 		return append(errs, derrors.MessageIDTuple{MsgError: derror})
 	}
 
@@ -452,4 +455,37 @@ func newLeaseMessage(msg timeline.Message) timeline.MessageLease {
 		Body:            msg.Body,
 		BucketID:        msg.BucketID,
 	}
+}
+
+func (m *Memory) CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error) {
+	topic, ok := m.getTopic(request.TimelineID)
+	if !ok || topic == nil {
+		return 0, ErrTopicNotFound
+	}
+	var result uint64
+	now := dtime.TimeToMS(time.Now().UTC())
+	for i := range topic.buckets {
+		topic.buckets[i].m.Lock()
+		for _, msg := range topic.buckets[i].messages {
+			switch request.Type {
+			case timeline.StatusAvailable:
+				if msg.data.TimestampMS <= now {
+					result++
+				}
+			case timeline.StatusWaiting:
+				if msg.data.TimestampMS > now && len(msg.data.LockConsumerID) == 0 {
+					result++
+				}
+			case timeline.StatusProcessing:
+				if msg.data.TimestampMS > now && len(msg.data.LockConsumerID) != 0 {
+					result++
+				}
+			default:
+				topic.buckets[i].m.Unlock()
+				return 0, errors.New("message status not implemented")
+			}
+		}
+		topic.buckets[i].m.Unlock()
+	}
+	return result, nil
 }

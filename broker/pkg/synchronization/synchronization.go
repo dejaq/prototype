@@ -34,6 +34,7 @@ type Catalog interface {
 	UpdateTopic(ctx context.Context, topic Topic) error
 	GetTopic(ctx context.Context, topicID string) (Topic, error)
 	RemoveTopic(ctx context.Context, topicID string) error
+	GetAllTopics(ctx context.Context) ([]Topic, error)
 
 	AddConsumer(ctx context.Context, consumer Consumer) error
 	UpdateConsumer(ctx context.Context, consumer Consumer) error

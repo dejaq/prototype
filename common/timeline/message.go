@@ -1,6 +1,8 @@
 package timeline
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // Message is a timeline full representation. Not all the fields are populated all the time
 type Message struct {
@@ -93,7 +95,7 @@ func (m InsertMessagesRequest) GetTimelineID() string {
 	return m.TimelineID
 }
 
-// Message is a timeline full representation. Not all the fields are populated all the time
+// InsertMessagesRequestItem one msg that should be inserted
 type InsertMessagesRequestItem struct {
 	//An UUID, unique across the topic, as string, non-canonical form, without hypes and stored as bytes
 	ID []byte
@@ -117,4 +119,23 @@ func (m InsertMessagesRequestItem) GetBody() string {
 
 func (m InsertMessagesRequestItem) String() string {
 	return "{InsertMessagesRequestItem [id:" + m.GetID() + "]"
+}
+
+// MessageStatus represents a transient state of a message as time goes by see the docs design-docs/09.timeline.md
+type MessageStatus uint8
+
+const (
+	// (Timestamp <= NOW)
+	StatusAvailable MessageStatus = iota
+	// Waiting status (new messages) (LockConsumerID is empty)
+	StatusWaiting
+	// Processing status (it has a Lease) (LockConsumerID not empty)
+	StatusProcessing
+)
+
+type CountRequest struct {
+	TimelineID string
+	Type       MessageStatus
+	//BothInclusive and Optional (see time.IsZero() for emtpy value)
+	//Min, Max time.Time
 }
