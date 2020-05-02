@@ -1,8 +1,8 @@
 **/cockroach-data/
 **/config.yaml
 /broker/cmd/base/config.yml
-/broker/cmd/dejaq-linux.zip
-/external/aws/dejaq-linux.zip
+/external/infrastructure/dejaq-linux.zip
+/external/infrastructure/bin/
 
 # terraform
 **/*secrets.tf
