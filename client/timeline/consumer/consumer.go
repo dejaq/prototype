@@ -3,12 +3,13 @@ package consumer
 import (
 	"context"
 	"fmt"
-	"github.com/dejaq/prototype/common/metrics/exporter"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	"github.com/prometheus/client_golang/prometheus"
 
 	derror "github.com/dejaq/prototype/common/errors"
 	dtime "github.com/dejaq/prototype/common/time"
@@ -21,8 +22,11 @@ import (
 )
 
 var (
-	metricTopicLeasesCounter = exporter.GetConsumerCounter("topic_leases_count", []string{"operation", "topic"})
-	metricTopicLeasesErrors = exporter.GetConsumerCounter("topic_leases_errors", []string{"operation", "topic"})
+	metricTopicLeasesCounter = exporter.GetConsumerCounter("topic_leases_count", []string{"operation", "topic", "consumer_id"})
+	metricTopicLeasesErrors  = exporter.GetConsumerCounter("topic_leases_errors", []string{"operation", "topic", "consumer_id"})
+
+	metricTopicMessagesCounter = exporter.GetConsumerCounter("topic_messages_count", []string{"operation", "topic", "consumer_id"})
+	metricTopicMessagesErrors  = exporter.GetConsumerCounter("topic_messages_errors", []string{"operation", "topic", "consumer_id"})
 )
 
 var ErrMissingHandshake = errors.New("handshake is not node or session expired")
@@ -238,6 +242,8 @@ func (c *Consumer) sendConsumerStatus(ctx context.Context, bidiStream dejaq.Brok
 func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_TimelineConsumeClient) {
 	var err error
 	var response *dejaq.TimelinePushLeaseResponse
+	plabels := prometheus.Labels{"operation": "received", "topic": c.GetTopicID(), "consumer_id": c.conf.ConsumerID}
+
 	for {
 		if ctx.Err() != nil {
 			break
@@ -250,13 +256,13 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 		if err != nil {
 			//TODO find out why errors.Is is not working
 			if !strings.Contains(err.Error(), context.Canceled.Error()) {
-				metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
+				metricTopicLeasesErrors.With(plabels).Inc()
 				c.logger.WithError(err).Error("stream received an error")
 			}
 			break
 		}
 		if response == nil { //empty msg ?!?!?! TODO log this as a warning
-			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
+			metricTopicLeasesErrors.With(plabels).Inc()
 			c.logger.Error("empty response received from grpc in consumer")
 			continue
 		}
@@ -264,7 +270,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 		msg := response.Message(nil)
 
 		if msg == nil {
-			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
+			metricTopicLeasesErrors.With(plabels).Inc()
 			c.logger.Error("empty message received from grpc in consumer")
 			continue
 		}
@@ -280,7 +286,7 @@ func (c *Consumer) receiveMessages(ctx context.Context, bidiStream dejaq.Broker_
 				BucketID:        msg.BucketID(),
 			},
 		}
-		metricTopicLeasesCounter.With(prometheus.Labels{"operation":"received", "topic":c.GetTopicID()}).Inc()
+		metricTopicLeasesCounter.With(plabels).Inc()
 	}
 
 	//terminate the session
@@ -303,8 +309,9 @@ func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 	sessionID := c.getSessionID()
 
 	stream, err := c.carrier.TimelineDelete(ctx)
+	plabels := prometheus.Labels{"operation": "delete", "topic": c.GetTopicID(), "consumer_id": c.conf.ConsumerID}
 	if err != nil {
-		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
+		metricTopicMessagesCounter.With(plabels).Inc()
 		return fmt.Errorf("cannot create gRPC stream: %w", err)
 	}
 
@@ -325,23 +332,23 @@ func (c *Consumer) Delete(ctx context.Context, leases []timeline.Lease) error {
 		builder.Finish(rootPosition)
 		err = stream.Send(builder)
 		if err != nil {
-			metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
+			metricTopicMessagesErrors.With(plabels).Inc()
 			return fmt.Errorf("upstream failed: %w", err)
 		}
 	}
 
 	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
-		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
+		metricTopicMessagesErrors.With(plabels).Inc()
 		return err
 	}
 
 	err = derror.ParseTimelineResponse(response)
 	if err != nil {
-		metricTopicLeasesErrors.With(prometheus.Labels{"operation":"delete", "topic":c.GetTopicID()}).Inc()
+		metricTopicMessagesErrors.With(plabels).Inc()
 		return err
 	}
-	metricTopicLeasesCounter.With(prometheus.Labels{"operation":"deleted", "topic":c.GetTopicID()}).Add(float64(len(leases)))
+	metricTopicMessagesCounter.With(plabels).Add(float64(len(leases)))
 	return nil
 }
 
