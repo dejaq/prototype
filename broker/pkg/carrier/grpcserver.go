@@ -25,14 +25,14 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 
 var (
 	//metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
-	//metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
+	//metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "Topic"})
 
 	//count of messages that are created or removed
-	metricMessagesCounterSuccess = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
-	metricMessagesCounterError   = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
+	metricMessagesCounterSuccess = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "Topic"})
+	metricMessagesCounterError   = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "Topic"})
 	//number of leases (1 lease == 1 msg)
-	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
-	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
+	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "Topic"})
+	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "Topic"})
 )
 
 //TimelineListeners Coordinator can listen and react to these calls
@@ -211,10 +211,10 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 			builder.Finish(rootPosition)
 			if err := stream.Send(builder); err != nil {
 				logrus.Errorf("loader failed: %s", err.Error())
-				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.topic}).Inc()
+				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "Topic": consumerTuple.C.Topic}).Inc()
 				return err
 			}
-			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.topic}).Inc()
+			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "Topic": consumerTuple.C.Topic}).Inc()
 		}
 	}
 }
@@ -350,9 +350,9 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 
 	metricsLabels := prometheus.Labels{"operation": "create"}
 	if producer != nil {
-		metricsLabels["topic"] = producer.Topic
+		metricsLabels["Topic"] = producer.Topic
 	} else {
-		metricsLabels["topic"] = ""
+		metricsLabels["Topic"] = ""
 	}
 	failedMsgs := len(messagesErrors)
 	if failedMsgs == 0 && replyError.Message != "" {
@@ -449,7 +449,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 
 	metricsLabels := prometheus.Labels{"operation": "delete"}
 	if storageRequest.TimelineID != "" {
-		metricsLabels["topic"] = storageRequest.TimelineID
+		metricsLabels["Topic"] = storageRequest.TimelineID
 	}
 	failedMsgs := len(messagesErrors)
 	if failedMsgs == 0 && replyError.Message != "" {

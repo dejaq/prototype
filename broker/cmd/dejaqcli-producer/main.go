@@ -11,8 +11,6 @@ import (
 
 	"github.com/dejaq/prototype/common/metrics/exporter"
 
-	"github.com/dejaq/prototype/common/timeline"
-
 	"github.com/dejaq/prototype/client/satellite"
 	"github.com/dejaq/prototype/client/timeline/producer"
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
@@ -29,7 +27,6 @@ const (
 type Config struct {
 	OverseerSeed  string `env:"OVERSEER" env-default:"localhost:9000"`
 	Topic         string `env:"TOPIC"`
-	TopicBuckets  int    `env:"TOPIC_BUCKETS" env-default:"100"`
 	ProducerGroup string `env:"NAME"`
 
 	// after this duration the process wil close
@@ -170,23 +167,6 @@ func main() {
 	}
 	if !client.WaitForConnection(waitForCtx) {
 		logger.Fatal("The connection to the broker cannot be established in time.")
-	}
-
-	chief := client.NewOverseerClient()
-	err = chief.CreateTimelineTopic(ctx, c.Topic, timeline.TopicSettings{
-		ReplicaCount:            0,
-		MaxSecondsFutureAllowed: 10,
-		MaxSecondsLease:         10,
-		ChecksumBodies:          false,
-		MaxBodySizeBytes:        100000,
-		RQSLimitPerClient:       100000,
-		MinimumProtocolVersion:  0,
-		MinimumDriverVersion:    0,
-		BucketCount:             uint16(c.TopicBuckets),
-	})
-	if err != nil {
-		logger.WithError(err).Fatal("failed creating topic")
-		return
 	}
 
 	wg := sync.WaitGroup{}

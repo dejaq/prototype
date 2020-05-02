@@ -39,7 +39,7 @@ func (c *Catalog) AddTopic(ctx context.Context, topic synchronization.Topic) err
 	c.m.Lock()
 	defer c.m.Unlock()
 	if _, ok := c.topics[topic.ID]; ok {
-		return errors.New("topics already exists")
+		return nil
 	}
 
 	c.topics[topic.ID] = topic
@@ -54,6 +54,7 @@ func (c *Catalog) UpdateTopic(ctx context.Context, topic synchronization.Topic) 
 	return nil
 }
 
+// Returns a topic. If auto create is enabled and the topic is not found it will create one
 func (c *Catalog) GetTopic(ctx context.Context, topicID string) (synchronization.Topic, error) {
 	c.m.RLock()
 	defer c.m.RUnlock()

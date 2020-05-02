@@ -16,13 +16,13 @@ type Consumer struct {
 	status          protocol.ConsumerStatus
 	hydrateStatus   protocol.HydrationStatus
 
-	topic   string
+	Topic   string
 	cluster string
 	leaseMs uint64
 }
 
 func NewConsumer(ID []byte, topic string, cluster string, leaseMs uint64) *Consumer {
-	return &Consumer{id: ID, topic: topic, cluster: cluster, leaseMs: leaseMs}
+	return &Consumer{id: ID, Topic: topic, cluster: cluster, leaseMs: leaseMs}
 }
 
 func (c *Consumer) SetAssignedBuckets(bucketRange []domain.BucketRange) {
@@ -59,11 +59,11 @@ func (c *Consumer) GetIDAsBytes() []byte {
 
 // GetTopic ...
 func (c *Consumer) GetTopic() string {
-	return c.topic
+	return c.Topic
 }
 
 func (c *Consumer) GetTopicAsBytes() []byte {
-	return *(*[]byte)(unsafe.Pointer(&c.topic))
+	return *(*[]byte)(unsafe.Pointer(&c.Topic))
 }
 
 func (c *Consumer) GetCluster() string {

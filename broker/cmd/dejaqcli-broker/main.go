@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/dejaq/prototype/common/timeline"
+
 	"github.com/dejaq/prototype/common/metrics/exporter"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -130,7 +132,9 @@ func main() {
 		grpc.MaxConcurrentStreams(uint32(c.MaxConnectionsLimit)),
 	)
 	grpServer := carrier.NewGRPCServer(nil)
-	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: c.LoaderMaxBatchSize}
+	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: c.LoaderMaxBatchSize, AutoCreateTopicsSettings: &timeline.TopicSettings{
+		BucketCount: uint16(1024),
+	}}
 	dealer := carrier.NewExclusiveDealer()
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storage, catalog, greeter, dealer, logger)
 	supervisor.AttachToServer(grpServer)

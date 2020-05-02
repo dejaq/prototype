@@ -130,7 +130,6 @@ func run() {
 			logger.Error("The connection to the broker cannot be established in time.")
 			return
 		}
-		chief := client.NewOverseerClient()
 		defer func() {
 			client.Close()
 			//logger.Println("closing gRPC CLIENT goroutine")
@@ -150,26 +149,6 @@ func run() {
 				consumersBufferSize: int64(cfg.ConsumersBufferSize),
 				produceDeltaMin:     time.Duration(cfg.ProduceDeltaMinMS) * time.Millisecond,
 				produceDeltaMax:     time.Duration(cfg.ProduceDeltaMaxMS) * time.Millisecond,
-			}
-
-			if cfg.StartBroker {
-				//even if we only start the broker, we create here the topics, this way
-				//producers and consumers can start in any order they want, as separate processes.
-				err := chief.CreateTimelineTopic(ctx, topic, timeline.TopicSettings{
-					ReplicaCount:            0,
-					MaxSecondsFutureAllowed: 10,
-					MaxSecondsLease:         10,
-					ChecksumBodies:          false,
-					MaxBodySizeBytes:        100000,
-					RQSLimitPerClient:       100000,
-					MinimumProtocolVersion:  0,
-					MinimumDriverVersion:    0,
-					BucketCount:             uint16(cfg.BucketCount),
-				})
-				if err != nil {
-					logger.WithError(err).Fatal("failed creating topic")
-					return
-				}
 			}
 
 			time.Sleep(time.Second)
@@ -297,7 +276,9 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 		grpc.ConnectionTimeout(time.Second*120),
 		grpc.MaxConcurrentStreams(uint32(cfg.TopicCount*(cfg.ConsumersPerTopic+cfg.ProducersPerTopic))))
 	grpServer := carrier.NewGRPCServer(nil)
-	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: 35}
+	coordinatorConfig := carrier.Config{LoaderMaxBatchSize: 35, AutoCreateTopicsSettings: &timeline.TopicSettings{
+		BucketCount: uint16(cfg.BucketCount),
+	}}
 	dealer := carrier.NewExclusiveDealer()
 	supervisor := carrier.NewCoordinator(ctx, &coordinatorConfig, storageClient, catalog, greeter, dealer, logger)
 	supervisor.AttachToServer(grpServer)

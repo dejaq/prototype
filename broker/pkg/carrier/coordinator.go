@@ -19,8 +19,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ()
-
 var (
 	ErrUnknownDeleteRequester = derrors.Dejaror{
 		Severity:  derrors.SeverityError,
@@ -50,7 +48,8 @@ type Coordinator struct {
 }
 
 type Config struct {
-	LoaderMaxBatchSize int
+	LoaderMaxBatchSize       int
+	AutoCreateTopicsSettings *timeline.TopicSettings
 }
 
 func NewCoordinator(ctx context.Context, config *Config, timelineStorage storage.Repository, catalog synchronization.Catalog, greeter *Greeter, dealer Dealer, logger logrus.FieldLogger) *Coordinator {
@@ -101,7 +100,16 @@ func (c *Coordinator) AttachToServer(server *GRPCServer) {
 func (c *Coordinator) consumerHandshake(ctx context.Context, consumer *Consumer) (string, error) {
 	_, err := c.catalog.GetTopic(ctx, consumer.GetTopic())
 	if err != nil {
-		return "", err
+		if err == derrors.ErrTopicNotFound && c.conf.AutoCreateTopicsSettings != nil {
+			err = c.createTopic(ctx, consumer.Topic, *c.conf.AutoCreateTopicsSettings)
+			if err != nil {
+				return "", errors.Wrap(err, "auto create Topic failed")
+			}
+			//else carry on with the logic
+			c.logger.Infof("auto created Topic %s based on consumer handshake", consumer.Topic)
+		} else {
+			return "", err
+		}
 	}
 	sessionID, err := c.greeter.ConsumerHandshake(consumer)
 	if err != nil {
@@ -151,7 +159,7 @@ func (c *Coordinator) consumerConnected(ctx context.Context, sessionID string) (
 			MaxBatchSize: c.conf.LoaderMaxBatchSize,
 		}, c.storage, c.dealer, c.greeter)
 		c.loaders[consumer.GetTopic()].Start(c.baseCtx)
-		logrus.Infof("started consumer loader for topic: %s", consumer.GetTopic())
+		logrus.Infof("started consumer loader for Topic: %s", consumer.GetTopic())
 	}
 	return c.greeter.ConsumerConnected(sessionID)
 }
@@ -162,7 +170,7 @@ func (c *Coordinator) consumerDisconnected(ctx context.Context, sessionID string
 		return err
 	}
 
-	//TODO if is the last consumer for this topic, stop and delete the Loader c.loaders[consumer.topic]
+	//TODO if is the last consumer for this Topic, stop and delete the Loader c.loaders[consumer.Topic]
 	c.greeter.ConsumerDisconnected(sessionID)
 	return c.catalog.RemoveConsumer(ctx, consumer.GetTopic(), consumer.GetID())
 }
@@ -179,7 +187,16 @@ func (c *Coordinator) consumerStatus(ctx context.Context, status protocol.Consum
 func (c *Coordinator) producerHandshake(ctx context.Context, producer *Producer) (string, error) {
 	sessionID, err := c.greeter.ProducerHandshake(producer)
 	if err != nil {
-		return sessionID, err
+		if err == derrors.ErrTopicNotFound && c.conf.AutoCreateTopicsSettings != nil {
+			err = c.createTopic(ctx, producer.Topic, *c.conf.AutoCreateTopicsSettings)
+			if err != nil {
+				return "", errors.Wrap(err, "auto create Topic failed")
+			}
+			c.logger.Infof("auto created Topic %s based on producer handshake", producer.Topic)
+			//else carry on with the logic
+		} else {
+			return "", err
+		}
 	}
 	producerSync := synchronization.Producer{
 		SessionID:        sessionID,
@@ -254,7 +271,7 @@ func (c *Coordinator) listenerTimelineDeleteMessages(ctx context.Context, sessio
 func (c *Coordinator) watchStorage() {
 	t := time.NewTicker(time.Second)
 
-	metricTopicCountByStatus := exporter.GetBrokerCounter("topic_messages_count_by_status", []string{"status", "topic"})
+	metricTopicCountByStatus := exporter.GetBrokerCounter("topic_messages_count_by_status", []string{"status", "Topic"})
 
 	for range t.C {
 		//this is the consumers lag basically
@@ -269,7 +286,7 @@ func (c *Coordinator) watchStorage() {
 				c.logger.WithError(err).Error("failed c.storage.CountByStatus")
 				continue
 			}
-			metricTopicCountByStatus.With(prometheus.Labels{"status": "available", "topic": t.ID}).Add(float64(count))
+			metricTopicCountByStatus.With(prometheus.Labels{"status": "available", "Topic": t.ID}).Add(float64(count))
 		}
 	}
 }

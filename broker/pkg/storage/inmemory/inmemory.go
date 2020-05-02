@@ -95,7 +95,7 @@ func (m *Memory) CreateTopic(ctx context.Context, timelineID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.topics[timelineID]; ok {
-		return ErrTopicAlreadyExists
+		return nil
 	}
 	var buckets []bucket
 	for i := 0; i < int(bucketCount); i++ {
