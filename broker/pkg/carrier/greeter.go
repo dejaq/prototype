@@ -94,7 +94,7 @@ func (s *Greeter) ConsumerHandshake(c *Consumer) (string, error) {
 	defer s.opMutex.Unlock()
 
 	if _, exists := s.consumerIDsAndSessionIDs.Get(c.GetID(), c.GetTopic()); exists {
-		s.logger.Errorf("consumer %s on topic %s already has a handshake, removing the old one", c.GetID(), c.topic)
+		s.logger.Errorf("consumer %s on Topic %s already has a handshake, removing the old one", c.GetID(), c.Topic)
 	}
 
 	sessionID := randomSessionID()
@@ -116,7 +116,7 @@ func (s *Greeter) ProducerHandshake(req *Producer) (string, error) {
 	defer s.opMutex.Unlock()
 
 	if _, alreadyExists := s.producerIDsAndSessionIDs.Get(req.ProducerID, req.Topic); alreadyExists {
-		s.logger.Errorf("producerID %s on topic %s already has a handshake, removing the old one", req.ProducerID, req.Topic)
+		s.logger.Errorf("producerID %s on Topic %s already has a handshake, removing the old one", req.ProducerID, req.Topic)
 	}
 
 	sessionID := randomSessionID()
@@ -209,6 +209,6 @@ func (s *Greeter) GetAllConnectedConsumersWithHydrateStatus(topicID string, hydr
 }
 
 func (s *Greeter) LeasesSent(c *Consumer, count int) {
-	//logrus.Infof("sent %d msgs to consumer: %s topic: %s", count, c.id, c.topic)
+	//logrus.Infof("sent %d msgs to consumer: %s Topic: %s", count, c.id, c.Topic)
 	//TODO increment leases
 }

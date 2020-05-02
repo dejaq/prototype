@@ -245,11 +245,11 @@ func pushLeasesToPipeline(ctx context.Context, pushLeaseMessages []timeline.Leas
 	for i := range pushLeaseMessages {
 		select {
 		case <-ctx.Done():
-			return sent, fmt.Errorf("loadOneConsumer timed out for consumer: %s on topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
+			return sent, fmt.Errorf("loadOneConsumer timed out for consumer: %s on Topic: %s %w", tuple.C.GetID(), tuple.C.GetTopic(), context.DeadlineExceeded)
 		case <-tuple.Connected:
 			return sent, fmt.Errorf("client d/c during a load: %s", tuple.C.GetID())
 		case tuple.Pipeline <- pushLeaseMessages[i]:
-			//logrus.Infof("sent msgID: %s for consumerID: %s on topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
+			//logrus.Infof("sent msgID: %s for consumerID: %s on Topic: %s", pushLeaseMessages[i].Message.GetID(), consumer.GetID(), consumer.GetTopic())
 			sent++
 		}
 	}

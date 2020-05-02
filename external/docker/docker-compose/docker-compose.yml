@@ -26,7 +26,6 @@ services:
     image: dejaq/testsyncconsumer:latest
     depends_on:
       - broker
-      - producer1
     environment:
       OVERSEER: 'broker:9000'
       TOPIC: 'compose1'

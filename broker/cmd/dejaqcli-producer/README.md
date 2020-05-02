@@ -34,7 +34,6 @@ All the variables are served using env variables.
 type Config struct {
 	OverseerSeed  string `env:"OVERSEER" env-default:"localhost:9000"`
 	Topic         string `env:"TOPIC"`
-	TopicBuckets  int    `env:"TOPIC_BUCKETS" env-default:"100"`
 	ProducerGroup string `env:"NAME"`
 
 	// after this duration the process wil close
