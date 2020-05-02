@@ -2,7 +2,7 @@
 # Provider and credentials
 # --------------------------------------------
 provider "aws" {
-  version = "~> 2.0"
+  version = "~> 2.8"
   region = var.region
   secret_key = var.secret-key
   access_key = var.access-key
@@ -45,8 +45,7 @@ resource "aws_security_group" "ssh" {
     from_port = 0
     to_port = 0
     protocol = "-1"
-    cidr_blocks = [
-      "0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 resource "aws_security_group" "metrics" {
@@ -145,6 +144,7 @@ resource "aws_instance" "broker" {
     aws_security_group.metrics.name,
     aws_security_group.broker-grpc.name
   ]
+  availability_zone = var.availability_zone
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.broker[count.index].rendered
@@ -163,6 +163,7 @@ resource "aws_instance" "producer" {
     aws_security_group.ssh.name,
     aws_security_group.metrics.name
   ]
+  availability_zone = var.availability_zone
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.producer[count.index].rendered
@@ -181,6 +182,7 @@ resource "aws_instance" "consumer" {
     aws_security_group.ssh.name,
     aws_security_group.metrics.name
   ]
+  availability_zone = var.availability_zone
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.consumer[count.index].rendered
@@ -198,6 +200,7 @@ resource "aws_instance" "prometheus" {
     aws_security_group.ssh.name,
     aws_security_group.prometheus.name
   ]
+  availability_zone = var.availability_zone
   source_dest_check = false
   associate_public_ip_address = true
   user_data = data.template_file.prometheus.rendered
@@ -240,4 +243,28 @@ output "Consumer-Public-Ips" {
 
 output "Prometheus-Public-Ips" {
   value = aws_instance.prometheus.public_ip
+}
+
+# --------------------------------------------
+# Redis
+# --------------------------------------------
+resource "aws_elasticache_cluster" "redis" {
+  count = 1
+  cluster_id = "dejaq-test"
+  engine = "redis"
+  node_type = var.redis-instance-type
+  num_cache_nodes = var.redis-count
+  parameter_group_name = "default.redis5.0"
+  engine_version = "5.0.6"
+  port = 6379
+  availability_zone = var.availability_zone
+
+  tags = {
+    name = "redis"
+    project = "dejaq-test"
+  }
+}
+
+output "Redis-Dns" {
+  value = aws_elasticache_cluster.redis.*.cluster_address
 }
