@@ -481,9 +481,9 @@ func (m *Memory) CountByStatus(ctx context.Context, request timeline.CountReques
 					result++
 				}
 			default:
+				topic.buckets[i].m.Unlock()
 				return 0, errors.New("message status not implemented")
 			}
-
 		}
 		topic.buckets[i].m.Unlock()
 	}
