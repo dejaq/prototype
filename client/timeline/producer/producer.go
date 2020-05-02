@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	metricTopicMessagesCounter = exporter.GetProducerCounter("topic_messages_count", []string{"operation", "topic"})
-	metricTopicMessagesErrors  = exporter.GetProducerCounter("topic_messages_errors", []string{"operation", "topic"})
+	metricTopicMessagesCounter = exporter.GetProducerCounter("topic_messages_count", []string{"operation", "topic", "producer_group_id", "producer_id"})
+	metricTopicMessagesErrors  = exporter.GetProducerCounter("topic_messages_errors", []string{"operation", "topic", "producer_group_id", "producer_id"})
 )
 
 type Config struct {
@@ -75,11 +75,11 @@ func (c *Producer) Handshake(ctx context.Context) error {
 	return nil
 }
 
-// InsertMessages creates a stream and push all the messages.
+// CreateMessages creates a stream and push all the messages.
 //It fails if it does not have a valid session from the overseer
 //Thread safe
 // Returns a simple error, Dejaror or MessageIDTupleList
-func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) error {
+func (c *Producer) CreateMessages(ctx context.Context, msgs []timeline.Message) error {
 	c.handshakeMutex.RLock()
 	defer c.handshakeMutex.RLock()
 
@@ -96,6 +96,7 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 	builder = flatbuffers.NewBuilder(128)
 	var root flatbuffers.UOffsetT
 
+	plabels := prometheus.Labels{"operation": "create", "topic": c.GetTopic(), "producer_group_id": c.conf.ProducerGroupID, "producer_id": c.conf.ProducerID}
 	for i := range msgs {
 		builder.Reset()
 
@@ -113,22 +114,22 @@ func (c *Producer) InsertMessages(ctx context.Context, msgs []timeline.Message) 
 		err = stream.Send(builder)
 		//TODO if err is invalid/expired sessionID do a handshake automatically
 		if err != nil {
-			metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
+			metricTopicMessagesErrors.With(plabels).Inc()
 			return errors.Wrap(err, "failed stream")
 		}
 	}
 
 	response, err := stream.CloseAndRecv()
 	if err != nil && err != io.EOF {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
+		metricTopicMessagesErrors.With(plabels).Inc()
 		return errors.Wrap(err, "failed to send the events")
 	}
 	err = derror.ParseTimelineResponse(response)
 	if err != nil {
-		metricTopicMessagesErrors.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Inc()
+		metricTopicMessagesErrors.With(plabels).Inc()
 		return err
 	}
-	metricTopicMessagesCounter.With(prometheus.Labels{"operation": "insert", "topic": c.GetTopic()}).Add(float64(len(msgs)))
+	metricTopicMessagesCounter.With(plabels).Add(float64(len(msgs)))
 	return nil
 }
 
