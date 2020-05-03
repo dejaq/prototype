@@ -51,6 +51,9 @@ type Config struct {
 	// the process will close after this
 	TimeoutDuration string `env:"TIMEOUT" env-default:"10s"`
 	strategy        sync_consume.Strategy
+
+	// port used to expose metrics
+	MetricsPort string `env:"METRICS_PORT" env-default:"2111"`
 }
 
 func (c *Config) IsValid() error {
@@ -108,8 +111,6 @@ func (c *Config) durationTimeout() time.Duration {
 }
 
 func main() {
-	go exporter.GetMetricsExporter(subsystemConsumer, "2111")
-	//go exporter.GetDefaultExporter("2113")
 
 	logger := logrus.New().WithField("component", subsystemConsumer)
 
@@ -121,6 +122,8 @@ func main() {
 	if err = c.IsValid(); err != nil {
 		logger.Fatal(err)
 	}
+
+	go exporter.GetMetricsExporter(subsystemConsumer, c.MetricsPort)
 
 	ctx, shutdownEverything := context.WithCancel(context.Background())
 	if c.TimeoutDuration != "" {
