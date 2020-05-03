@@ -109,7 +109,7 @@ func getAndRegisterSummaryVec(subsystem, metricName string, labelNames []string)
 		Subsystem: subsystem,
 		Namespace: namespace,
 		ConstLabels: prometheus.Labels{
-			hostname: hostname,
+			"hostname": hostname,
 		},
 		Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.025, 0.9: 0.01, 0.95: 0.005, 0.99: 0.001, 0.999: 0.0001},
 	}, labelNames,
@@ -126,7 +126,7 @@ func getAndRegisterHistogramVec(subsystem, metricName string, labelNames []strin
 		Subsystem: subsystem,
 		Namespace: namespace,
 		ConstLabels: prometheus.Labels{
-			hostname: hostname,
+			"hostname": hostname,
 		},
 		Buckets: []float64{10, 25, 50, 100, 200, 300, 400, 500, 750, 1000, 2000, 5000, 10000},  // expressed in units/MS not as a percentage
 	},
