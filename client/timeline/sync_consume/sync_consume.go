@@ -2,6 +2,9 @@ package sync_consume
 
 import (
 	"context"
+	"github.com/dejaq/prototype/common/metrics/exporter"
+	dtime "github.com/dejaq/prototype/common/time"
+	"github.com/prometheus/client_golang/prometheus"
 	"time"
 
 	"github.com/dejaq/prototype/client/timeline/sync_produce"
@@ -10,6 +13,10 @@ import (
 	"github.com/dejaq/prototype/common/timeline"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/atomic"
+)
+
+var (
+	metricTopicLatency = exporter.GetConsumerSummary("topic_message_latency", []string{"operation", "topic"})
 )
 
 type SyncConsumeConfig struct {
@@ -97,6 +104,8 @@ func Consume(ctx context.Context, logger logrus.FieldLogger, c *consumer.Consume
 			logger.Infof("consumed messages: %d avg latency: %s removed: %d", r.Received, avg.Get().String(), r.Deleted)
 			r.PartialInfoReceived = 0
 		}
+
+		metricTopicLatency.With(prometheus.Labels{"operation": "delete", "topic": c.GetTopicID()}).Observe(float64(dtime.GetLatencyMS(lease.Message.TimestampMS)))
 
 		if config.DecreaseCounter != nil {
 			if config.DeleteMessages {
