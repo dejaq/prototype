@@ -61,25 +61,13 @@ resource "aws_security_group" "ssh" {
 }
 resource "aws_security_group" "metrics" {
   name = "metrics"
-  description = "ingress for metrics 2110, 2111, 2112"
+  description = "ingress for metrics prometheus"
   tags = {
     project = "dejaq-test"
   }
   ingress {
-    from_port = 2112
-    to_port = 2112
-    protocol = "tcp"
-    cidr_blocks = [aws_default_vpc.default.cidr_block]
-  }
-  ingress {
-    from_port = 2111
-    to_port = 2111
-    protocol = "tcp"
-    cidr_blocks = [aws_default_vpc.default.cidr_block]
-  }
-  ingress {
-    from_port = 2110
-    to_port = 2110
+    from_port = 9100
+    to_port = 9100
     protocol = "tcp"
     cidr_blocks = [aws_default_vpc.default.cidr_block]
   }
@@ -110,6 +98,7 @@ resource "aws_security_group" "prometheus" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
 resource "aws_security_group" "redis" {
   name = "redis"
   description = "ingress on 6379 for redis"
@@ -121,6 +110,26 @@ resource "aws_security_group" "redis" {
     to_port = 6379
     protocol = "tcp"
     cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
+}
+
+resource "aws_security_group" "crdb" {
+  name = "crdb"
+  description = "ingress for cockroachdb"
+  tags = {
+    project = "dejaq-test"
+  }
+  ingress {
+    from_port = 26257
+    to_port = 26257
+    protocol = "tcp"
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
+  ingress {
+    from_port = 8080
+    to_port = 8080
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -152,6 +161,13 @@ data "template_file" "prometheus" {
   template = file("user-data/prometheus.sh")
   vars = {
     host_name = "prometheus"
+  }
+}
+data "template_file" "crdb" {
+  count = var.crdb-count
+  template = file("user-data/crdb.sh")
+  vars = {
+    host_name = "crdb${count.index}"
   }
 }
 
@@ -235,31 +251,29 @@ resource "aws_instance" "prometheus" {
   }
 }
 
+
 # --------------------------------------------
-# Redis
+# Cockroach DB cluster
 # --------------------------------------------
-# https://www.terraform.io/docs/providers/aws/r/elasticache_cluster.html
-resource "aws_elasticache_cluster" "redis" {
-//  count = var.redis-count
-  cluster_id = "dejaq-test"
-  engine = "redis"
-  node_type = var.redis-instance-type
-  num_cache_nodes = 1
-  parameter_group_name = "default.redis5.0"
-  engine_version = "5.0.6"
-  port = 6379
+resource "aws_instance" "crdb" {
+  count = var.crdb-count
+  ami = var.instance-ami
+  instance_type = var.crdb-instance-type
+  key_name = aws_key_pair.dejaq.key_name
+  security_groups = [
+    aws_security_group.ssh.name,
+    aws_security_group.metrics.name,
+    aws_security_group.crdb.name
+  ]
   availability_zone = var.availability_zone
-  subnet_group_name = aws_elasticache_subnet_group.dejaqsubnetgroup.name
-  security_group_ids = [aws_security_group.redis.id]
+  source_dest_check = false
+  associate_public_ip_address = true
+  user_data = data.template_file.crdb[count.index].rendered
 
   tags = {
-    name = "redis"
+    name = "consumer${count.index}"
     project = "dejaq-test"
   }
-}
-
-output "Redis-Dns" {
-  value = aws_elasticache_cluster.redis.cache_nodes.*.address
 }
 
 output "Broker-Names" {
@@ -294,4 +308,11 @@ output "Consumer-Public-Ips" {
 
 output "Prometheus-Public-Ips" {
   value = aws_instance.prometheus.public_ip
+}
+
+output "CRDB-Private-Ips" {
+  value = aws_instance.crdb.*.private_ip
+}
+output "CRDB-Public-Ips" {
+  value = aws_instance.crdb.*.public_ip
 }

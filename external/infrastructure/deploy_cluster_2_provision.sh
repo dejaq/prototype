@@ -24,12 +24,13 @@ echo "fetching the IPs ..."
 cd ./terraform/
 #this way the clients will know how to reach the broker
 terraform output -json Broker-Private-Ips | jq -c -r  '.[0]' > ${current_dir}/bin/broker.privateip
-terraform output -json Redis-Dns | jq -c -r '.[0]' > ${current_dir}/bin/redis.privateip
+#terraform output -json Redis-Dns | jq -c -r '.[0]' > ${current_dir}/bin/redis.privateip
+terraform output -json CRDB-Private-Ips | jq -c -r '.[0]' > ${current_dir}/bin/crdb.privateip
 
 broker_public_ip=$(terraform output -json Broker-Public-Ips | jq -c -r  '.[0]')
-#TODO this will not work with multiple IPs modify the jq
-producer_public_ip=$(terraform output -json Producer-Public-Ips | jq -c -r  '.[0]')
-consumer_public_ip=$(terraform output -json Consumer-Public-Ips | jq -c -r  '.[0]')
+producer_public_ip=$(terraform output -json Producer-Public-Ips | jq -c -r  '.[]')
+consumer_public_ip=$(terraform output -json Consumer-Public-Ips | jq -c -r  '.[]')
+cockroach_public_ips=$(terraform output -json CRDB-Public-Ips | jq -c -r  '.[]')
 
 cd ${current_dir}
 
@@ -42,15 +43,33 @@ zip -9 -m -q dejaq-linux bin/*
 provision_instance(){
     echo "provision the instance ${1}"
     scp -o StrictHostKeyChecking=no dejaq-linux.zip ec2-user@$1:/home/ec2-user/
-    ssh ec2-user@$1 rm -rf bin/
-    ssh ec2-user@$1 unzip -q -o dejaq-linux.zip
-    ssh ec2-user@$1 rm dejaq-linux.zip
-    ssh ec2-user@$1 ./bin/install_utils_amazonlinux.sh
+    ssh -o StrictHostKeyChecking=no ec2-user@$1 rm -rf bin/
+    ssh -o StrictHostKeyChecking=no ec2-user@$1 unzip -q -o dejaq-linux.zip
+    ssh -o StrictHostKeyChecking=no ec2-user@$1 rm dejaq-linux.zip
+    ssh -o StrictHostKeyChecking=no ec2-user@$1 ./bin/install_utils_amazonlinux.sh
 }
 
-provision_instance ${broker_public_ip}
-provision_instance ${producer_public_ip}
-provision_instance ${consumer_public_ip}
+if [[ ! -z ${broker_public_ip} ]]; then
+    provision_instance ${broker_public_ip}
+fi
+
+if [[ ! -z ${producer_public_ip} ]]; then
+    for ip in ${producer_public_ip}; do
+        provision_instance ${ip}
+    done
+fi
+
+if [[ ! -z ${consumer_public_ip} ]]; then
+    for ip in ${consumer_public_ip}; do
+        provision_instance ${ip}
+    done
+fi
+
+if [[ ! -z ${cockroach_public_ips} ]]; then
+    for ip in ${cockroach_public_ips}; do
+        provision_instance ${ip}
+    done
+fi
 
 rm dejaq-linux.zip
 
