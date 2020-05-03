@@ -251,29 +251,6 @@ resource "aws_instance" "prometheus" {
   }
 }
 
-# --------------------------------------------
-# Redis
-# --------------------------------------------
-# https://www.terraform.io/docs/providers/aws/r/elasticache_cluster.html
-resource "aws_elasticache_cluster" "redis" {
-  count = var.redis-count
-  cluster_id = "dejaq-test"
-  engine = "redis"
-  node_type = var.redis-instance-type
-  num_cache_nodes = 1
-  parameter_group_name = "default.redis5.0"
-  engine_version = "5.0.6"
-  port = 6379
-  availability_zone = var.availability_zone
-  subnet_group_name = aws_elasticache_subnet_group.dejaqsubnetgroup.name
-  security_group_ids = [aws_security_group.redis.id]
-
-  tags = {
-    name = "redis"
-    project = "dejaq-test"
-  }
-}
-
 
 # --------------------------------------------
 # Cockroach DB cluster
@@ -297,9 +274,6 @@ resource "aws_instance" "crdb" {
     name = "consumer${count.index}"
     project = "dejaq-test"
   }
-}
-output "Redis-Dns" {
-  value = aws_elasticache_cluster.redis.cache_nodes.*.address
 }
 
 output "Broker-Names" {

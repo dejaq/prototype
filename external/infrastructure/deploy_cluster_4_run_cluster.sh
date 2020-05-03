@@ -39,5 +39,5 @@ ssh ec2-user@${ip} './bin/start_consumer.sh >out.log 2>err.log &'
 totail+=" -l 'ssh ec2-user@${ip} tail -f *.log'"
 done
 
-echo totail
+echo ${totail}
 

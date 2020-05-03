@@ -24,8 +24,8 @@ echo "fetching the IPs ..."
 cd ./terraform/
 #this way the clients will know how to reach the broker
 terraform output -json Broker-Private-Ips | jq -c -r  '.[0]' > ${current_dir}/bin/broker.privateip
-terraform output -json Redis-Dns | jq -c -r '.[0]' > ${current_dir}/bin/redis.privateip
-terraform output -json CRDB-Public-Ips | jq -c -r '.[]' > ${current_dir}/bin/crdb.privateip
+#terraform output -json Redis-Dns | jq -c -r '.[0]' > ${current_dir}/bin/redis.privateip
+terraform output -json CRDB-Private-Ips | jq -c -r '.[0]' > ${current_dir}/bin/crdb.privateip
 
 broker_public_ip=$(terraform output -json Broker-Public-Ips | jq -c -r  '.[0]')
 producer_public_ip=$(terraform output -json Producer-Public-Ips | jq -c -r  '.[]')
