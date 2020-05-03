@@ -35,7 +35,7 @@ var (
 	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
 	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
 
-	metricTopicLatency = exporter.GetBrokerSummary("topic_message_latency", []string{"topic"})
+	metricTopicLatency = exporter.GetBrokerSummary("topic_message_latency", []string{"operation", "topic"})
 )
 
 //TimelineListeners Coordinator can listen and react to these calls
@@ -211,7 +211,7 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 			grpc.TimelinePushLeaseResponseAddExpirationTSMSUTC(builder, lease.ExpirationTimestampMS)
 			rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
 
-			metricTopicLatency.With(prometheus.Labels{"topic": consumerTuple.C.Topic}).Observe(float64(dtime.GetLatencyMS(lease.Message.TimestampMS)))
+			metricTopicLatency.With(prometheus.Labels{"operation": "push", "topic": consumerTuple.C.Topic}).Observe(float64(dtime.GetLatencyMS(lease.Message.TimestampMS)))
 			builder.Finish(rootPosition)
 			if err := stream.Send(builder); err != nil {
 				logrus.Errorf("loader failed: %s", err.Error())

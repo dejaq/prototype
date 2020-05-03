@@ -3,8 +3,8 @@ package time
 import "time"
 
 func GetLatencyMS(ts uint64) int64 {
-	now := time.Now().UTC().Round(time.Millisecond).UnixNano() / (int64(time.Millisecond) / int64(time.Nanosecond))
-	return now - int64(ts)
+	now := TimeToMS(time.Now().UTC())
+	return int64(now) - int64(ts)
 }
 
 func TimeToMS(t time.Time) uint64 {
