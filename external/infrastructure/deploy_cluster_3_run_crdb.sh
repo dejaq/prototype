@@ -35,4 +35,6 @@ for i in "${!publicIPSArray[@]}"; do
     provision_instance ${publicIPSArray[i]} ${privateIPSArray[i]}
 done
 
+ssh ec2-user@${publicIPSArray[0]} "cockroach init --insecure --host ${privateIPSArray[0]}"
+
 echo "complete"
