@@ -16,6 +16,7 @@ import (
 	"io"
 
 	derrors "github.com/dejaq/prototype/common/errors"
+	dtime "github.com/dejaq/prototype/common/time"
 	"github.com/dejaq/prototype/common/timeline"
 	grpc "github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -25,14 +26,16 @@ var _ = grpc.BrokerServer(&GRPCServer{})
 
 var (
 	//metricTopicCommandsCounter = exporter.GetBrokerCounter("topic_commands_count", []string{"operation"})
-	//metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "Topic"})
+	//metricTopicCommandsErrors  = exporter.GetBrokerCounter("topic_commands_errors", []string{"operation", "topic"})
 
 	//count of messages that are created or removed
-	metricMessagesCounterSuccess = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "Topic"})
-	metricMessagesCounterError   = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "Topic"})
+	metricMessagesCounterSuccess = exporter.GetBrokerCounter("topic_messages_count", []string{"operation", "topic"})
+	metricMessagesCounterError   = exporter.GetBrokerCounter("topic_messages_errors", []string{"operation", "topic"})
 	//number of leases (1 lease == 1 msg)
-	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "Topic"})
-	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "Topic"})
+	metricTopicLeasesCounter = exporter.GetBrokerGauge("topic_leases_count", []string{"operation", "topic"})
+	metricTopicLeasesErrors  = exporter.GetBrokerCounter("topic_leases_errors", []string{"operation", "topic"})
+
+	metricTopicLatency = exporter.GetBrokerSummary("topic_message_latency", []string{"operation", "topic"})
 )
 
 //TimelineListeners Coordinator can listen and react to these calls
@@ -208,13 +211,14 @@ func (s *GRPCServer) TimelineConsume(stream grpc.Broker_TimelineConsumeServer) e
 			grpc.TimelinePushLeaseResponseAddExpirationTSMSUTC(builder, lease.ExpirationTimestampMS)
 			rootPosition := grpc.TimelinePushLeaseResponseEnd(builder)
 
+			metricTopicLatency.With(prometheus.Labels{"operation": "push", "topic": consumerTuple.C.Topic}).Observe(float64(dtime.GetLatencyMS(lease.Message.TimestampMS)))
 			builder.Finish(rootPosition)
 			if err := stream.Send(builder); err != nil {
 				logrus.Errorf("loader failed: %s", err.Error())
-				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "Topic": consumerTuple.C.Topic}).Inc()
+				metricTopicLeasesErrors.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.Topic}).Inc()
 				return err
 			}
-			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "Topic": consumerTuple.C.Topic}).Inc()
+			metricTopicLeasesCounter.With(prometheus.Labels{"operation": "create", "topic": consumerTuple.C.Topic}).Inc()
 		}
 	}
 }
@@ -350,9 +354,9 @@ func (s *GRPCServer) TimelineCreateMessages(stream grpc.Broker_TimelineCreateMes
 
 	metricsLabels := prometheus.Labels{"operation": "create"}
 	if producer != nil {
-		metricsLabels["Topic"] = producer.Topic
+		metricsLabels["topic"] = producer.Topic
 	} else {
-		metricsLabels["Topic"] = ""
+		metricsLabels["topic"] = ""
 	}
 	failedMsgs := len(messagesErrors)
 	if failedMsgs == 0 && replyError.Message != "" {
@@ -449,7 +453,7 @@ func (s *GRPCServer) TimelineDelete(stream grpc.Broker_TimelineDeleteServer) err
 
 	metricsLabels := prometheus.Labels{"operation": "delete"}
 	if storageRequest.TimelineID != "" {
-		metricsLabels["Topic"] = storageRequest.TimelineID
+		metricsLabels["topic"] = storageRequest.TimelineID
 	}
 	failedMsgs := len(messagesErrors)
 	if failedMsgs == 0 && replyError.Message != "" {
