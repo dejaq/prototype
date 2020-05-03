@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
 
-./dejaqcli-broker
+METRICS_PORT=9100 ./dejaqcli-broker

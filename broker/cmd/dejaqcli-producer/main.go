@@ -56,6 +56,9 @@ type Config struct {
 	// messages will have a deterministic ID for debuging purposes
 	DeterministicEventID bool `env:"DETERMINISTIC_ID"`
 	strategy             sync_produce.Strategy
+
+	// port used to expose metrics
+	MetricsPort string `env:"METRICS_PORT" env-default:"2110"`
 }
 
 func (c *Config) IsValid() error {
@@ -133,9 +136,6 @@ func (c *Config) durationTimeout() time.Duration {
 }
 
 func main() {
-	go exporter.GetMetricsExporter(subsystemProducer, "2110")
-	//go exporter.GetDefaultExporter("2113")
-
 	logger := logrus.New().WithField("component", subsystemProducer)
 
 	c := &Config{}
@@ -146,6 +146,8 @@ func main() {
 	if err = c.IsValid(); err != nil {
 		logger.Fatal(err)
 	}
+
+	go exporter.GetMetricsExporter(subsystemProducer, c.MetricsPort)
 
 	ctx, shutdownEverything := context.WithCancel(context.Background())
 	if c.TimeoutDuration != "" {

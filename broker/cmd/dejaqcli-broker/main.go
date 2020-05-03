@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/dejaq/prototype/common/timeline"
-
 	"github.com/dejaq/prototype/common/metrics/exporter"
+
+	"github.com/dejaq/prototype/common/timeline"
 
 	"github.com/ilyakaznacheev/cleanenv"
 
@@ -53,6 +53,9 @@ type Config struct {
 	TimeoutDuration string `env:"TIMEOUT"`
 	//max amount of leases to be fetched from the DB and sent to a consumer
 	LoaderMaxBatchSize int `env:"LOADER_MAX_BATCH_SIZE" env-default:"100"`
+
+	// port used to expose metrics
+	MetricsPort string `env:"METRICS_PORT" env-default:"2112"`
 }
 
 func (c *Config) durationConnectionTimeout() time.Duration {
@@ -96,9 +99,6 @@ func (c *Config) IsValid() error {
 }
 
 func main() {
-	go exporter.GetMetricsExporter(subsystemBroker, "2112")
-	//go exporter.GetDefaultExporter("2113")
-
 	logger := logrus.New().WithField("component", subsystemBroker)
 
 	c := &Config{}
@@ -109,6 +109,8 @@ func main() {
 	if err = c.IsValid(); err != nil {
 		logger.Fatal(err)
 	}
+
+	go exporter.GetMetricsExporter(subsystemBroker, c.MetricsPort)
 
 	ctx, shutdownEverything := context.WithCancel(context.Background())
 	if c.TimeoutDuration != "" {
