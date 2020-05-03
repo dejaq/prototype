@@ -20,7 +20,7 @@ cd ${current_dir}
 
 echo "starting the brokers, consumer and producer"
 #start_broker_redis.sh OR start_broker.sh
-ssh ec2-user@${broker_public_ip} './bin/start_broker.sh >out.log 2>err.log &'
+ssh ec2-user@${broker_public_ip} './bin/start_broker_redis.sh >out.log 2>err.log &'
 ssh ec2-user@${producer_public_ip} './bin/start_producer.sh >out.log 2>err.log &'
 ssh ec2-user@${consumer_public_ip} './bin/start_consumer.sh >out.log 2>err.log &'
 

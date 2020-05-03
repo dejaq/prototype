@@ -3,8 +3,3 @@
 /broker/cmd/base/config.yml
 /external/infrastructure/dejaq-linux.zip
 /external/infrastructure/bin/
-
-# terraform
-**/*secrets.tf
-**/*.terraform*
-**/*terraform*
