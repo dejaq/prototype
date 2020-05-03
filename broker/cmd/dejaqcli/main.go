@@ -244,7 +244,7 @@ func startBroker(ctx context.Context, cfg Config, logger *logrus.Logger, stopEve
 		storageClient = inmemory.New(catalog)
 	case "redis":
 		var err error
-		storageClient, err = redis.New(cfg.RedisHost)
+		storageClient, err = redis.New(cfg.RedisHost, catalog)
 		if err != nil {
 			return fmt.Errorf("failed to connect to redis server: %w", err)
 		}

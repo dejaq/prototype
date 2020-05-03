@@ -175,7 +175,7 @@ func NewStorage(ctx context.Context, config *Config, catalog *overseer.Catalog, 
 	case "memory":
 		return inmemory.New(catalog), nil
 	case "redis":
-		return redis.New(config.StorageHost)
+		return redis.New(config.StorageHost, catalog)
 	case "cockroach":
 		// @Adrian can we move those inside cockroach client ?
 		//TODO provision the user in dockercompose to avoid using root

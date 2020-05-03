@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 	"unsafe"
+
+	"github.com/dejaq/prototype/broker/pkg/overseer"
 
 	"github.com/sirupsen/logrus"
 
@@ -16,8 +19,9 @@ import (
 )
 
 type Client struct {
-	host   string
-	client *redis.Client
+	host    string
+	client  *redis.Client
+	catalog *overseer.Catalog
 	// map[operationType]redisHash
 	operationToScriptHash map[string]string
 }
@@ -41,10 +45,11 @@ var operationToScript = map[string]string{
 	"getAndLease":     scripts.getAndLease,
 	"getByConsumerId": scripts.getByConsumerId,
 	"consumerDelete":  scripts.consumerDelete,
+	"countByStatus":   scripts.countByStatus,
 }
 
 // New ...
-func New(host string) (*Client, error) {
+func New(host string, catalog *overseer.Catalog) (*Client, error) {
 	c := redis.NewClient(&redis.Options{Addr: host})
 	_, err := c.Ping().Result()
 
@@ -53,8 +58,9 @@ func New(host string) (*Client, error) {
 	}
 
 	client := Client{
-		host:   host,
-		client: c,
+		host:    host,
+		client:  c,
+		catalog: catalog,
 	}
 
 	// load operationToScript
@@ -496,7 +502,57 @@ func (c *Client) SelectByConsumer(ctx context.Context, timelineID []byte, consum
 }
 
 func (c *Client) CountByStatus(ctx context.Context, request timeline.CountRequest) (uint64, error) {
-	return 0, nil
+	var reqType string
+	switch request.Type {
+	case timeline.StatusAvailable:
+		reqType = "available"
+	case timeline.StatusWaiting:
+		reqType = "waiting"
+	case timeline.StatusProcessing:
+		reqType = "processing"
+	}
+
+	keys := []string{
+		c.createTimelineKey(clusterName, []byte(request.TimelineID)),
+		reqType,
+		strconv.FormatUint(uint64(time.Now().UnixNano()), 10),
+	}
+
+	topicInfo, _ := c.catalog.GetTopic(ctx, request.TimelineID)
+	buckets := domain.BucketRange{
+		Start: 0,
+		End:   topicInfo.Settings.BucketCount,
+	}
+	// slice of buckets ids
+	var argv []string
+	for bucketID := buckets.Min(); bucketID <= buckets.Max(); bucketID++ {
+		argv = append(argv, strconv.Itoa(int(bucketID)))
+	}
+	rawCount, err := c.client.EvalSha(c.operationToScriptHash["countByStatus"], keys, argv).Result()
+	if err != nil {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "countByStatus"
+		derror.Message = err.Error()
+		derror.ShouldRetry = true
+		derror.WrappedErr = ErrStorageInternalError
+		logrus.WithError(derror).Errorf("redis error")
+		return 0, derror
+	}
+
+	count, ok := rawCount.(int64)
+	if !ok {
+		var derror derrors.Dejaror
+		derror.Module = derrors.ModuleStorage
+		derror.Operation = "countByStatus"
+		derror.Message = "storage error"
+		derror.ShouldRetry = true
+		derror.WrappedErr = ErrStorageInternalError
+		logrus.WithError(derror).Errorf("redis error")
+		return 0, derror
+	}
+
+	return uint64(count), nil
 }
 
 func newLeaseMessage(msg timeline.Message) timeline.MessageLease {
