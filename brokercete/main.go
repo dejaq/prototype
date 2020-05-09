@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/dejaq/prototype/brokercete/server"
-
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/ilyakaznacheev/cleanenv"
