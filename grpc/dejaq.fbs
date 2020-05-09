@@ -1,0 +1,29 @@
+namespace DejaQ;
+
+table ProduceRequest {
+    // 16bit
+    priority:ushort;
+    body:[ubyte];
+}
+
+table ProduceResponse {
+    ack:bool;
+}
+
+table ConsumeRequest {
+    // 64bit
+    id:ulong;
+    ack:bool;
+}
+
+table ConsumeResponse {
+    id: ulong;
+    priority:ushort;
+    body:[ubyte];
+}
+
+// https://grpc.io/docs/guides/concepts/
+rpc_service Broker {
+    Produce(ProduceRequest):ProduceResponse (streaming: "client");
+    Consume(ConsumeResponse):ConsumeRequest (streaming: "bidi");
+}
