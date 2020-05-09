@@ -53,12 +53,30 @@ func (p *PriorityStorage) AddMsgs(batch []Msg) error {
 	for _, msg := range batch {
 		err := wb.Set(msg.Key, msg.Val)
 		if err != nil {
-			return errors.Wrap(err, "cannot write to DB batch")
+			return errors.Wrap(err, "cannot write to DB batch AddMsgs")
 		}
 	}
 	err := wb.Flush()
 	if err != nil {
-		return errors.Wrap(err, "failed to flush")
+		return errors.Wrap(err, "failed to flush AddMsgs")
+	}
+	return nil
+}
+
+func (p *PriorityStorage) RemoveMsgs(keys [][]byte) error {
+	//write to DB
+	wb := p.db.NewWriteBatch()
+	defer wb.Cancel()
+
+	for _, key := range keys {
+		err := wb.Delete(key)
+		if err != nil {
+			return errors.Wrap(err, "cannot write to DB batch RemoveMsgs")
+		}
+	}
+	err := wb.Flush()
+	if err != nil {
+		return errors.Wrap(err, "failed to flush RemoveMsgs")
 	}
 	return nil
 }

@@ -18,7 +18,8 @@ import (
 type Config struct {
 	//default listens on all interfaces, this is standard for containers
 	BrokerBindingAddress string `env:"DEJAQ_ADDRESS" env-default:"127.0.0.1:9000"`
-	NodeID               string `env:"NODE_ID" env-default:"cete1"`
+	NodeID               string `env:"NODE_ID" env-default:"broker1"`
+	Partitions           int    `env:"PARTITIONS" env-default:"3"`
 	//RaftBindingAddress string `env:"RAFT_ADDRESS" env-default:"127.0.0.1:8100"`
 	DataDirectory string `env:"DATA_DIRECTORY" env-default:"/tmp/dejaq-data-node1"`
 }
@@ -37,7 +38,7 @@ func main() {
 
 	//TODO add RAFT
 	//TODO add here cluster level metadata to get the topicPartitions, Consumers and other stuff
-	topicLocalMetadata := server.NewTopicLocalData(topic, c.DataDirectory, logger, 3)
+	topicLocalMetadata := server.NewTopicLocalData(topic, c.DataDirectory, logger, uint16(c.Partitions))
 
 	//Dejaq stuff
 	ser := grpc.NewServer(

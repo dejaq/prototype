@@ -36,6 +36,8 @@ func NewTopicLocalData(topicID string, dataDirectory string, logger logrus.Field
 		if err != nil {
 			logger.WithError(err).Fatalf("failed to open DB at %s", partitionDBDirectory)
 		}
+		//TODO if the overhead is too large and keeping thousands of open DBs is too much for a node
+		// we can group more partitions in one DB and add a prefix
 		localPartitions[i] = db
 		logger.Infof("created local DB for topic %s partition %d at %s", topicID, i, partitionDBDirectory)
 	}
