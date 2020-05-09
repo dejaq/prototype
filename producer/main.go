@@ -23,6 +23,7 @@ type Config struct {
 	OverseerSeed                  string `env:"OVERSEER" env-default:"localhost:9000"`
 	ConstantBurstsTickDuration    string `env:"CONSTANT_TICK_DURATION" env-default:"1s"`
 	ConstantBurstsTickEventsCount int    `env:"CONSTANT_TICK_COUNT" env-default:"1000"`
+	PriorityMax                   int    `env:"MAX_PRIORITY_VALUE" env-default:"10"`
 
 	// the size of the messages
 	BodySizeBytes int `env:"BODY_SIZE" env-default:"12000"`
@@ -65,6 +66,9 @@ func main() {
 				ConstantBurstsTickDuration:    c.durationConstantBursts(),
 				ConstantBurstsTickEventsCount: c.ConstantBurstsTickEventsCount,
 				BodySizeBytes:                 c.BodySizeBytes,
+				PriorityMax:                   c.PriorityMax,
+				//add 30% jitter
+				Jitter: time.Duration(float64(c.durationConstantBursts()) * 0.3),
 			}, logger, brokerClient)
 
 		}(i)

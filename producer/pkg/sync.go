@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math/rand"
 	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -18,6 +19,8 @@ type SyncProduceConfig struct {
 	ConstantBurstsTickDuration    time.Duration
 	ConstantBurstsTickEventsCount int
 	BodySizeBytes                 int
+	PriorityMax                   int
+	Jitter                        time.Duration
 }
 
 var (
@@ -42,17 +45,23 @@ func getBodyOfSize(size int) []byte {
 
 func Produce(ctx context.Context, config *SyncProduceConfig, logger logrus.FieldLogger, brokerClient DejaQ.BrokerClient) {
 	ticker := time.NewTicker(config.ConstantBurstsTickDuration)
+	randSource := rand.New(rand.NewSource(time.Now().Unix()))
+
 	for range ticker.C {
 		if ctx.Err() != nil {
 			ticker.Stop()
 			break
 		}
 
+		//add a jitter to avoid all producers producing at the same time
+		randomNs := randSource.Intn(int(config.Jitter * time.Nanosecond))
+		time.Sleep(time.Duration(randomNs))
+
 		bodies := make([][]byte, config.ConstantBurstsTickEventsCount)
 		for i := range bodies {
 			bodies[i] = getBodyOfSize(config.BodySizeBytes)
 		}
-		ackWorked, err := sendMessages(ctx, brokerClient, logger, bodies)
+		ackWorked, err := sendMessages(ctx, brokerClient, logger, bodies, config.PriorityMax)
 
 		if err != nil {
 			logger.WithError(err).Error("failed to send")
@@ -64,7 +73,7 @@ func Produce(ctx context.Context, config *SyncProduceConfig, logger logrus.Field
 }
 
 // CreateMessages creates a stream and push all the messages.
-func sendMessages(ctx context.Context, brokerClient DejaQ.BrokerClient, logger logrus.FieldLogger, bodies [][]byte) (bool, error) {
+func sendMessages(ctx context.Context, brokerClient DejaQ.BrokerClient, logger logrus.FieldLogger, bodies [][]byte, maxPriority int) (bool, error) {
 	stream, err := brokerClient.Produce(ctx)
 	if err != nil {
 		logger.WithError(err).Error("failed to create pipeline")
@@ -74,6 +83,7 @@ func sendMessages(ctx context.Context, brokerClient DejaQ.BrokerClient, logger l
 	var builder *flatbuffers.Builder
 
 	builder = flatbuffers.NewBuilder(128)
+	randSource := rand.New(rand.NewSource(time.Now().Unix()))
 
 	for _, body := range bodies {
 		builder.Reset()
@@ -81,6 +91,7 @@ func sendMessages(ctx context.Context, brokerClient DejaQ.BrokerClient, logger l
 		bodyOffset := builder.CreateByteVector(body)
 		DejaQ.ProduceRequestStart(builder)
 		DejaQ.ProduceRequestAddBody(builder, bodyOffset)
+		DejaQ.ProduceRequestAddPriority(builder, uint16(randSource.Intn(maxPriority)))
 		root := DejaQ.ProduceRequestEnd(builder)
 		builder.Finish(root)
 		err = stream.Send(builder)

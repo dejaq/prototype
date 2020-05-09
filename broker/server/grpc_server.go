@@ -47,7 +47,7 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 
 		partitionID := d.topic.GetRandomPartition()
 		topicBatch[partitionID] = append(topicBatch[partitionID], Msg{
-			Key: generateMsgKey(partitionID),
+			Key: generateMsgKey(request.Priority()),
 			Val: request.BodyBytes(),
 		})
 	}
