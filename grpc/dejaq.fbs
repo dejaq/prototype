@@ -13,7 +13,6 @@ table ProduceResponse {
 table Ack {
     // 64bit
     id:[ulong];
-    ack:bool;
 }
 
 table Message {

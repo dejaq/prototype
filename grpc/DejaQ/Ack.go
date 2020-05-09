@@ -52,29 +52,14 @@ func (rcv *Ack) MutateId(j int, n uint64) bool {
 	return false
 }
 
-func (rcv *Ack) Ack() bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.GetBool(o + rcv._tab.Pos)
-	}
-	return false
-}
-
-func (rcv *Ack) MutateAck(n bool) bool {
-	return rcv._tab.MutateBoolSlot(6, n)
-}
-
 func AckStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(1)
 }
 func AckAddId(builder *flatbuffers.Builder, id flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(id), 0)
 }
 func AckStartIdVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(8, numElems, 8)
-}
-func AckAddAck(builder *flatbuffers.Builder, ack bool) {
-	builder.PrependBoolSlot(1, ack, false)
 }
 func AckEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
