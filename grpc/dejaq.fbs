@@ -10,13 +10,13 @@ table ProduceResponse {
     ack:bool;
 }
 
-table ConsumeRequest {
+table Ack {
     // 64bit
-    id:ulong;
+    id:[ulong];
     ack:bool;
 }
 
-table ConsumeResponse {
+table Message {
     id: ulong;
     priority:ushort;
     body:[ubyte];
@@ -25,5 +25,5 @@ table ConsumeResponse {
 // https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
     Produce(ProduceRequest):ProduceResponse (streaming: "client");
-    Consume(ConsumeResponse):ConsumeRequest (streaming: "bidi");
+    Consume(Ack):Message (streaming: "bidi");
 }

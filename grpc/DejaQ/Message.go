@@ -6,27 +6,27 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
-type ConsumeResponse struct {
+type Message struct {
 	_tab flatbuffers.Table
 }
 
-func GetRootAsConsumeResponse(buf []byte, offset flatbuffers.UOffsetT) *ConsumeResponse {
+func GetRootAsMessage(buf []byte, offset flatbuffers.UOffsetT) *Message {
 	n := flatbuffers.GetUOffsetT(buf[offset:])
-	x := &ConsumeResponse{}
+	x := &Message{}
 	x.Init(buf, n+offset)
 	return x
 }
 
-func (rcv *ConsumeResponse) Init(buf []byte, i flatbuffers.UOffsetT) {
+func (rcv *Message) Init(buf []byte, i flatbuffers.UOffsetT) {
 	rcv._tab.Bytes = buf
 	rcv._tab.Pos = i
 }
 
-func (rcv *ConsumeResponse) Table() flatbuffers.Table {
+func (rcv *Message) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *ConsumeResponse) Id() uint64 {
+func (rcv *Message) Id() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.GetUint64(o + rcv._tab.Pos)
@@ -34,11 +34,11 @@ func (rcv *ConsumeResponse) Id() uint64 {
 	return 0
 }
 
-func (rcv *ConsumeResponse) MutateId(n uint64) bool {
+func (rcv *Message) MutateId(n uint64) bool {
 	return rcv._tab.MutateUint64Slot(4, n)
 }
 
-func (rcv *ConsumeResponse) Priority() uint16 {
+func (rcv *Message) Priority() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.GetUint16(o + rcv._tab.Pos)
@@ -46,11 +46,11 @@ func (rcv *ConsumeResponse) Priority() uint16 {
 	return 0
 }
 
-func (rcv *ConsumeResponse) MutatePriority(n uint16) bool {
+func (rcv *Message) MutatePriority(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(6, n)
 }
 
-func (rcv *ConsumeResponse) Body(j int) byte {
+func (rcv *Message) Body(j int) byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
@@ -59,7 +59,7 @@ func (rcv *ConsumeResponse) Body(j int) byte {
 	return 0
 }
 
-func (rcv *ConsumeResponse) BodyLength() int {
+func (rcv *Message) BodyLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
@@ -67,7 +67,7 @@ func (rcv *ConsumeResponse) BodyLength() int {
 	return 0
 }
 
-func (rcv *ConsumeResponse) BodyBytes() []byte {
+func (rcv *Message) BodyBytes() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
@@ -75,7 +75,7 @@ func (rcv *ConsumeResponse) BodyBytes() []byte {
 	return nil
 }
 
-func (rcv *ConsumeResponse) MutateBody(j int, n byte) bool {
+func (rcv *Message) MutateBody(j int, n byte) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
@@ -84,21 +84,21 @@ func (rcv *ConsumeResponse) MutateBody(j int, n byte) bool {
 	return false
 }
 
-func ConsumeResponseStart(builder *flatbuffers.Builder) {
+func MessageStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
-func ConsumeResponseAddId(builder *flatbuffers.Builder, id uint64) {
+func MessageAddId(builder *flatbuffers.Builder, id uint64) {
 	builder.PrependUint64Slot(0, id, 0)
 }
-func ConsumeResponseAddPriority(builder *flatbuffers.Builder, priority uint16) {
+func MessageAddPriority(builder *flatbuffers.Builder, priority uint16) {
 	builder.PrependUint16Slot(1, priority, 0)
 }
-func ConsumeResponseAddBody(builder *flatbuffers.Builder, body flatbuffers.UOffsetT) {
+func MessageAddBody(builder *flatbuffers.Builder, body flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(body), 0)
 }
-func ConsumeResponseStartBodyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+func MessageStartBodyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
 }
-func ConsumeResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func MessageEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
 }

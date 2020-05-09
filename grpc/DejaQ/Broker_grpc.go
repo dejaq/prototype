@@ -66,7 +66,7 @@ func (c *brokerClient) Consume(ctx context.Context,
 
 type Broker_ConsumeClient interface {
   Send(*flatbuffers.Builder) error
-  Recv() (*ConsumeRequest, error)
+  Recv() (*Message, error)
   grpc.ClientStream
 }
 
@@ -78,8 +78,8 @@ func (x *brokerConsumeClient) Send(m *flatbuffers.Builder) error {
   return x.ClientStream.SendMsg(m)
 }
 
-func (x *brokerConsumeClient) Recv() (*ConsumeRequest, error) {
-  m := new(ConsumeRequest)
+func (x *brokerConsumeClient) Recv() (*Message, error) {
+  m := new(Message)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
 }
@@ -125,7 +125,7 @@ func _Broker_Consume_Handler(srv interface{}, stream grpc.ServerStream) error {
 
 type Broker_ConsumeServer interface { 
   Send(* flatbuffers.Builder) error
-  Recv() (* ConsumeResponse, error)
+  Recv() (* Ack, error)
   grpc.ServerStream
 }
 
@@ -137,8 +137,8 @@ func (x *brokerConsumeServer) Send(m *flatbuffers.Builder) error {
   return x.ServerStream.SendMsg(m)
 }
 
-func (x *brokerConsumeServer) Recv() (*ConsumeResponse, error) {
-  m := new(ConsumeResponse)
+func (x *brokerConsumeServer) Recv() (*Ack, error) {
+  m := new(Ack)
   if err := x.ServerStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
 }
