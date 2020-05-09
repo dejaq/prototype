@@ -28,6 +28,8 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	var request *DejaQ.ProduceRequest
 
 	topicBatch := make(map[uint16][]Msg, 10)
+	d.logger.Info("producer connected")
+	d.logger.Info("producer disconnected")
 
 	//gather all the messages from the client
 	for err == nil {
@@ -69,7 +71,7 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	builder = flatbuffers.NewBuilder(128)
 
 	DejaQ.ProduceResponseStart(builder)
-	if err == nil {
+	if err == nil || err == io.EOF {
 		DejaQ.ProduceResponseAddAck(builder, true)
 	} else {
 		d.logger.WithError(err).Error("failed to produce msg")

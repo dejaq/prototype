@@ -65,7 +65,7 @@ func Produce(ctx context.Context, config *SyncProduceConfig, logger logrus.Field
 
 // CreateMessages creates a stream and push all the messages.
 func sendMessages(ctx context.Context, brokerClient DejaQ.BrokerClient, logger logrus.FieldLogger, bodies [][]byte) (bool, error) {
-	stream, err := brokerClient.Produce(ctx, nil)
+	stream, err := brokerClient.Produce(ctx)
 	if err != nil {
 		logger.WithError(err).Error("failed to create pipeline")
 		return false, err

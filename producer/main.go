@@ -7,15 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dejaq/prototype/producer/pkg"
-
 	"github.com/dejaq/prototype/grpc/DejaQ"
-
+	"github.com/dejaq/prototype/producer/pkg"
 	flatbuffers "github.com/google/flatbuffers/go"
-	"google.golang.org/grpc"
-
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
 const (
