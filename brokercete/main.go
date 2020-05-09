@@ -9,7 +9,6 @@ import (
 	"github.com/dejaq/prototype/brokercete/server"
 
 	"github.com/dejaq/prototype/grpc/DejaQ"
-	"github.com/dgraph-io/badger/v2"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/sirupsen/logrus"
@@ -34,20 +33,17 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	db, err := badger.Open(badger.DefaultOptions(c.DataDirectory))
-	if err != nil {
-		logger.Fatal(err)
-	}
+	topic := "unique_topic_test"
 
 	//TODO add RAFT
-
-	metadata := server.NewMetadata(db, logger, 3)
+	//TODO add here cluster level metadata to get the topicPartitions, Consumers and other stuff
+	topicLocalMetadata := server.NewTopicLocalData(topic, c.DataDirectory, logger, 3)
 
 	//Dejaq stuff
 	ser := grpc.NewServer(
 		grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}),
 	)
-	DejaQ.RegisterBrokerServer(ser, server.NewGRPC(db, logger, metadata))
+	DejaQ.RegisterBrokerServer(ser, server.NewGRPC(logger, topicLocalMetadata))
 	lis, err := net.Listen("tcp", c.BrokerBindingAddress)
 	if err != nil {
 		logger.Fatalf("failed to listen: %w", err)
@@ -66,5 +62,5 @@ func main() {
 	<-quitCh
 
 	ser.Stop()
-	db.Close()
+	topicLocalMetadata.Close()
 }

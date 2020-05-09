@@ -2,7 +2,9 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 
 	"github.com/dgraph-io/badger/v2"
@@ -10,25 +12,43 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Metadata struct {
-	db           *badger.DB
-	logger       logrus.FieldLogger
-	noPartitions uint16
-	//minPrioritiesPerPartition map[uint16][]byte
+type TopicLocalData struct {
+	topicID            string
+	localPartitions    map[uint16]*badger.DB
+	logger             logrus.FieldLogger
+	noPartitions       uint16
 	consumersPartition map[string]uint16
 	m                  sync.Mutex
 }
 
-func NewMetadata(db *badger.DB, logger logrus.FieldLogger, noPartitions uint16) *Metadata {
-	return &Metadata{
-		db:                 db,
+func NewTopicLocalData(topicID string, dataDirectory string, logger logrus.FieldLogger, noPartitions uint16) *TopicLocalData {
+	localPartitions := make(map[uint16]*badger.DB, 12)
+
+	//TODO get the no of partitions from the ClusterMETATDAT table
+	for i := uint16(0); i < noPartitions; i++ {
+		partitionDBDirectory := fmt.Sprintf("%s/topics/%s/%d", dataDirectory, topicID, i)
+		//group can have read it for backups, only us for execute
+		err := os.MkdirAll(partitionDBDirectory, 0740)
+		if err != nil {
+			logger.WithError(err).Fatalf("failed to mkdir %s", partitionDBDirectory)
+		}
+		db, err := badger.Open(badger.DefaultOptions(partitionDBDirectory))
+		if err != nil {
+			logger.WithError(err).Fatalf("failed to open DB at %s", partitionDBDirectory)
+		}
+		localPartitions[i] = db
+		logger.Infof("created local DB for topic %s partition %d at %s", topicID, i, partitionDBDirectory)
+	}
+
+	return &TopicLocalData{
+		localPartitions:    localPartitions,
 		logger:             logger,
 		noPartitions:       noPartitions,
 		consumersPartition: make(map[string]uint16),
 	}
 }
 
-func (m *Metadata) AddNewConsumer(id string) error {
+func (m *TopicLocalData) AddNewConsumer(id string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -47,27 +67,52 @@ func (m *Metadata) AddNewConsumer(id string) error {
 	return errors.New("more consumers than partitions")
 }
 
-func (m *Metadata) RemoveConsumer(id string) {
+func (m *TopicLocalData) RemoveConsumer(id string) {
 	m.m.Lock()
 	defer m.m.Unlock()
 	delete(m.consumersPartition, id)
 }
 
-func (m *Metadata) GetStorageForConsumer(id string) (*PriorityStorage, error) {
+func (m *TopicLocalData) GetPartitionForConsumer(id string) (uint16, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
-	if _, exists := m.consumersPartition[id]; !exists {
-		return nil, errors.New("Consumer was not added")
+	if partitionForConsumer, exists := m.consumersPartition[id]; exists {
+		return partitionForConsumer, nil
+	}
+	return 0, errors.New("Consumer was not added")
+}
+
+func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PriorityStorage, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	localDB, exists := m.localPartitions[partition]
+	if !exists {
+		return nil, errors.New("partition not found on this node")
 	}
 
 	return &PriorityStorage{
-		db:        m.db,
-		logger:    m.logger.WithField("priorityStorage", id),
-		partition: m.consumersPartition[id],
+		topicID:   m.topicID,
+		db:        localDB,
+		logger:    m.logger.WithField("priorityStorage", partition),
+		partition: partition,
 	}, nil
 }
 
-func (m *Metadata) GetRandomPartition() uint16 {
+func (m *TopicLocalData) GetRandomPartition() uint16 {
 	return uint16(rand.Intn(int(m.noPartitions)))
+}
+
+func (m *TopicLocalData) GetTopicID() string {
+	return m.topicID
+}
+
+func (m *TopicLocalData) Close() {
+	for p, db := range m.localPartitions {
+		err := db.Close()
+		if err != nil {
+			m.logger.WithError(err).WithField("partition", p).Error("failed to close DB")
+		}
+	}
 }

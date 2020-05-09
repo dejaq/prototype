@@ -5,21 +5,17 @@ import (
 	"io"
 
 	"github.com/dejaq/prototype/grpc/DejaQ"
-	"github.com/dgraph-io/badger/v2"
 	flatbuffers "github.com/google/flatbuffers/go"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 type DejaqGrpc struct {
-	db     *badger.DB
 	logger logrus.FieldLogger
-	topic  *Metadata
+	topic  *TopicLocalData
 }
 
-func NewGRPC(db *badger.DB, logger logrus.FieldLogger, topic *Metadata) *DejaqGrpc {
+func NewGRPC(logger logrus.FieldLogger, topic *TopicLocalData) *DejaqGrpc {
 	return &DejaqGrpc{
-		db:     db,
 		logger: logger,
 		topic:  topic,
 	}
@@ -29,7 +25,7 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	var err error
 	var request *DejaQ.ProduceRequest
 
-	batch := []Msg{}
+	topicBatch := make(map[uint16][]Msg, 10)
 
 	//gather all the messages from the client
 	for err == nil {
@@ -45,25 +41,25 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 			break
 		}
 
-		batch = append(batch, Msg{
-			Key: generateMsgKey(d.topic.GetRandomPartition()),
+		partitionID := d.topic.GetRandomPartition()
+		topicBatch[partitionID] = append(topicBatch[partitionID], Msg{
+			Key: generateMsgKey(partitionID),
 			Val: request.BodyBytes(),
 		})
 	}
 
 	if err == nil {
-		//write to DB
-		wb := d.db.NewWriteBatch()
-		defer wb.Cancel()
-
-		for _, msg := range batch {
-			err = wb.Set(msg.Key, msg.Val)
+		for partitionID, batch := range topicBatch {
+			storage, gerr := d.topic.GetPartitionStorage(partitionID)
+			if gerr != nil {
+				err = gerr
+				break
+			}
+			err = storage.AddMsgs(batch)
 			if err != nil {
-				err = errors.Wrap(err, "cannot write to DB batch")
 				break
 			}
 		}
-		wb.Flush()
 	}
 
 	//returns the response to the client
