@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 export CETE_ID=cete1
+export DEJAQ_ADDRESS="127.0.0.1:9000"
 export CETE_RAFT_ADDRESS="127.0.0.1:8100"
 export CETE_HTTP_ADDRESS="127.0.0.1:8102"
 export CETE_GRPC_ADDRESS="127.0.0.1:8101"
