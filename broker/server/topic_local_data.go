@@ -90,11 +90,11 @@ func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PartitionStorag
 	prefixForThisPartition = append(prefixForThisPartition, '_')
 
 	return &PartitionStorage{
-		topicID:   m.topicID,
-		db:        m.db,
-		logger:    m.logger.WithField("priorityStorage", partition),
-		partition: partition,
-		prefix:    prefixForThisPartition,
+		topicID:     m.topicID,
+		db:          m.db,
+		logger:      m.logger.WithField("priorityStorage", partition),
+		partition:   partition,
+		topicPrefix: prefixForThisPartition,
 	}, nil
 }
 

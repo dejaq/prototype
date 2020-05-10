@@ -6,29 +6,36 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Represents the Partition storage
+// All the KEYS as input and output are missing  the prefix
+// it abstracts the complexity of topics, shards and partitions
 type PartitionStorage struct {
-	topicID   string
-	db        *badger.DB
-	logger    logrus.FieldLogger
-	partition uint16
-	prefix    []byte
+	topicID     string
+	db          *badger.DB
+	logger      logrus.FieldLogger
+	partition   uint16
+	topicPrefix []byte
+}
+
+func (p *PartitionStorage) getKeyWithPrefix(key []byte) []byte {
+	var prefix []byte
+	prefix = append(prefix, p.topicPrefix...)
+	prefix = append(prefix, '_')
+	prefix = append(prefix, UInt16ToBytes(p.partition)...)
+	return append(prefix, key...)
 }
 
 func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 	result := make([]Msg, 0, count)
+	prefixLength := len(p.getKeyWithPrefix(nil))
 
 	p.db.View(func(txn *badger.Txn) error {
-		//dejaq_pq_topicID_priority_p
-		var prefix []byte
-		prefix = append(prefix, p.prefix...)
-		prefix = append(prefix, UInt16ToBytes(p.partition)...)
-
 		it := txn.NewIterator(badger.IteratorOptions{
 			PrefetchValues: true,
 			PrefetchSize:   count,
 			Reverse:        false,
 			AllVersions:    false,
-			Prefix:         prefix,
+			Prefix:         p.getKeyWithPrefix(nil),
 			InternalAccess: false,
 		})
 		defer it.Close()
@@ -39,7 +46,8 @@ func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 				return err
 			}
 			result = append(result, Msg{
-				Key: item.Key(),
+				//remove the prefix
+				Key: item.Key()[prefixLength:],
 				Val: val,
 			})
 			if len(result) >= count {
@@ -53,13 +61,14 @@ func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 }
 
 // the Op is done in a transaction, all or nothing
+// The KEY of the message
 func (p *PartitionStorage) AddMsgs(batch []Msg) error {
 	//write to DB
 	wb := p.db.NewWriteBatch()
 	defer wb.Cancel()
 
 	for _, msg := range batch {
-		err := wb.Set(msg.Key, msg.Val)
+		err := wb.Set(p.getKeyWithPrefix(msg.Key), msg.Val)
 		if err != nil {
 			return errors.Wrap(err, "cannot write to DB batch AddMsgs")
 		}
@@ -78,7 +87,7 @@ func (p *PartitionStorage) RemoveMsgs(keys [][]byte) error {
 	defer wb.Cancel()
 
 	for _, key := range keys {
-		err := wb.Delete(key)
+		err := wb.Delete(p.getKeyWithPrefix(key))
 		if err != nil {
 			return errors.Wrap(err, "cannot write to DB batch RemoveMsgs")
 		}

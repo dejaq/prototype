@@ -56,6 +56,7 @@ func main() {
 	confChangeC := make(chan raftpb.ConfChange)
 	defer close(confChangeC)
 
+	//TODO implement snapshot to allow full recovery of a node or new node start
 	getSnapshot := func() ([]byte, error) { return nil, nil }
 	commitC, errorC, snapshotterReady := server.NewRaftNode(c.NodeID, strings.Split(*cluster, ","), *join, getSnapshot, proposeC, confChangeC)
 
