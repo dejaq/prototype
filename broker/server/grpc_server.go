@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sync/atomic"
 	"time"
-
-	"go.uber.org/atomic"
 
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -117,7 +116,7 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		return err
 	}
 	defer logger.Info("consumer disconnected")
-	var ackReceived atomic.Bool
+	ackReceived := int64(1)
 
 	//the 	defer sendMsgTicker.Stop() will close this goroutine
 	go func() {
@@ -127,7 +126,7 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 				break
 			}
 
-			if !ackReceived.Load() {
+			if atomic.LoadInt64(&ackReceived) == 0 {
 				// the ack did not came for the previous batch
 				//we wait one more cycle
 				continue
@@ -148,7 +147,7 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 					logger.WithError(err).Error("failed to send a msg to consumer")
 				}
 			}
-			ackReceived.Store(false)
+			atomic.StoreInt64(&ackReceived, 0)
 		}
 	}()
 
@@ -169,7 +168,7 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		if err != nil {
 			logger.WithError(err).Error("failed to remove from DB")
 		}
-		ackReceived.Store(true)
+		atomic.StoreInt64(&ackReceived, 1)
 	}
 
 	return err

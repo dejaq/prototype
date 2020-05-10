@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dejaq/prototype/brokercete/server"
+	"github.com/dejaq/prototype/broker/server"
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/ilyakaznacheev/cleanenv"
@@ -42,8 +42,23 @@ func main() {
 	}
 
 	topic := "unique_topic_test"
+	//
+	//cfg := embed.NewConfig()
+	//cfg.Dir = "default.etcd"
+	//e, err := embed.StartEtcd(cfg)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//defer e.Close()
+	//select {
+	//case <-e.Server.ReadyNotify():
+	//	log.Printf("Server is ready!")
+	//case <-time.After(60 * time.Second):
+	//	e.Server.Stop() // trigger a shutdown
+	//	log.Printf("Server took too long to start!")
+	//}
+	//log.Fatal(<-e.Err())
 
-	//TODO add RAFT
 	//TODO add here cluster level metadata to get the topicPartitions, Consumers and other stuff
 	topicLocalMetadata := server.NewTopicLocalData(topic, c.DataDirectory, logger, uint16(c.Partitions))
 
