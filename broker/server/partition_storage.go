@@ -11,18 +11,24 @@ type PartitionStorage struct {
 	db        *badger.DB
 	logger    logrus.FieldLogger
 	partition uint16
+	prefix    []byte
 }
 
 func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 	result := make([]Msg, 0, count)
 
 	p.db.View(func(txn *badger.Txn) error {
+		//dejaq_pq_topicID_priority_p
+		var prefix []byte
+		prefix = append(prefix, p.prefix...)
+		prefix = append(prefix, UInt16ToBytes(p.partition)...)
+
 		it := txn.NewIterator(badger.IteratorOptions{
 			PrefetchValues: true,
 			PrefetchSize:   count,
 			Reverse:        false,
 			AllVersions:    false,
-			Prefix:         UInt16ToBytes(p.partition),
+			Prefix:         prefix,
 			InternalAccess: false,
 		})
 		defer it.Close()

@@ -14,7 +14,7 @@ import (
 
 type TopicLocalData struct {
 	topicID            string
-	localPartitions    map[uint16]*badger.DB
+	db                 *badger.DB
 	logger             logrus.FieldLogger
 	noPartitions       uint16
 	consumersPartition map[string]uint16
@@ -22,28 +22,21 @@ type TopicLocalData struct {
 }
 
 func NewTopicLocalData(topicID string, dataDirectory string, logger logrus.FieldLogger, noPartitions uint16) *TopicLocalData {
-	localPartitions := make(map[uint16]*badger.DB, 12)
-
 	//TODO get the no of partitions from the ClusterMETATDAT table
-	for i := uint16(0); i < noPartitions; i++ {
-		partitionDBDirectory := fmt.Sprintf("%s/topics/%s/%d", dataDirectory, topicID, i)
-		//group can have read it for backups, only us for execute
-		err := os.MkdirAll(partitionDBDirectory, 0740)
-		if err != nil {
-			logger.WithError(err).Fatalf("failed to mkdir %s", partitionDBDirectory)
-		}
-		db, err := badger.Open(badger.DefaultOptions(partitionDBDirectory))
-		if err != nil {
-			logger.WithError(err).Fatalf("failed to open DB at %s", partitionDBDirectory)
-		}
-		//TODO if the overhead is too large and keeping thousands of open DBs is too much for a node
-		// we can group more partitions in one DB and add a prefix
-		localPartitions[i] = db
-		logger.Infof("created local DB for topic %s partition %d at %s", topicID, i, partitionDBDirectory)
+	topicDirectory := fmt.Sprintf("%s/topic/%s", dataDirectory, topicID)
+	//group can have read it for backups, only us for execute
+	err := os.MkdirAll(topicDirectory, 0740)
+	if err != nil {
+		logger.WithError(err).Fatalf("failed to mkdir %s", topicDirectory)
 	}
+	db, err := badger.Open(badger.DefaultOptions(topicDirectory))
+	if err != nil {
+		logger.WithError(err).Fatalf("failed to open DB at %s", topicDirectory)
+	}
+	logger.Infof("created local DB for topic %s at %s", topicID, topicDirectory)
 
 	return &TopicLocalData{
-		localPartitions:    localPartitions,
+		db:                 db,
 		logger:             logger,
 		noPartitions:       noPartitions,
 		consumersPartition: make(map[string]uint16),
@@ -92,16 +85,16 @@ func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PartitionStorag
 	m.m.Lock()
 	defer m.m.Unlock()
 
-	localDB, exists := m.localPartitions[partition]
-	if !exists {
-		return nil, errors.New("partition not found on this node")
-	}
+	prefixForThisPartition := []byte("dejaq_pq_" + m.topicID + "_")
+	prefixForThisPartition = append(prefixForThisPartition, UInt16ToBytes(partition)...)
+	prefixForThisPartition = append(prefixForThisPartition, '_')
 
 	return &PartitionStorage{
 		topicID:   m.topicID,
-		db:        localDB,
+		db:        m.db,
 		logger:    m.logger.WithField("priorityStorage", partition),
 		partition: partition,
+		prefix:    prefixForThisPartition,
 	}, nil
 }
 
@@ -115,10 +108,8 @@ func (m *TopicLocalData) GetTopicID() string {
 }
 
 func (m *TopicLocalData) Close() {
-	for p, db := range m.localPartitions {
-		err := db.Close()
-		if err != nil {
-			m.logger.WithError(err).WithField("partition", p).Error("failed to close DB")
-		}
+	err := m.db.Close()
+	if err != nil {
+		m.logger.WithError(err).Error("failed to close DB")
 	}
 }

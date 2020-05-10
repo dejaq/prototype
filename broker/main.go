@@ -1,9 +1,11 @@
 package main
 
 import (
+	"flag"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -12,13 +14,14 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/sirupsen/logrus"
+	"go.etcd.io/etcd/v3/raft/raftpb"
 	"google.golang.org/grpc"
 )
 
 type Config struct {
 	//default listens on all interfaces, this is standard for containers
 	BrokerBindingAddress string `env:"DEJAQ_ADDRESS" env-default:"127.0.0.1:9000"`
-	NodeID               string `env:"NODE_ID" env-default:"broker1"`
+	NodeID               int    `env:"NODE_ID" env-default:"1"`
 	Partitions           int    `env:"PARTITIONS" env-default:"3"`
 	//RaftBindingAddress string `env:"RAFT_ADDRESS" env-default:"127.0.0.1:8100"`
 	DataDirectory string `env:"DATA_DIRECTORY" env-default:"/tmp/dejaq-data-node1"`
@@ -42,22 +45,23 @@ func main() {
 	}
 
 	topic := "unique_topic_test"
-	//
-	//cfg := embed.NewConfig()
-	//cfg.Dir = "default.etcd"
-	//e, err := embed.StartEtcd(cfg)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer e.Close()
-	//select {
-	//case <-e.Server.ReadyNotify():
-	//	log.Printf("Server is ready!")
-	//case <-time.After(60 * time.Second):
-	//	e.Server.Stop() // trigger a shutdown
-	//	log.Printf("Server took too long to start!")
-	//}
-	//log.Fatal(<-e.Err())
+
+	//RAFT
+	cluster := flag.String("cluster", "http://127.0.0.1:9021", "comma separated cluster peers")
+	join := flag.Bool("join", false, "join an existing cluster")
+	flag.Parse()
+
+	proposeC := make(chan string)
+	defer close(proposeC)
+	confChangeC := make(chan raftpb.ConfChange)
+	defer close(confChangeC)
+
+	getSnapshot := func() ([]byte, error) { return nil, nil }
+	commitC, errorC, snapshotterReady := server.NewRaftNode(c.NodeID, strings.Split(*cluster, ","), *join, getSnapshot, proposeC, confChangeC)
+
+	kvs = newKVStore(<-snapshotterReady, proposeC, commitC, errorC)
+
+	//END raft
 
 	//TODO add here cluster level metadata to get the topicPartitions, Consumers and other stuff
 	topicLocalMetadata := server.NewTopicLocalData(topic, c.DataDirectory, logger, uint16(c.Partitions))
