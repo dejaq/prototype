@@ -56,14 +56,17 @@ func (m *TopicLocalData) AddNewConsumer(id string) error {
 
 	//seek a free partition
 	for i := uint16(0); i < m.noPartitions; i++ {
+		isFree := true
 		for _, p := range m.consumersPartition {
 			if p == i {
-				continue
+				isFree = false
 			}
 		}
-		//else we found a free one
-		m.consumersPartition[id] = i
-		return nil
+		if isFree {
+			//else we found a free one
+			m.consumersPartition[id] = i
+			return nil
+		}
 	}
 
 	return errors.New("more consumers than partitions")
