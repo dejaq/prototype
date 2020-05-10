@@ -26,11 +26,11 @@ type Config struct {
 	PriorityMax                   int    `env:"MAX_PRIORITY_VALUE" env-default:"10"`
 
 	// the size of the messages
-	BodySizeBytes int `env:"BODY_SIZE" env-default:"12000"`
+	BodySizeBytes int `env:"BODY_SIZE" env-default:"512"`
 	// The event timestamp will be determined with a Time.Now() + Rand(-MinDelta,MaxDelta)
 
 	// number of concurrent consumers
-	Workers int `env:"WORKERS_COUNT" env-default:"1"`
+	Workers int `env:"WORKERS_COUNT" env-default:"5"`
 }
 
 func (c *Config) durationConstantBursts() time.Duration {

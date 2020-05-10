@@ -23,7 +23,7 @@ const (
 type Config struct {
 	OverseerSeed string `env:"OVERSEER" env-default:"localhost:9000"`
 	// number of concurrent consumers
-	Workers int `env:"WORKERS_COUNT" env-default:"1"`
+	Workers int `env:"WORKERS_COUNT" env-default:"32"`
 }
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 				return
 			}
 			brokerClient := DejaQ.NewBrokerClient(conn)
-			pkg.Consume(ctx, i, logger, brokerClient)
+			pkg.Consume(ctx, id, logger, brokerClient)
 		}(i)
 	}
 
@@ -78,7 +78,7 @@ func main() {
 	<-ctx.Done()
 	logger.Info("Exiting, waiting 10s")
 	//wait for stuff to shutdown
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 2)
 }
 
 func newConnection(seed string) (*grpc.ClientConn, error) {

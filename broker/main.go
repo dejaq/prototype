@@ -19,7 +19,7 @@ type Config struct {
 	//default listens on all interfaces, this is standard for containers
 	BrokerBindingAddress string `env:"DEJAQ_ADDRESS" env-default:"127.0.0.1:9000"`
 	NodeID               string `env:"NODE_ID" env-default:"broker1"`
-	Partitions           int    `env:"PARTITIONS" env-default:"3"`
+	Partitions           int    `env:"PARTITIONS" env-default:"32"`
 	//RaftBindingAddress string `env:"RAFT_ADDRESS" env-default:"127.0.0.1:8100"`
 	DataDirectory string `env:"DATA_DIRECTORY" env-default:"/tmp/dejaq-data-node1"`
 

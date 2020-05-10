@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/dejaq/prototype/grpc/DejaQ"
@@ -98,7 +100,7 @@ func (d *DejaqGrpc) Consume(req *DejaQ.ConsumerAskMessages, resp DejaQ.Broker_Co
 	if err != nil {
 		return err
 	}
-	logger.Infof("new consumer connected ID:%s", consumerUniqueID)
+	//logger.Infof("new consumer connected ID:%s", consumerUniqueID)
 
 	consumerPartitionID, err := d.topic.GetPartitionForConsumer(consumerUniqueID)
 	if err != nil {
@@ -107,7 +109,7 @@ func (d *DejaqGrpc) Consume(req *DejaQ.ConsumerAskMessages, resp DejaQ.Broker_Co
 	}
 
 	logger = logger.WithField("partitionID", consumerPartitionID)
-	logger.Info("assigned partition")
+	//logger.Info("assigned partition")
 	defer d.topic.RemoveConsumer(consumerUniqueID)
 
 	storage, err := d.topic.GetPartitionStorage(consumerPartitionID)
@@ -131,18 +133,25 @@ func (d *DejaqGrpc) Consume(req *DejaQ.ConsumerAskMessages, resp DejaQ.Broker_Co
 		builder.Finish(root)
 		err := resp.Send(builder)
 		if err != nil {
-			logger.WithError(err).Error("failed to send a msg to consumer")
+			if !strings.Contains(err.Error(), context.Canceled.Error()) {
+				logger.WithError(err).Error("failed to send a msg to consumer")
+			}
 			continue
 		}
 		successCount++
 	}
 
-	d.logger.Info(fmt.Sprintf("Consumer: %s request: %d, and get: %d", consumerUniqueID, req.Number(), successCount))
-
+	if len(msgs) > 0 {
+		d.logger.Infof("Consumer: %s request: %d, and got: %d", consumerUniqueID, req.Number(), successCount)
+	}
 	return err
 }
 
 func (d *DejaqGrpc) Acknowledge(req DejaQ.Broker_AcknowledgeServer) error {
+	msgs := make(map[uint16][][]byte, 100)
+
+	var rerr error
+
 	for {
 		message, err := req.Recv()
 		if err == io.EOF {
@@ -150,22 +159,45 @@ func (d *DejaqGrpc) Acknowledge(req DejaQ.Broker_AcknowledgeServer) error {
 		}
 
 		if err != nil {
-			d.logger.WithError(err).Fatal("broker read ack stream")
+			if !strings.Contains(err.Error(), context.Canceled.Error()) {
+				d.logger.WithError(err).Error("broker read ack stream")
+			}
+			rerr = err
+			break
 		}
 
-		storage, err := d.topic.GetPartitionStorage(message.Partition())
-		if err != nil {
-			d.logger.WithError(err).Error(" acknowledge failed to get partition storage")
-			return err
-		}
+		msgs[message.Partition()] = append(msgs[message.Partition()], UInt64ToBytes(message.Id()))
+	}
 
-		idsToRemove := make([][]byte, 10)
-		idsToRemove = append(idsToRemove, UInt64ToBytes(message.Id()))
-
-		err = storage.RemoveMsgs(idsToRemove)
-		if err != nil {
-			d.logger.WithError(err).Error("failed to remove from DB")
+	if rerr == nil {
+		for partition, list := range msgs {
+			storage, err := d.topic.GetPartitionStorage(partition)
+			if err != nil {
+				if !strings.Contains(err.Error(), context.Canceled.Error()) {
+					d.logger.WithError(err).Error(" acknowledge failed to get partition storage")
+				}
+				rerr = err
+				break
+			}
+			err = storage.RemoveMsgs(list)
+			if err != nil {
+				d.logger.WithError(err).Error("failed to delete")
+				rerr = err
+				break
+			}
 		}
 	}
-	return nil
+
+	builder := flatbuffers.NewBuilder(128)
+	DejaQ.AcknowledgeResponseStart(builder)
+	DejaQ.AcknowledgeResponseAddAck(builder, rerr == nil)
+	root := DejaQ.AcknowledgeResponseEnd(builder)
+
+	builder.Finish(root)
+	err := req.SendAndClose(builder)
+	if rerr != nil {
+		d.logger.WithError(err).Error("failed to send ack back")
+	}
+
+	return rerr
 }

@@ -18,7 +18,7 @@ type Message struct {
 }
 
 func Consume(ctx context.Context, consumerId int, logger logrus.FieldLogger, brokerClient DejaQ.BrokerClient) {
-	logger.Info("Start consume")
+	logger.Info("Start consumer")
 
 	// get messages
 	builder := flatbuffers.NewBuilder(0)
@@ -31,14 +31,14 @@ func Consume(ctx context.Context, consumerId int, logger logrus.FieldLogger, bro
 		builder.Reset()
 		consumerOffset := builder.CreateByteVector([]byte(fmt.Sprintf("consumer_%d", consumerId)))
 		DejaQ.ConsumerAskMessagesStart(builder)
-		DejaQ.ConsumerAskMessagesAddNumber(builder, uint16(200))
+		DejaQ.ConsumerAskMessagesAddNumber(builder, uint16(250))
 		DejaQ.ConsumerAskMessagesAddConsumerId(builder, consumerOffset)
 		root := DejaQ.ConsumerAskMessagesEnd(builder)
 		builder.Finish(root)
 
 		consumeStream, err := brokerClient.Consume(ctx, builder)
 		if err != nil {
-			logger.WithError(err).Fatal("consumer ask for messages")
+			logger.WithError(err).Error("consumer ask for messages")
 		}
 
 		var messages []Message
@@ -48,7 +48,7 @@ func Consume(ctx context.Context, consumerId int, logger logrus.FieldLogger, bro
 				break
 			}
 			if err != nil {
-				logger.WithError(err).Fatal("read from consumeStream error")
+				logger.WithError(err).Error("read from consumeStream error")
 			}
 
 			if req == nil {
@@ -61,9 +61,14 @@ func Consume(ctx context.Context, consumerId int, logger logrus.FieldLogger, bro
 			})
 		}
 
+		if len(messages) == 0 {
+			time.Sleep(time.Second)
+			continue
+		}
+
 		ackStream, err := brokerClient.Acknowledge(ctx)
-		if err != nil {
-			logger.WithError(err).Fatal("consumer acknowledge")
+		if err != nil && err != io.EOF {
+			logger.WithError(err).Error("consumer acknowledge")
 		}
 
 		for _, message := range messages {
@@ -81,19 +86,20 @@ func Consume(ctx context.Context, consumerId int, logger logrus.FieldLogger, bro
 			}
 		}
 
-		//ackResp, err := ackStream.CloseAndRecv()
-		//if err != nil {
-		//	logger.WithError(err).Error("send ack to broker")
-		//	continue
-		//}
-		//
-		//if !ackResp.Ack() {
-		//	// TODO retry here, do something
-		//	logger.Error("could not delete all messages from broker")
-		//	continue
-		//}
+		ackResp, err := ackStream.CloseAndRecv()
+		if (err != nil && err != io.EOF) || ackResp == nil {
+			logger.WithError(err).Error("send ack to broker")
+			continue
+		}
 
-		logger.Info(fmt.Sprintf("delete messages: %d", len(messages)))
-		<-time.After(1 * time.Second)
+		if ackResp.Ack() {
+			logger.Infof("delete messages: %d", len(messages))
+		} else {
+			// TODO retry here, do something
+			logger.Error("could not delete all messages from broker")
+			continue
+		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
 }
