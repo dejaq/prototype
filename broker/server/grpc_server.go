@@ -54,6 +54,7 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 
 		partitionID := d.topic.GetRandomPartition()
 		topicBatch[partitionID] = append(topicBatch[partitionID], Msg{
+			// For PriorityQueues the Priority is only uint16
 			Key: generateMsgKey(request.Priority()),
 			Val: request.BodyBytes(),
 		})
@@ -163,7 +164,7 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		idsToRemove := make([][]byte, 10)
 		for i := 0; i < ackBatch.IdLength(); i++ {
 			msgID := ackBatch.Id(i)
-			idsToRemove = append(idsToRemove, MsgKeyFromUint64(msgID))
+			idsToRemove = append(idsToRemove, UInt64ToBytes(msgID))
 		}
 
 		err = storage.RemoveMsgs(idsToRemove)

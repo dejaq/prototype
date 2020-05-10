@@ -22,7 +22,7 @@ func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 			PrefetchSize:   count,
 			Reverse:        false,
 			AllVersions:    false,
-			Prefix:         prefixPriority(p.partition),
+			Prefix:         UInt16ToBytes(p.partition),
 			InternalAccess: false,
 		})
 		defer it.Close()
