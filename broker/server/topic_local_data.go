@@ -103,6 +103,7 @@ func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PartitionStorag
 }
 
 func (m *TopicLocalData) GetRandomPartition() uint16 {
+	//TODO put local rand source to avoid mutex between topics
 	return uint16(rand.Intn(int(m.noPartitions)))
 }
 

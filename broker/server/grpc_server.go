@@ -30,13 +30,11 @@ func NewGRPC(logger logrus.FieldLogger, topic *TopicLocalData, consumerBatchSize
 	}
 }
 
-func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
+func (d *DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	var err error
 	var request *DejaQ.ProduceRequest
 
 	topicBatch := make(map[uint16][]Msg, 10)
-	d.logger.Info("producer connected")
-	d.logger.Info("producer disconnected")
 
 	//gather all the messages from the client
 	for err == nil {
@@ -95,8 +93,8 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	return nil
 }
 
-func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
-	sendMsgTicker := time.NewTicker(batchFlushInterval)
+func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
+	sendMsgTicker := time.NewTicker(d.consumerBatchFlushInterval)
 	defer sendMsgTicker.Stop()
 
 	consumerUniqueID := fmt.Sprintf("consumer_%d", rand.Int())
@@ -135,7 +133,7 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 				continue
 			}
 
-			msgs := storage.GetOldestMsgs(batchSize)
+			msgs := storage.GetOldestMsgs(d.consumerBatchSize)
 			for _, msg := range msgs {
 				builder.Reset()
 				bodyOffset := builder.CreateByteVector(msg.Val)
