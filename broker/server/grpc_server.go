@@ -57,7 +57,7 @@ func (d *DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 		})
 	}
 
-	if err == nil {
+	if err == nil || err == io.EOF {
 		for partitionID, batch := range topicBatch {
 			storage, gerr := d.topic.GetPartitionStorage(partitionID)
 			if gerr != nil {
@@ -99,7 +99,12 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 	consumerUniqueID := fmt.Sprintf("consumer_%d", rand.Int())
 	logger := d.logger.WithField("consumerID", consumerUniqueID)
 
+	err := d.topic.AddNewConsumer(consumerUniqueID)
+	if err != nil {
+		return err
+	}
 	logger.Infof("new consumer connected ID:%s", consumerUniqueID)
+
 	consumerPartitionID, err := d.topic.GetPartitionForConsumer(consumerUniqueID)
 	if err != nil {
 		d.logger.WithError(err).Error("failed to get partition for consumer %s", consumerUniqueID)

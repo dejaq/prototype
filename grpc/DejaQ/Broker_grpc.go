@@ -15,8 +15,10 @@ import (
 type BrokerClient interface{
   Produce(ctx context.Context, 
   	opts... grpc.CallOption) (Broker_ProduceClient, error)  
-  Consume(ctx context.Context, 
+  Consume(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (Broker_ConsumeClient, error)  
+  Acknowledge(ctx context.Context, in *flatbuffers.Builder, 
+  	opts... grpc.CallOption) (* ConsumerAcknowledgeResponse, error)  
 }
 
 type brokerClient struct {
@@ -56,16 +58,17 @@ func (x *brokerProduceClient) CloseAndRecv() (*ProduceResponse, error) {
   return m, nil
 }
 
-func (c *brokerClient) Consume(ctx context.Context, 
+func (c *brokerClient) Consume(ctx context.Context, in *flatbuffers.Builder, 
 	opts... grpc.CallOption) (Broker_ConsumeClient, error) {
   stream, err := grpc.NewClientStream(ctx, &_Broker_serviceDesc.Streams[1], c.cc, "/DejaQ.Broker/Consume", opts...)
   if err != nil { return nil, err }
   x := &brokerConsumeClient{stream}
+  if err := x.ClientStream.SendMsg(in); err != nil { return nil, err }
+  if err := x.ClientStream.CloseSend(); err != nil { return nil, err }
   return x,nil
 }
 
 type Broker_ConsumeClient interface {
-  Send(*flatbuffers.Builder) error
   Recv() (*Message, error)
   grpc.ClientStream
 }
@@ -74,20 +77,25 @@ type brokerConsumeClient struct{
   grpc.ClientStream
 }
 
-func (x *brokerConsumeClient) Send(m *flatbuffers.Builder) error {
-  return x.ClientStream.SendMsg(m)
-}
-
 func (x *brokerConsumeClient) Recv() (*Message, error) {
   m := new(Message)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
 }
 
+func (c *brokerClient) Acknowledge(ctx context.Context, in *flatbuffers.Builder, 
+	opts... grpc.CallOption) (* ConsumerAcknowledgeResponse, error) {
+  out := new(ConsumerAcknowledgeResponse)
+  err := grpc.Invoke(ctx, "/DejaQ.Broker/Acknowledge", in, out, c.cc, opts...)
+  if err != nil { return nil, err }
+  return out, nil
+}
+
 // Server API for Broker service
 type BrokerServer interface {
   Produce(Broker_ProduceServer) error  
-  Consume(Broker_ConsumeServer) error  
+  Consume(*ConsumerAcknowledgeRequest, Broker_ConsumeServer) error  
+  Acknowledge(context.Context, *ConsumerAcknowledgeResponse) (*flatbuffers.Builder, error)  
 }
 
 func RegisterBrokerServer(s *grpc.Server, srv BrokerServer) {
@@ -120,12 +128,13 @@ func (x *brokerProduceServer) SendAndClose(m *flatbuffers.Builder) error {
 
 
 func _Broker_Consume_Handler(srv interface{}, stream grpc.ServerStream) error {
-  return srv.(BrokerServer).Consume(&brokerConsumeServer{stream})
+  m := new(ConsumerAcknowledgeRequest)
+  if err := stream.RecvMsg(m); err != nil { return err }
+  return srv.(BrokerServer).Consume(m, &brokerConsumeServer{stream})
 }
 
 type Broker_ConsumeServer interface { 
   Send(* flatbuffers.Builder) error
-  Recv() (* Ack, error)
   grpc.ServerStream
 }
 
@@ -137,10 +146,21 @@ func (x *brokerConsumeServer) Send(m *flatbuffers.Builder) error {
   return x.ServerStream.SendMsg(m)
 }
 
-func (x *brokerConsumeServer) Recv() (*Ack, error) {
-  m := new(Ack)
-  if err := x.ServerStream.RecvMsg(m); err != nil { return nil, err }
-  return m, nil
+
+func _Broker_Acknowledge_Handler(srv interface{}, ctx context.Context,
+	dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+  in := new(ConsumerAcknowledgeResponse)
+  if err := dec(in); err != nil { return nil, err }
+  if interceptor == nil { return srv.(BrokerServer).Acknowledge(ctx, in) }
+  info := &grpc.UnaryServerInfo{
+    Server: srv,
+    FullMethod: "/DejaQ.Broker/Acknowledge",
+  }
+  
+  handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+    return srv.(BrokerServer).Acknowledge(ctx, req.(* ConsumerAcknowledgeResponse))
+  }
+  return interceptor(ctx, in, info, handler)
 }
 
 
@@ -148,6 +168,10 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
   ServiceName: "DejaQ.Broker",
   HandlerType: (*BrokerServer)(nil),
   Methods: []grpc.MethodDesc{
+    {
+      MethodName: "Acknowledge",
+      Handler: _Broker_Acknowledge_Handler, 
+    },
   },
   Streams: []grpc.StreamDesc{
     {
@@ -159,7 +183,6 @@ var _Broker_serviceDesc = grpc.ServiceDesc{
       StreamName: "Consume",
       Handler: _Broker_Consume_Handler, 
       ServerStreams: true,
-      ClientStreams: true,
     },
   },
 }

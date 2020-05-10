@@ -16,17 +16,18 @@ type PartitionStorage struct {
 func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 	result := make([]Msg, 0, count)
 
-	p.db.View(func(txn *badger.Txn) error {
+	// TODO manage error here
+	_ = p.db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.IteratorOptions{
 			PrefetchValues: true,
 			PrefetchSize:   count,
 			Reverse:        false,
 			AllVersions:    false,
-			Prefix:         UInt16ToBytes(p.partition),
+			Prefix:         nil,
 			InternalAccess: false,
 		})
 		defer it.Close()
-		for ; it.Valid(); it.Next() {
+		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
 			val, err := item.ValueCopy(nil)
 			if err != nil {
