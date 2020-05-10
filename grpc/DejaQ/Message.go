@@ -50,8 +50,20 @@ func (rcv *Message) MutatePriority(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(6, n)
 }
 
-func (rcv *Message) Body(j int) byte {
+func (rcv *Message) Partition() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *Message) MutatePartition(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(8, n)
+}
+
+func (rcv *Message) Body(j int) byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
@@ -60,7 +72,7 @@ func (rcv *Message) Body(j int) byte {
 }
 
 func (rcv *Message) BodyLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
@@ -68,7 +80,7 @@ func (rcv *Message) BodyLength() int {
 }
 
 func (rcv *Message) BodyBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
@@ -76,7 +88,7 @@ func (rcv *Message) BodyBytes() []byte {
 }
 
 func (rcv *Message) MutateBody(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
@@ -85,7 +97,7 @@ func (rcv *Message) MutateBody(j int, n byte) bool {
 }
 
 func MessageStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(4)
 }
 func MessageAddId(builder *flatbuffers.Builder, id uint64) {
 	builder.PrependUint64Slot(0, id, 0)
@@ -93,8 +105,11 @@ func MessageAddId(builder *flatbuffers.Builder, id uint64) {
 func MessageAddPriority(builder *flatbuffers.Builder, priority uint16) {
 	builder.PrependUint16Slot(1, priority, 0)
 }
+func MessageAddPartition(builder *flatbuffers.Builder, partition uint16) {
+	builder.PrependUint16Slot(2, partition, 0)
+}
 func MessageAddBody(builder *flatbuffers.Builder, body flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(body), 0)
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(body), 0)
 }
 func MessageStartBodyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)

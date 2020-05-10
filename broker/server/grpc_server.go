@@ -3,8 +3,6 @@ package server
 import (
 	"fmt"
 	"io"
-	"math/rand"
-	"sync/atomic"
 	"time"
 
 	"github.com/dejaq/prototype/grpc/DejaQ"
@@ -92,11 +90,8 @@ func (d *DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 	return nil
 }
 
-func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
-	sendMsgTicker := time.NewTicker(d.consumerBatchFlushInterval)
-	defer sendMsgTicker.Stop()
-
-	consumerUniqueID := fmt.Sprintf("consumer_%d", rand.Int())
+func (d *DejaqGrpc) Consume(req *DejaQ.ConsumerAskMessages, resp DejaQ.Broker_ConsumeServer) error {
+	consumerUniqueID := string(req.ConsumerId())
 	logger := d.logger.WithField("consumerID", consumerUniqueID)
 
 	err := d.topic.AddNewConsumer(consumerUniqueID)
@@ -120,61 +115,57 @@ func (d *DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		logger.WithError(err).Error("failed to get partition storage")
 		return err
 	}
-	defer logger.Info("consumer disconnected")
-	ackReceived := int64(1)
 
-	//the 	defer sendMsgTicker.Stop() will close this goroutine
-	go func() {
-		builder := flatbuffers.NewBuilder(1024)
-		for range sendMsgTicker.C {
-			if req.Context().Err() != nil {
-				break
-			}
+	builder := flatbuffers.NewBuilder(1024)
+	msgs := storage.GetOldestMsgs(int(req.Number()))
+	var successCount int
+	for _, msg := range msgs {
+		builder.Reset()
+		bodyOffset := builder.CreateByteVector(msg.Val)
+		DejaQ.MessageStart(builder)
+		DejaQ.MessageAddId(builder, msg.GetKeyAsUint64())
+		DejaQ.MessageAddPartition(builder, consumerPartitionID)
+		DejaQ.MessageAddBody(builder, bodyOffset)
+		root := DejaQ.MessageEnd(builder)
 
-			if atomic.LoadInt64(&ackReceived) == 0 {
-				// the ack did not came for the previous batch
-				//we wait one more cycle
-				continue
-			}
-
-			msgs := storage.GetOldestMsgs(d.consumerBatchSize)
-			for _, msg := range msgs {
-				builder.Reset()
-				bodyOffset := builder.CreateByteVector(msg.Val)
-				DejaQ.MessageStart(builder)
-				DejaQ.MessageAddId(builder, msg.GetKeyAsUint64())
-				DejaQ.MessageAddBody(builder, bodyOffset)
-				root := DejaQ.MessageEnd(builder)
-
-				builder.Finish(root)
-				err := req.Send(builder)
-				if err != nil {
-					logger.WithError(err).Error("failed to send a msg to consumer")
-				}
-			}
-			atomic.StoreInt64(&ackReceived, 0)
-		}
-	}()
-
-	//ack pipeline from consumer
-	for {
-		ackBatch, err := req.Recv()
+		builder.Finish(root)
+		err := resp.Send(builder)
 		if err != nil {
+			logger.WithError(err).Error("failed to send a msg to consumer")
+			continue
+		}
+		successCount++
+	}
+
+	d.logger.Info(fmt.Sprintf("Consumer: %s request: %d, and get: %d", consumerUniqueID, req.Number(), successCount))
+
+	return err
+}
+
+func (d *DejaqGrpc) Acknowledge(req DejaQ.Broker_AcknowledgeServer) error {
+	for {
+		message, err := req.Recv()
+		if err == io.EOF {
 			break
 		}
 
-		idsToRemove := make([][]byte, 10)
-		for i := 0; i < ackBatch.IdLength(); i++ {
-			msgID := ackBatch.Id(i)
-			idsToRemove = append(idsToRemove, UInt64ToBytes(msgID))
+		if err != nil {
+			d.logger.WithError(err).Fatal("broker read ack stream")
 		}
+
+		storage, err := d.topic.GetPartitionStorage(message.Partition())
+		if err != nil {
+			d.logger.WithError(err).Error(" acknowledge failed to get partition storage")
+			return err
+		}
+
+		idsToRemove := make([][]byte, 10)
+		idsToRemove = append(idsToRemove, UInt64ToBytes(message.Id()))
 
 		err = storage.RemoveMsgs(idsToRemove)
 		if err != nil {
-			logger.WithError(err).Error("failed to remove from DB")
+			d.logger.WithError(err).Error("failed to remove from DB")
 		}
-		atomic.StoreInt64(&ackReceived, 1)
 	}
-
-	return err
+	return nil
 }

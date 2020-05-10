@@ -38,11 +38,22 @@ func (rcv *ConsumerAskMessages) MutateNumber(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(4, n)
 }
 
+func (rcv *ConsumerAskMessages) ConsumerId() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func ConsumerAskMessagesStart(builder *flatbuffers.Builder) {
-	builder.StartObject(1)
+	builder.StartObject(2)
 }
 func ConsumerAskMessagesAddNumber(builder *flatbuffers.Builder, number uint16) {
 	builder.PrependUint16Slot(0, number, 0)
+}
+func ConsumerAskMessagesAddConsumerId(builder *flatbuffers.Builder, consumerId flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(consumerId), 0)
 }
 func ConsumerAskMessagesEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

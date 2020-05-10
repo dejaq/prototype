@@ -50,7 +50,7 @@ func main() {
 				return
 			}
 			brokerClient := DejaQ.NewBrokerClient(conn)
-			pkg.Consume(ctx, logger, brokerClient)
+			pkg.Consume(ctx, i, logger, brokerClient)
 		}(i)
 	}
 

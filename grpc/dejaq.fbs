@@ -16,24 +16,28 @@ table Ack {
 table Message {
     id: ulong;
     priority:ushort;
+    partition:ushort;
     body:[ubyte];
 }
 
 table ConsumerAskMessages {
     number:ushort;
+    consumerId:string;
 }
 
-table ConsumerAcknowledgeRequest {
-    ids:[ulong];
+table AcknowledgeMessages {
+    id:ulong;
+    partition:ushort;
+
 }
 
-table ConsumerAcknowledgeResponse {
+table AcknowledgeResponse {
     ack:bool;
 }
 
 // https://grpc.io/docs/guides/concepts/
 rpc_service Broker {
     Produce(ProduceRequest):ProduceResponse (streaming: "client");
-    Consume(ConsumerAcknowledgeRequest):Message (streaming: "server");
-    Acknowledge(ConsumerAcknowledgeResponse):ConsumerAcknowledgeResponse;
+    Consume(ConsumerAskMessages):Message (streaming: "server");
+    Acknowledge(AcknowledgeMessages):AcknowledgeResponse (streaming: "client");
 }
