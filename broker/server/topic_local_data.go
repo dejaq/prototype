@@ -85,7 +85,7 @@ func (m *TopicLocalData) GetPartitionForConsumer(id string) (uint16, error) {
 	return 0, errors.New("Consumer was not added")
 }
 
-func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PriorityStorage, error) {
+func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PartitionStorage, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -94,7 +94,7 @@ func (m *TopicLocalData) GetPartitionStorage(partition uint16) (*PriorityStorage
 		return nil, errors.New("partition not found on this node")
 	}
 
-	return &PriorityStorage{
+	return &PartitionStorage{
 		topicID:   m.topicID,
 		db:        localDB,
 		logger:    m.logger.WithField("priorityStorage", partition),

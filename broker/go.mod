@@ -10,6 +10,7 @@ require (
 	github.com/mosuka/cete v0.3.1 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.6.0
+	go.uber.org/atomic v1.6.0
 )
 
 replace github.com/dejaq/prototype/grpc => ../grpc/

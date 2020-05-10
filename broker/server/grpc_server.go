@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/dejaq/prototype/grpc/DejaQ"
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/sirupsen/logrus"
@@ -14,12 +16,17 @@ import (
 type DejaqGrpc struct {
 	logger logrus.FieldLogger
 	topic  *TopicLocalData
+
+	consumerBatchSize          int
+	consumerBatchFlushInterval time.Duration
 }
 
-func NewGRPC(logger logrus.FieldLogger, topic *TopicLocalData) *DejaqGrpc {
+func NewGRPC(logger logrus.FieldLogger, topic *TopicLocalData, consumerBatchSize int, consumerBatchFlushInterval time.Duration) *DejaqGrpc {
 	return &DejaqGrpc{
-		logger: logger,
-		topic:  topic,
+		logger:                     logger,
+		topic:                      topic,
+		consumerBatchFlushInterval: consumerBatchFlushInterval,
+		consumerBatchSize:          consumerBatchSize,
 	}
 }
 
@@ -88,8 +95,6 @@ func (d DejaqGrpc) Produce(stream DejaQ.Broker_ProduceServer) error {
 }
 
 func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
-	batchSize := 100
-	batchFlushInterval := time.Second
 	sendMsgTicker := time.NewTicker(batchFlushInterval)
 	defer sendMsgTicker.Stop()
 
@@ -113,6 +118,7 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		return err
 	}
 	defer logger.Info("consumer disconnected")
+	var ackReceived atomic.Bool
 
 	//the 	defer sendMsgTicker.Stop() will close this goroutine
 	go func() {
@@ -120,6 +126,12 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		for range sendMsgTicker.C {
 			if req.Context().Err() != nil {
 				break
+			}
+
+			if !ackReceived.Load() {
+				// the ack did not came for the previous batch
+				//we wait one more cycle
+				continue
 			}
 
 			msgs := storage.GetOldestMsgs(batchSize)
@@ -137,6 +149,7 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 					logger.WithError(err).Error("failed to send a msg to consumer")
 				}
 			}
+			ackReceived.Store(false)
 		}
 	}()
 
@@ -157,6 +170,7 @@ func (d DejaqGrpc) Consume(req DejaQ.Broker_ConsumeServer) error {
 		if err != nil {
 			logger.WithError(err).Error("failed to remove from DB")
 		}
+		ackReceived.Store(true)
 	}
 
 	return err

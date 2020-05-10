@@ -6,14 +6,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type PriorityStorage struct {
+type PartitionStorage struct {
 	topicID   string
 	db        *badger.DB
 	logger    logrus.FieldLogger
 	partition uint16
 }
 
-func (p *PriorityStorage) GetOldestMsgs(count int) []Msg {
+func (p *PartitionStorage) GetOldestMsgs(count int) []Msg {
 	result := make([]Msg, 0, count)
 
 	p.db.View(func(txn *badger.Txn) error {
@@ -45,7 +45,9 @@ func (p *PriorityStorage) GetOldestMsgs(count int) []Msg {
 
 	return result
 }
-func (p *PriorityStorage) AddMsgs(batch []Msg) error {
+
+// the Op is done in a transaction, all or nothing
+func (p *PartitionStorage) AddMsgs(batch []Msg) error {
 	//write to DB
 	wb := p.db.NewWriteBatch()
 	defer wb.Cancel()
@@ -63,7 +65,8 @@ func (p *PriorityStorage) AddMsgs(batch []Msg) error {
 	return nil
 }
 
-func (p *PriorityStorage) RemoveMsgs(keys [][]byte) error {
+// the Op is done in a transaction, all or nothing
+func (p *PartitionStorage) RemoveMsgs(keys [][]byte) error {
 	//write to DB
 	wb := p.db.NewWriteBatch()
 	defer wb.Cancel()

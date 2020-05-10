@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/dejaq/prototype/brokercete/server"
 	"github.com/dejaq/prototype/grpc/DejaQ"
@@ -21,8 +22,15 @@ type Config struct {
 	Partitions           int    `env:"PARTITIONS" env-default:"3"`
 	//RaftBindingAddress string `env:"RAFT_ADDRESS" env-default:"127.0.0.1:8100"`
 	DataDirectory string `env:"DATA_DIRECTORY" env-default:"/tmp/dejaq-data-node1"`
+
+	ConsumerBatchSize     int    `env:"CONSUMER_BATCH_SIZE" env-default:"1000"`
+	ConsumerBatchInterval string `env:"CONSUMER_BATCH_INTERVAL" env-default:"500ms"`
 }
 
+func (c *Config) durationConsumerBatchInterval() time.Duration {
+	r, _ := time.ParseDuration(c.ConsumerBatchInterval)
+	return r
+}
 func main() {
 
 	logger := logrus.New().WithField("component", "brokermain")
@@ -43,7 +51,7 @@ func main() {
 	ser := grpc.NewServer(
 		grpc.CustomCodec(flatbuffers.FlatbuffersCodec{}),
 	)
-	DejaQ.RegisterBrokerServer(ser, server.NewGRPC(logger, topicLocalMetadata))
+	DejaQ.RegisterBrokerServer(ser, server.NewGRPC(logger, topicLocalMetadata, c.ConsumerBatchSize, c.durationConsumerBatchInterval()))
 	lis, err := net.Listen("tcp", c.BrokerBindingAddress)
 	if err != nil {
 		logger.Fatalf("failed to listen: %w", err)
