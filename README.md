@@ -5,6 +5,9 @@ DejaQ is a distributed messaging queue built for high-throughput persistent mess
 # This repository 
 The current project is meant to be a working demo, a prototype, an MVP of what DejaQ will become. We only implemented the minimal amount of commands and features. There can be only one broker but there can be multiple topics, producers and consumers.
 
+It contains 2 prototypes: one on branch `master` (with external storage) and one on brach `badger` (with internal storage).
+
+Warning! This repo is archived the development moved to the main repo.
 
 Introduction and topics
 -----------------------
