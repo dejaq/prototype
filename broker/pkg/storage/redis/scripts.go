@@ -7,12 +7,13 @@ var scripts = struct {
 	getByConsumerId string
 	consumerDelete  string
 	producerDelete  string
+	countByStatus   string
 }{
 	insert: `
 	    local bucket_key = KEYS[1]
 		local message_key = KEYS[2]
 	    local message_id = KEYS[3]
-	    local end_lease_MS = KEYS[4]
+	    local delivery_time_MS = KEYS[4]
 	
 	    -- check if messageId already exists and return error
 		if redis.call("ZRANK", bucket_key, message_id) ~= false then
@@ -20,7 +21,7 @@ var scripts = struct {
 		end
 		
 		-- inset on timeline
-		local ok = redis.call("ZADD", bucket_key, end_lease_MS, message_id)
+		local ok = redis.call("ZADD", bucket_key, delivery_time_MS, message_id)
 		if ok ~= 1 then return "2" end
 		
 		-- inset on hashMap
@@ -220,4 +221,38 @@ var scripts = struct {
 	    return errors
 	`,
 	producerDelete: `return "TODO"`,
+	countByStatus: `
+        local timeline_key = KEYS[1]
+        local count_type = KEYS[2]
+        local time_reference_MS = KEYS[3]
+	    local buckets_ids = ARGV
+
+        local count = 0
+		for i, bucket_id in pairs(buckets_ids) do
+            local bucket_key = timeline_key .. "::" .. bucket_id
+
+            -- available
+            if count_type == "available" then
+                count = count + redis.call("ZCOUNT", bucket_key, "-inf", time_reference_MS)
+            end
+
+            -- waiting
+            if count_type == "waiting" or count_type == "processing" then
+                local messageIds = redis.call("ZRANGEBYSCORE", bucket_key, time_reference_MS, "+inf")
+				for i, id in pairs(messageIds) do
+                    -- get message details
+	                local message_key = bucket_key .. "::" .. id
+                    local message = redis.call("HMGET", message_key, "LockConsumerID")
+                    if (count_type == "waiting" and message[1] == '') then
+                        count = count + 1
+                    end
+					if (type == "processing" and message[1] ~= '') then
+                        count = count + 1
+                    end
+				end	
+            end
+		end
+
+        return count
+	`,
 }
